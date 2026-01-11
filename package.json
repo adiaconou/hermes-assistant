@@ -1,0 +1,32 @@
+{
+  "name": "personal-assistant",
+  "version": "0.1.0",
+  "description": "SMS-based personal assistant with LLM and Google integrations",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "lint": "eslint src/",
+    "test": "vitest"
+  },
+  "keywords": [
+    "assistant",
+    "sms",
+    "llm",
+    "mcp"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "tsx": "^4.0.0",
+    "vitest": "^2.0.0"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
