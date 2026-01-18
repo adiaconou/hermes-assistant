@@ -22,10 +22,10 @@ Prove end-to-end SMS integration works: send a text → receive a response.
 
 ### In Scope
 - [x] Twilio account setup with phone number
-- [ ] Express server with SMS webhook endpoint
-- [ ] Send hardcoded reply via Twilio API
-- [ ] Deploy to Railway
-- [ ] Environment variable configuration
+- [x] Express server with SMS webhook endpoint
+- [x] Send echo reply via TwiML response
+- [x] Deploy to Railway
+- [x] Environment variable configuration
 
 ### Out of Scope (Future Phases)
 - LLM integration
@@ -173,11 +173,11 @@ railway up
 
 ## Testing Checklist
 
-- [ ] Local: Send SMS → receive hardcoded response
-- [ ] Local: Check server logs show received message
-- [ ] Railway: Deploy succeeds
-- [ ] Railway: Health check endpoint responds (`GET /health`)
-- [ ] Production: Send SMS → receive response from Railway deployment
+- [x] Local: Send SMS → receive echo response
+- [x] Local: Check server logs show received message
+- [x] Railway: Deploy succeeds
+- [x] Railway: Health check endpoint responds (`GET /health`)
+- [x] Production: Send SMS → receive response from Railway deployment
 
 ---
 
@@ -239,3 +239,4 @@ The webhook structure stays the same - we just replace the hardcoded response wi
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2025-01-11 | Initial Phase 1 spec |
+| 1.1 | 2025-01-18 | Phase 1 complete - deployed to Railway |

@@ -47,6 +47,8 @@ assistant/
 
 ## Status
 
-**Phase**: Requirements & Design
+**Phase 1: SMS Echo MVP** ✓ Complete
 
-See [requirements.md](./docs/requirements.md) for current specifications.
+The assistant is deployed to Railway and responds to SMS messages. See [phase-1-requirements.md](./docs/phase-1-requirements.md) for details.
+
+**Next**: Phase 2 - LLM Integration

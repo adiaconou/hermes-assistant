@@ -29,7 +29,7 @@ npm run lint
 
 The project follows a phased implementation approach:
 
-### Phase 1: SMS Echo MVP (Current)
+### Phase 1: SMS Echo MVP ✓ Complete
 - Express server with webhook endpoint (`POST /webhook/sms`)
 - Receives SMS from Twilio, returns hardcoded TwiML response
 - No LLM, no MCP tools yet - just proves the SMS pipeline works
@@ -139,11 +139,11 @@ Update Twilio webhook URL to Railway domain after deployment.
 - **Configuration in one place** - Centralize env var loading and validation
 - **Keep routes thin** - Handlers should delegate to business logic functions
 
-## Phase 1 Checklist
+## Phase 1 Checklist ✓
 
-- [ ] Express server with `/webhook/sms` endpoint
-- [ ] Health check endpoint (`GET /health`)
-- [ ] Parse Twilio webhook body (From, To, Body)
-- [ ] Return TwiML response with hardcoded message
-- [ ] Deploy to Railway
-- [ ] Configure Twilio webhook URL
+- [x] Express server with `/webhook/sms` endpoint
+- [x] Health check endpoint (`GET /health`)
+- [x] Parse Twilio webhook body (From, To, Body)
+- [x] Return TwiML response with echo message
+- [x] Deploy to Railway
+- [x] Configure Twilio webhook URL
