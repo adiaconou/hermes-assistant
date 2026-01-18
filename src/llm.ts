@@ -96,6 +96,14 @@ async function handleToolCall(
   toolName: string,
   toolInput: Record<string, unknown>
 ): Promise<string> {
+  console.log(JSON.stringify({
+    level: 'info',
+    message: 'Tool call received',
+    toolName,
+    inputKeys: Object.keys(toolInput),
+    timestamp: new Date().toISOString(),
+  }));
+
   if (toolName === 'generate_ui') {
     const { title, html, css, js } = toolInput as {
       title: string;
@@ -104,18 +112,49 @@ async function handleToolCall(
       js?: string;
     };
 
-    const result = await generatePage({ title, html, css, js });
+    console.log(JSON.stringify({
+      level: 'info',
+      message: 'Generating UI page',
+      title,
+      htmlLength: html?.length || 0,
+      cssLength: css?.length || 0,
+      jsLength: js?.length || 0,
+      timestamp: new Date().toISOString(),
+    }));
 
-    if (isSuccess(result)) {
-      return JSON.stringify({
-        success: true,
-        shortUrl: result.shortUrl,
-        pageId: result.pageId,
-      });
-    } else {
+    try {
+      const result = await generatePage({ title, html, css, js });
+
+      console.log(JSON.stringify({
+        level: 'info',
+        message: 'Page generation result',
+        success: isSuccess(result),
+        result: isSuccess(result) ? { shortUrl: result.shortUrl } : { error: result.error },
+        timestamp: new Date().toISOString(),
+      }));
+
+      if (isSuccess(result)) {
+        return JSON.stringify({
+          success: true,
+          shortUrl: result.shortUrl,
+          pageId: result.pageId,
+        });
+      } else {
+        return JSON.stringify({
+          success: false,
+          error: result.error,
+        });
+      }
+    } catch (error) {
+      console.error(JSON.stringify({
+        level: 'error',
+        message: 'Page generation failed',
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString(),
+      }));
       return JSON.stringify({
         success: false,
-        error: result.error,
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   }
@@ -142,6 +181,13 @@ export async function generateResponse(
   messages.push({ role: 'user', content: userMessage });
 
   // Initial API call
+  console.log(JSON.stringify({
+    level: 'info',
+    message: 'Calling Anthropic API',
+    messageCount: messages.length,
+    timestamp: new Date().toISOString(),
+  }));
+
   let response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 4096,
@@ -150,8 +196,25 @@ export async function generateResponse(
     messages,
   });
 
+  console.log(JSON.stringify({
+    level: 'info',
+    message: 'Anthropic API response',
+    stopReason: response.stop_reason,
+    contentTypes: response.content.map(b => b.type),
+    timestamp: new Date().toISOString(),
+  }));
+
   // Handle tool use loop
+  let loopCount = 0;
   while (response.stop_reason === 'tool_use') {
+    loopCount++;
+    console.log(JSON.stringify({
+      level: 'info',
+      message: 'Processing tool use loop',
+      loopCount,
+      timestamp: new Date().toISOString(),
+    }));
+
     const toolUseBlocks = response.content.filter(
       (block): block is ToolUseBlock => block.type === 'tool_use'
     );
@@ -176,6 +239,13 @@ export async function generateResponse(
     messages.push({ role: 'user', content: toolResults });
 
     // Continue the conversation
+    console.log(JSON.stringify({
+      level: 'info',
+      message: 'Continuing conversation after tool use',
+      loopCount,
+      timestamp: new Date().toISOString(),
+    }));
+
     response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 4096,
@@ -183,11 +253,28 @@ export async function generateResponse(
       tools: TOOLS,
       messages,
     });
+
+    console.log(JSON.stringify({
+      level: 'info',
+      message: 'Anthropic API response after tool',
+      stopReason: response.stop_reason,
+      contentTypes: response.content.map(b => b.type),
+      timestamp: new Date().toISOString(),
+    }));
   }
 
   // Extract final text response
   const textBlock = response.content.find(
     (block): block is TextBlock => block.type === 'text'
   );
+
+  console.log(JSON.stringify({
+    level: 'info',
+    message: 'Returning final response',
+    hasTextBlock: !!textBlock,
+    responseLength: textBlock?.text?.length || 0,
+    timestamp: new Date().toISOString(),
+  }));
+
   return textBlock?.text || 'I could not generate a response.';
 }
