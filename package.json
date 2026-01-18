@@ -30,6 +30,7 @@
     "vitest": "^2.0.0"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.2",
     "express": "^4.21.0"
   },
   "engines": {

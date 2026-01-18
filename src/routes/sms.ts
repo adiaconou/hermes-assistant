@@ -10,6 +10,8 @@
  * async callbacks for message replies.
  */
 import { Router, Request, Response } from 'express';
+import { generateResponse } from '../llm.js';
+import { getHistory, addMessage } from '../conversation.js';
 
 const router = Router();
 
@@ -62,15 +64,13 @@ function escapeXml(text: string): string {
  *
  * Twilio calls this endpoint when an SMS or WhatsApp message is received.
  * Must respond with TwiML XML to send a reply back to the sender.
- *
- * Phase 1: Echo the message back (proves the pipeline works).
- * Future phases will route to the LLM for intelligent responses.
  */
-router.post('/webhook/sms', (req: Request, res: Response) => {
+router.post('/webhook/sms', async (req: Request, res: Response) => {
   const { From, Body } = req.body as TwilioWebhookBody;
 
   const channel = detectChannel(From || '');
   const sender = stripPrefix(From || '');
+  const message = Body || '';
 
   console.log(
     JSON.stringify({
@@ -78,12 +78,22 @@ router.post('/webhook/sms', (req: Request, res: Response) => {
       message: 'Message received',
       channel,
       from: sanitizePhone(sender),
-      bodyLength: Body?.length || 0,
+      bodyLength: message.length,
       timestamp: new Date().toISOString(),
     })
   );
 
-  const responseText = `Got your ${channel} message: "${Body}"`;
+  let responseText: string;
+
+  try {
+    const history = getHistory(sender);
+    responseText = await generateResponse(message, history);
+    addMessage(sender, 'user', message);
+    addMessage(sender, 'assistant', responseText);
+  } catch (error) {
+    responseText = `Error: ${error instanceof Error ? error.message : String(error)}`;
+  }
+
   const escapedResponse = escapeXml(responseText);
 
   res.type('text/xml');

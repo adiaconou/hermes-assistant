@@ -14,11 +14,13 @@
  * @property port - HTTP server port (default: 3000)
  * @property nodeEnv - Runtime environment: 'development' | 'production'
  * @property twilioPhoneNumber - Twilio phone number for sending SMS
+ * @property anthropicApiKey - Anthropic API key for Claude
  */
 const config = {
   port: parseInt(process.env.PORT || '3000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   twilioPhoneNumber: process.env.TWILIO_PHONE_NUMBER,
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY,
 };
 
 export default config;
