@@ -5,7 +5,13 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import type { Tool, ToolUseBlock, TextBlock, ContentBlock } from '@anthropic-ai/sdk/resources/messages';
+import type {
+  Tool,
+  ToolUseBlock,
+  TextBlock,
+  MessageParam,
+  ToolResultBlockParam,
+} from '@anthropic-ai/sdk/resources/messages';
 import config from './config.js';
 import type { Message } from './conversation.js';
 import { generatePage, isSuccess, getSizeLimits } from './ui/index.js';
@@ -127,11 +133,10 @@ export async function generateResponse(
   const anthropic = getClient();
 
   // Convert history to Anthropic format
-  const messages: Array<{ role: 'user' | 'assistant'; content: string | ContentBlock[] }> =
-    conversationHistory.map((msg) => ({
-      role: msg.role as 'user' | 'assistant',
-      content: msg.content,
-    }));
+  const messages: MessageParam[] = conversationHistory.map((msg) => ({
+    role: msg.role as 'user' | 'assistant',
+    content: msg.content,
+  }));
 
   // Add current message
   messages.push({ role: 'user', content: userMessage });
@@ -152,7 +157,7 @@ export async function generateResponse(
     );
 
     // Process all tool calls
-    const toolResults = await Promise.all(
+    const toolResults: ToolResultBlockParam[] = await Promise.all(
       toolUseBlocks.map(async (toolUse) => {
         const result = await handleToolCall(
           toolUse.name,

@@ -23,7 +23,7 @@ const router = Router();
  * - Cross-Origin-Resource-Policy: same-origin
  * - Cache-Control: private, no-cache
  */
-router.get('/u/:id', async (req: Request, res: Response) => {
+router.get('/u/:id', async (req: Request<{ id: string }>, res: Response) => {
   try {
     const shortener = getShortener();
     const storage = getStorage();
