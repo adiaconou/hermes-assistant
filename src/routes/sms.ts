@@ -85,13 +85,39 @@ router.post('/webhook/sms', async (req: Request, res: Response) => {
 
   let responseText: string;
 
+  const startTime = Date.now();
   try {
     const history = getHistory(sender);
+    console.log(JSON.stringify({
+      level: 'info',
+      message: 'Generating response',
+      historyLength: history.length,
+      messageLength: message.length,
+      timestamp: new Date().toISOString(),
+    }));
+
     responseText = await generateResponse(message, history);
+
+    console.log(JSON.stringify({
+      level: 'info',
+      message: 'Response generated',
+      responseLength: responseText.length,
+      durationMs: Date.now() - startTime,
+      timestamp: new Date().toISOString(),
+    }));
+
     addMessage(sender, 'user', message);
     addMessage(sender, 'assistant', responseText);
   } catch (error) {
-    responseText = `Error: ${error instanceof Error ? error.message : String(error)}`;
+    console.error(JSON.stringify({
+      level: 'error',
+      message: 'Failed to generate response',
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      durationMs: Date.now() - startTime,
+      timestamp: new Date().toISOString(),
+    }));
+    responseText = `Sorry, I encountered an error. Please try again.`;
   }
 
   const escapedResponse = escapeXml(responseText);
