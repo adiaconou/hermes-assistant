@@ -1,12 +1,14 @@
 /**
  * LLM integration module.
  *
- * Wraps Anthropic SDK for generating responses.
+ * Wraps Anthropic SDK for generating responses with tool support.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import type { Tool, ToolUseBlock, TextBlock, ContentBlock } from '@anthropic-ai/sdk/resources/messages';
 import config from './config.js';
 import type { Message } from './conversation.js';
+import { generatePage, isSuccess, getSizeLimits } from './ui/index.js';
 
 let client: Anthropic | null = null;
 
@@ -20,10 +22,103 @@ function getClient(): Anthropic {
   return client;
 }
 
-const SYSTEM_PROMPT = `You are a helpful SMS assistant. Keep responses concise since you communicate via SMS. Be direct and helpful.`;
+const sizeLimits = getSizeLimits();
+
+const SYSTEM_PROMPT = `You are a helpful SMS assistant. Keep responses concise since you communicate via SMS. Be direct and helpful.
+
+## UI Generation Capability
+
+You can generate interactive web pages for the user using the generate_ui tool. Use this when the user asks for:
+- Lists they can check off (grocery lists, todo lists, packing lists)
+- Interactive forms or calculators
+- Any content that benefits from visual presentation or state persistence
+
+When generating UI:
+1. Create clean, mobile-friendly HTML
+2. Use the provided helper functions for state persistence:
+   - window.hermesLoadState() - loads saved state (returns object or null)
+   - window.hermesSaveState(state) - saves state object
+3. The page runs in a strict sandbox - NO network requests are allowed
+4. Keep it simple and functional
+5. Size limits: HTML ${sizeLimits.html} bytes, CSS ${sizeLimits.css} bytes, JS ${sizeLimits.js} bytes
+
+Example: For a grocery list, create checkboxes that save their state when clicked.`;
 
 /**
- * Generate a response using Claude.
+ * Tool definitions for the LLM.
+ */
+const TOOLS: Tool[] = [
+  {
+    name: 'generate_ui',
+    description: `Generate an interactive web page for the user. Use this for lists, forms, calculators, or any content that benefits from visual presentation. The page will be served at a short URL that the user can open in their browser.
+
+IMPORTANT CONSTRAINTS:
+- The page runs in a strict sandbox with NO network access
+- No fetch(), XMLHttpRequest, WebSocket, or external resources allowed
+- Use localStorage via window.hermesLoadState() and window.hermesSaveState() for persistence
+- Keep HTML/CSS/JS concise and mobile-friendly
+- Do NOT use external fonts, images, or scripts`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        title: {
+          type: 'string',
+          description: 'Page title (shown in browser tab)',
+        },
+        html: {
+          type: 'string',
+          description: 'HTML body content (not full document, just body contents)',
+        },
+        css: {
+          type: 'string',
+          description: 'Optional CSS styles (will be added to <style> tag)',
+        },
+        js: {
+          type: 'string',
+          description: 'Optional JavaScript (will be added to <script> tag). Use hermesLoadState/hermesSaveState for persistence.',
+        },
+      },
+      required: ['title', 'html'],
+    },
+  },
+];
+
+/**
+ * Handle a tool call from the LLM.
+ */
+async function handleToolCall(
+  toolName: string,
+  toolInput: Record<string, unknown>
+): Promise<string> {
+  if (toolName === 'generate_ui') {
+    const { title, html, css, js } = toolInput as {
+      title: string;
+      html: string;
+      css?: string;
+      js?: string;
+    };
+
+    const result = await generatePage({ title, html, css, js });
+
+    if (isSuccess(result)) {
+      return JSON.stringify({
+        success: true,
+        shortUrl: result.shortUrl,
+        pageId: result.pageId,
+      });
+    } else {
+      return JSON.stringify({
+        success: false,
+        error: result.error,
+      });
+    }
+  }
+
+  return JSON.stringify({ error: `Unknown tool: ${toolName}` });
+}
+
+/**
+ * Generate a response using Claude with tool support.
  */
 export async function generateResponse(
   userMessage: string,
@@ -32,22 +127,62 @@ export async function generateResponse(
   const anthropic = getClient();
 
   // Convert history to Anthropic format
-  const messages = conversationHistory.map((msg) => ({
-    role: msg.role as 'user' | 'assistant',
-    content: msg.content,
-  }));
+  const messages: Array<{ role: 'user' | 'assistant'; content: string | ContentBlock[] }> =
+    conversationHistory.map((msg) => ({
+      role: msg.role as 'user' | 'assistant',
+      content: msg.content,
+    }));
 
   // Add current message
   messages.push({ role: 'user', content: userMessage });
 
-  const response = await anthropic.messages.create({
+  // Initial API call
+  let response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 1024,
+    max_tokens: 4096,
     system: SYSTEM_PROMPT,
+    tools: TOOLS,
     messages,
   });
 
-  // Extract text from response
-  const textBlock = response.content.find((block) => block.type === 'text');
+  // Handle tool use loop
+  while (response.stop_reason === 'tool_use') {
+    const toolUseBlocks = response.content.filter(
+      (block): block is ToolUseBlock => block.type === 'tool_use'
+    );
+
+    // Process all tool calls
+    const toolResults = await Promise.all(
+      toolUseBlocks.map(async (toolUse) => {
+        const result = await handleToolCall(
+          toolUse.name,
+          toolUse.input as Record<string, unknown>
+        );
+        return {
+          type: 'tool_result' as const,
+          tool_use_id: toolUse.id,
+          content: result,
+        };
+      })
+    );
+
+    // Add assistant response and tool results to messages
+    messages.push({ role: 'assistant', content: response.content });
+    messages.push({ role: 'user', content: toolResults });
+
+    // Continue the conversation
+    response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4096,
+      system: SYSTEM_PROMPT,
+      tools: TOOLS,
+      messages,
+    });
+  }
+
+  // Extract final text response
+  const textBlock = response.content.find(
+    (block): block is TextBlock => block.type === 'text'
+  );
   return textBlock?.text || 'I could not generate a response.';
 }

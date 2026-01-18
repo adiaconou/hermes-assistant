@@ -15,12 +15,46 @@
  * @property nodeEnv - Runtime environment: 'development' | 'production'
  * @property twilioPhoneNumber - Twilio phone number for sending SMS
  * @property anthropicApiKey - Anthropic API key for Claude
+ * @property baseUrl - Base URL for generating links (default: http://localhost:3000)
+ * @property ui - UI generation configuration
  */
 const config = {
   port: parseInt(process.env.PORT || '3000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   twilioPhoneNumber: process.env.TWILIO_PHONE_NUMBER,
   anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+
+  /** Base URL for generating short links */
+  baseUrl: process.env.BASE_URL || 'http://localhost:3000',
+
+  /** UI generation configuration */
+  ui: {
+    /** Storage provider: 'local' (default) or 's3' */
+    storageProvider: (process.env.UI_STORAGE_PROVIDER || 'local') as 'local' | 's3',
+
+    /** Path for local file storage (default: ./data/pages) */
+    localStoragePath: process.env.UI_LOCAL_STORAGE_PATH || './data/pages',
+
+    /** Shortener provider: 'memory' (default) or 'redis' */
+    shortenerProvider: (process.env.UI_SHORTENER_PROVIDER || 'memory') as 'memory' | 'redis',
+
+    /** Path for persisting memory shortener data (optional) */
+    shortenerPersistPath: process.env.UI_SHORTENER_PERSIST_PATH,
+
+    /** Page TTL in days (default: 7) */
+    pageTtlDays: parseInt(process.env.PAGE_TTL_DAYS || '7', 10),
+  },
+
+  /** AWS configuration (for Phase 4b production) */
+  aws: {
+    region: process.env.AWS_REGION || 'us-east-1',
+    s3Bucket: process.env.AWS_S3_BUCKET,
+  },
+
+  /** Redis configuration (for Phase 4b production) */
+  redis: {
+    url: process.env.REDIS_URL,
+  },
 };
 
 export default config;

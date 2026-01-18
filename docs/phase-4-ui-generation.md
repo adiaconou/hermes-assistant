@@ -1,37 +1,54 @@
-# Phase 3: Dynamic UI Generation
+# Phase 4: Dynamic UI Generation
 
 ## Goal
 
 Enable the SMS assistant to generate custom interactive web UIs on-the-fly based on user requests. The user who requests a UI receives a short link back to view their generated page. Access is via a time-limited bearer link (anyone with the link can access until it expires). Optional enhancement: require a SMS-delivered PIN to view.
 
-**Example:** User texts "Make me a grocery list for chicken parmesan" → receives link to interactive checklist page with persistent state.
+**Example:** User texts "I want stir fry for dinner" → receives link to interactive grocery checklist page with persistent state that they can check off items at the store.
+
+---
+
+## Design Principles
+
+1. **Incremental Development**: Start simple (localhost), add cloud infrastructure later
+2. **Storage Abstraction**: Provider interfaces allow swapping local ↔ cloud storage
+3. **Security First**: CSP model works identically in dev and prod
+4. **Config-Driven**: Environment variables control which providers are used
 
 ---
 
 ## Success Criteria
 
 ```
-1. User requests a UI via SMS (e.g., "make me a grocery list")
+1. User requests a UI via SMS (e.g., "make me a grocery list for stir fry")
 2. LLM generates HTML/JS for the requested interface
 3. User receives a short link in the SMS response
 4. Link opens a functional, interactive page (served via app with CSP headers)
 5. Page state persists across browser refreshes (localStorage, namespaced by pageId)
 6. Page cannot make any network requests (CSP enforced via HTTP response header; meta CSP as defense-in-depth)
-7. Links auto-expire after 7 days
+7. Links auto-expire after configurable TTL (default 7 days)
 ```
 
 ---
 
 ## Scope
 
-### In Scope
-- [ ] S3 bucket setup (private, with lifecycle rules, SSE encryption)
+### Phase 4a: Local Development (MVP)
+- [ ] Storage provider abstraction (interface for upload/fetch)
+- [ ] Local file storage provider (`./data/pages/{uuid}/index.html`)
+- [ ] In-memory URL shortener with optional JSON persistence
 - [ ] CSP security wrapper for LLM-generated code (HTTP header + meta tag)
-- [ ] S3 upload with UUID-based paths
-- [ ] Persistent URL shortener store (Redis *or* DynamoDB TTL) (`/u/:id` → serve page)
-- [ ] 7-day TTL with auto-cleanup
-- [ ] Abuse controls (Twilio signature verification, rate limits, quotas)
 - [ ] Output validation (size limits, forbidden patterns)
+- [ ] Page serve route (`/u/:id`) with security headers
+- [ ] LLM tool for generating UI (`generate_ui`)
+
+### Phase 4b: Production Infrastructure
+- [ ] S3 storage provider (private bucket, lifecycle rules, SSE encryption)
+- [ ] Redis URL shortener provider (TTL-based expiry)
+- [ ] Abuse controls (Twilio signature verification, rate limits, quotas)
+- [ ] AWS IAM setup with minimal permissions
+
+### Phase 4c: Enhancements
 - [ ] Optional export/import of page state (clipboard / textarea; no network)
 - [ ] Print-friendly CSS support (LLM includes @media print)
 
@@ -274,25 +291,262 @@ Even if the LLM is tricked into generating malicious code:
 ```
 src/
 ├── index.ts              # Express entry (add /u/:id route)
-├── config.ts             # Add AWS + Redis config
+├── config.ts             # Add storage provider config
 ├── routes/
-│   ├── sms.ts            # Existing SMS webhook (add Twilio signature check)
-│   └── redirect.ts       # NEW: Page serve route
+│   ├── sms.ts            # Existing SMS webhook
+│   └── pages.ts          # NEW: Page serve route (/u/:id)
 ├── middleware/
-│   └── rateLimit.ts      # NEW: Rate limiting middleware
+│   └── rateLimit.ts      # NEW: Rate limiting middleware (Phase 4b)
 └── ui/                   # NEW: UI generation module
     ├── index.ts          # Main export: generatePage()
     ├── generator.ts      # CSP wrapper + sanitization
-    ├── validator.ts      # NEW: Output validation + forbidden patterns
-    ├── uploader.ts       # S3 upload
-    └── shortener.ts      # Redis (or DynamoDB) URL shortener with TTL
+    ├── validator.ts      # Output validation + forbidden patterns
+    ├── providers/        # Storage abstraction layer
+    │   ├── types.ts      # Provider interfaces
+    │   ├── local-storage.ts    # Local file storage (Phase 4a)
+    │   ├── memory-shortener.ts # In-memory shortener (Phase 4a)
+    │   ├── s3-storage.ts       # S3 storage (Phase 4b)
+    │   └── redis-shortener.ts  # Redis shortener (Phase 4b)
+    └── provider-factory.ts     # Creates providers based on config
 ```
 
 ### 2. Dependencies
 
+**Phase 4a (Local Development):**
+```bash
+# No additional dependencies needed - uses Node.js fs
+```
+
+**Phase 4b (Production):**
 ```bash
 npm install @aws-sdk/client-s3 ioredis
 npm install --save-dev @types/ioredis
+```
+
+### 3. Provider Interfaces (`src/ui/providers/types.ts`)
+
+```typescript
+/**
+ * Storage provider for generated HTML pages.
+ * Implementations: LocalFileStorage (dev), S3Storage (prod)
+ */
+export interface PageStorage {
+  /**
+   * Upload HTML content and return identifiers
+   */
+  upload(html: string): Promise<{ pageId: string; key: string }>;
+
+  /**
+   * Fetch HTML content by key
+   */
+  fetch(key: string): Promise<string>;
+}
+
+/**
+ * URL shortener provider for page links.
+ * Implementations: MemoryShortener (dev), RedisShortener (prod)
+ */
+export interface UrlShortener {
+  /**
+   * Create a short URL mapping
+   */
+  create(pageId: string, key: string, ttlDays: number): Promise<string>;
+
+  /**
+   * Resolve a short URL to its page info, or null if expired/not found
+   */
+  resolve(id: string): Promise<{ pageId: string; key: string } | null>;
+}
+
+export type ShortUrlEntry = {
+  pageId: string;
+  key: string;
+  createdAt: number;
+  expiresAt: number;
+};
+```
+
+### 4. Local File Storage (`src/ui/providers/local-storage.ts`)
+
+```typescript
+import { mkdir, writeFile, readFile } from 'fs/promises';
+import { join } from 'path';
+import { randomUUID } from 'crypto';
+import type { PageStorage } from './types.js';
+
+export class LocalFileStorage implements PageStorage {
+  private basePath: string;
+
+  constructor(basePath: string = './data/pages') {
+    this.basePath = basePath;
+  }
+
+  async upload(html: string): Promise<{ pageId: string; key: string }> {
+    const pageId = randomUUID();
+    const key = `${pageId}/index.html`;
+    const dirPath = join(this.basePath, pageId);
+    const filePath = join(dirPath, 'index.html');
+
+    // Ensure directory exists
+    await mkdir(dirPath, { recursive: true });
+
+    // Write HTML file
+    await writeFile(filePath, html, 'utf-8');
+
+    return { pageId, key };
+  }
+
+  async fetch(key: string): Promise<string> {
+    const filePath = join(this.basePath, key);
+    return readFile(filePath, 'utf-8');
+  }
+}
+```
+
+### 5. In-Memory URL Shortener (`src/ui/providers/memory-shortener.ts`)
+
+```typescript
+import { randomBytes } from 'crypto';
+import { readFile, writeFile, mkdir } from 'fs/promises';
+import { dirname } from 'path';
+import type { UrlShortener, ShortUrlEntry } from './types.js';
+
+/**
+ * In-memory URL shortener with optional JSON file persistence.
+ * Suitable for development; entries survive restarts if persistPath is set.
+ */
+export class MemoryShortener implements UrlShortener {
+  private store = new Map<string, ShortUrlEntry>();
+  private persistPath?: string;
+  private loaded = false;
+
+  constructor(persistPath?: string) {
+    this.persistPath = persistPath;
+  }
+
+  private async ensureLoaded(): Promise<void> {
+    if (this.loaded || !this.persistPath) return;
+
+    try {
+      const data = await readFile(this.persistPath, 'utf-8');
+      const entries = JSON.parse(data) as Record<string, ShortUrlEntry>;
+      const now = Date.now();
+
+      // Load non-expired entries
+      for (const [id, entry] of Object.entries(entries)) {
+        if (entry.expiresAt > now) {
+          this.store.set(id, entry);
+        }
+      }
+    } catch {
+      // File doesn't exist yet, that's fine
+    }
+
+    this.loaded = true;
+  }
+
+  private async persist(): Promise<void> {
+    if (!this.persistPath) return;
+
+    const entries: Record<string, ShortUrlEntry> = {};
+    for (const [id, entry] of this.store.entries()) {
+      entries[id] = entry;
+    }
+
+    await mkdir(dirname(this.persistPath), { recursive: true });
+    await writeFile(this.persistPath, JSON.stringify(entries, null, 2));
+  }
+
+  async create(pageId: string, key: string, ttlDays: number): Promise<string> {
+    await this.ensureLoaded();
+
+    const id = randomBytes(10).toString('base64url'); // ~80 bits
+    const now = Date.now();
+    const entry: ShortUrlEntry = {
+      pageId,
+      key,
+      createdAt: now,
+      expiresAt: now + ttlDays * 24 * 60 * 60 * 1000,
+    };
+
+    this.store.set(id, entry);
+    await this.persist();
+
+    return id;
+  }
+
+  async resolve(id: string): Promise<{ pageId: string; key: string } | null> {
+    await this.ensureLoaded();
+
+    const entry = this.store.get(id);
+    if (!entry) return null;
+
+    // Check expiry
+    if (Date.now() > entry.expiresAt) {
+      this.store.delete(id);
+      await this.persist();
+      return null;
+    }
+
+    return { pageId: entry.pageId, key: entry.key };
+  }
+}
+```
+
+### 6. Provider Factory (`src/ui/provider-factory.ts`)
+
+```typescript
+import type { PageStorage, UrlShortener } from './providers/types.js';
+import { LocalFileStorage } from './providers/local-storage.js';
+import { MemoryShortener } from './providers/memory-shortener.js';
+// Phase 4b imports (uncomment when implementing):
+// import { S3Storage } from './providers/s3-storage.js';
+// import { RedisShortener } from './providers/redis-shortener.js';
+import config from '../config.js';
+
+let storageInstance: PageStorage | null = null;
+let shortenerInstance: UrlShortener | null = null;
+
+export function getStorage(): PageStorage {
+  if (!storageInstance) {
+    const provider = config.ui?.storageProvider || 'local';
+
+    switch (provider) {
+      case 'local':
+        storageInstance = new LocalFileStorage(config.ui?.localStoragePath || './data/pages');
+        break;
+      case 's3':
+        // Phase 4b: uncomment when S3 provider is implemented
+        // storageInstance = new S3Storage({
+        //   region: config.aws.region,
+        //   bucket: config.aws.s3Bucket,
+        // });
+        throw new Error('S3 storage provider not yet implemented');
+      default:
+        throw new Error(`Unknown storage provider: ${provider}`);
+    }
+  }
+  return storageInstance;
+}
+
+export function getShortener(): UrlShortener {
+  if (!shortenerInstance) {
+    const provider = config.ui?.shortenerProvider || 'memory';
+
+    switch (provider) {
+      case 'memory':
+        shortenerInstance = new MemoryShortener(config.ui?.shortenerPersistPath);
+        break;
+      case 'redis':
+        // Phase 4b: uncomment when Redis provider is implemented
+        // shortenerInstance = new RedisShortener(config.redis.url);
+        throw new Error('Redis shortener provider not yet implemented');
+      default:
+        throw new Error(`Unknown shortener provider: ${provider}`);
+    }
+  }
+  return shortenerInstance;
+}
 ```
 
 ### 3. CSP Wrapper (`src/ui/generator.ts`)
@@ -431,136 +685,28 @@ export function validateOutput(content: {
 }
 ```
 
-### 5. S3 Uploader (`src/ui/uploader.ts`)
-
-```typescript
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
-import { randomUUID } from 'crypto';
-
-export class UIUploader {
-  private s3: S3Client;
-  private bucket: string;
-
-  constructor(config: { region: string; bucket: string }) {
-    this.s3 = new S3Client({ region: config.region });
-    this.bucket = config.bucket;
-  }
-
-  async upload(html: string): Promise<{ pageId: string; s3Key: string }> {
-    const pageId = randomUUID();
-    const s3Key = `pages/${pageId}/index.html`;
-
-    // Upload the HTML (SSE-S3 encryption applied via bucket default)
-    await this.s3.send(new PutObjectCommand({
-      Bucket: this.bucket,
-      Key: s3Key,
-      Body: html,
-      ContentType: 'text/html; charset=utf-8',
-    }));
-
-    return { pageId, s3Key };
-  }
-
-  async fetch(s3Key: string): Promise<string> {
-    const response = await this.s3.send(new GetObjectCommand({
-      Bucket: this.bucket,
-      Key: s3Key,
-    }));
-
-    return await response.Body!.transformToString();
-  }
-}
-```
-
-### 6. URL Shortener (`src/ui/shortener.ts`) — Redis-backed
-
-```typescript
-import { randomBytes } from 'crypto';
-import Redis from 'ioredis';
-
-let redis: Redis | null = null;
-
-function getRedis(): Redis {
-  if (!redis) {
-    redis = new Redis(process.env.REDIS_URL!);
-  }
-  return redis;
-}
-
-type ShortUrlEntry = {
-  pageId: string;
-  s3Key: string;
-};
-
-export async function createShortUrl(
-  pageId: string,
-  s3Key: string,
-  ttlDays: number
-): Promise<string> {
-  const id = randomBytes(10).toString('base64url'); // ~80 bits
-  const ttlSeconds = ttlDays * 24 * 60 * 60;
-
-  const entry: ShortUrlEntry = { pageId, s3Key };
-
-  // Redis SET with EX (expiry in seconds) and NX (only if not exists)
-  await getRedis().set(
-    `u:${id}`,
-    JSON.stringify(entry),
-    'EX',
-    ttlSeconds,
-    'NX'
-  );
-
-  return id;
-}
-
-export async function resolveShortUrl(id: string): Promise<ShortUrlEntry | null> {
-  const raw = await getRedis().get(`u:${id}`);
-  if (!raw) return null;
-  return JSON.parse(raw) as ShortUrlEntry;
-}
-
-// Optional: one-time links (consume on first successful resolve)
-export async function resolveAndConsumeShortUrl(id: string): Promise<ShortUrlEntry | null> {
-  const raw = await getRedis().getdel(`u:${id}`);
-  if (!raw) return null;
-  return JSON.parse(raw) as ShortUrlEntry;
-}
-```
-
-### 7. Page Serve Route (`src/routes/redirect.ts`)
+### 7. Page Serve Route (`src/routes/pages.ts`)
 
 ```typescript
 import { Router } from 'express';
-import { resolveShortUrl } from '../ui/shortener.js';
-import { UIUploader } from '../ui/uploader.js';
+import { getStorage, getShortener } from '../ui/provider-factory.js';
 import { CSP_POLICY } from '../ui/generator.js';
-import config from '../config.js';
 
 const router = Router();
 
-let uploader: UIUploader | null = null;
-
-function getUploader(): UIUploader {
-  if (!uploader) {
-    uploader = new UIUploader({
-      region: config.aws.region,
-      bucket: config.aws.s3Bucket,
-    });
-  }
-  return uploader;
-}
-
 router.get('/u/:id', async (req, res) => {
   try {
-    const resolved = await resolveShortUrl(req.params.id);
+    const shortener = getShortener();
+    const storage = getStorage();
+
+    const resolved = await shortener.resolve(req.params.id);
 
     if (!resolved) {
       return res.status(404).send('Link expired or not found');
     }
 
-    // Fetch HTML from S3 server-side
-    const html = await getUploader().fetch(resolved.s3Key);
+    // Fetch HTML from storage (local file or S3, depending on config)
+    const html = await storage.fetch(resolved.key);
 
     // Set security headers (stronger than meta CSP alone)
     res.setHeader('Content-Security-Policy', CSP_POLICY);
@@ -586,20 +732,7 @@ export default router;
 import config from '../config.js';
 import { wrapWithSecurityShell } from './generator.js';
 import { validateOutput } from './validator.js';
-import { UIUploader } from './uploader.js';
-import { createShortUrl } from './shortener.js';
-
-let uploader: UIUploader | null = null;
-
-function getUploader(): UIUploader {
-  if (!uploader) {
-    uploader = new UIUploader({
-      region: config.aws.region,
-      bucket: config.aws.s3Bucket,
-    });
-  }
-  return uploader;
-}
+import { getStorage, getShortener } from './provider-factory.js';
 
 export async function generatePage(options: {
   title: string;
@@ -608,7 +741,7 @@ export async function generatePage(options: {
   js?: string;
   ttlDays?: number;
 }): Promise<{ shortUrl: string; pageId: string } | { error: string }> {
-  const ttlDays = options.ttlDays ?? config.pageTtlDays;
+  const ttlDays = options.ttlDays ?? config.ui?.pageTtlDays ?? 7;
 
   // Validate output before processing
   const validation = validateOutput({
@@ -621,24 +754,107 @@ export async function generatePage(options: {
     return { error: validation.reason };
   }
 
-  // Upload first to get pageId
-  const { pageId, s3Key } = await getUploader().upload(''); // Placeholder, will update
+  const storage = getStorage();
+  const shortener = getShortener();
+
+  // Generate a temporary pageId for the security shell
+  const tempPageId = crypto.randomUUID();
 
   // Wrap content with CSP security shell (includes pageId for localStorage namespacing)
   const wrappedHtml = wrapWithSecurityShell(
     { html: options.html, css: options.css, js: options.js },
     options.title,
-    pageId
+    tempPageId
   );
 
-  // Actually upload the wrapped HTML
-  await getUploader().upload(wrappedHtml);
+  // Upload the wrapped HTML
+  const { pageId, key } = await storage.upload(wrappedHtml);
 
-  // Create short URL (stores pageId + s3Key, not presigned URL)
-  const shortId = await createShortUrl(pageId, s3Key, ttlDays);
+  // Create short URL
+  const shortId = await shortener.create(pageId, key, ttlDays);
   const shortUrl = `${config.baseUrl}/u/${shortId}`;
 
   return { shortUrl, pageId };
+}
+```
+
+---
+
+## Phase 4b: Production Providers (S3 + Redis)
+
+### S3 Storage Provider (`src/ui/providers/s3-storage.ts`)
+
+```typescript
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { randomUUID } from 'crypto';
+import type { PageStorage } from './types.js';
+
+export class S3Storage implements PageStorage {
+  private s3: S3Client;
+  private bucket: string;
+
+  constructor(config: { region: string; bucket: string }) {
+    this.s3 = new S3Client({ region: config.region });
+    this.bucket = config.bucket;
+  }
+
+  async upload(html: string): Promise<{ pageId: string; key: string }> {
+    const pageId = randomUUID();
+    const key = `pages/${pageId}/index.html`;
+
+    // Upload the HTML (SSE-S3 encryption applied via bucket default)
+    await this.s3.send(new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      Body: html,
+      ContentType: 'text/html; charset=utf-8',
+    }));
+
+    return { pageId, key };
+  }
+
+  async fetch(key: string): Promise<string> {
+    const response = await this.s3.send(new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+    }));
+
+    return await response.Body!.transformToString();
+  }
+}
+```
+
+### Redis Shortener Provider (`src/ui/providers/redis-shortener.ts`)
+
+```typescript
+import { randomBytes } from 'crypto';
+import Redis from 'ioredis';
+import type { UrlShortener } from './types.js';
+
+export class RedisShortener implements UrlShortener {
+  private redis: Redis;
+
+  constructor(redisUrl: string) {
+    this.redis = new Redis(redisUrl);
+  }
+
+  async create(pageId: string, key: string, ttlDays: number): Promise<string> {
+    const id = randomBytes(10).toString('base64url'); // ~80 bits
+    const ttlSeconds = ttlDays * 24 * 60 * 60;
+
+    const entry = JSON.stringify({ pageId, key });
+
+    // Redis SET with EX (expiry in seconds)
+    await this.redis.set(`u:${id}`, entry, 'EX', ttlSeconds);
+
+    return id;
+  }
+
+  async resolve(id: string): Promise<{ pageId: string; key: string } | null> {
+    const raw = await this.redis.get(`u:${id}`);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  }
 }
 ```
 
@@ -727,25 +943,45 @@ aws s3api put-bucket-policy \
 
 ## Environment Variables
 
+### Phase 4a (Local Development)
+
 Add to `.env`:
 
 ```bash
+# App Settings
+BASE_URL=http://localhost:3000
+PAGE_TTL_DAYS=7
+
+# UI Storage (defaults work for local dev)
+UI_STORAGE_PROVIDER=local              # 'local' (default) or 's3'
+UI_LOCAL_STORAGE_PATH=./data/pages     # Local file storage path
+UI_SHORTENER_PROVIDER=memory           # 'memory' (default) or 'redis'
+UI_SHORTENER_PERSIST_PATH=./data/shortener.json  # Optional: persist links across restarts
+```
+
+### Phase 4b (Production)
+
+Add to `.env`:
+
+```bash
+# App Settings
+BASE_URL=https://your-railway-app.railway.app
+PAGE_TTL_DAYS=7
+
+# UI Storage - Production
+UI_STORAGE_PROVIDER=s3
+UI_SHORTENER_PROVIDER=redis
+
 # AWS Credentials
 AWS_REGION=us-east-1
 AWS_ACCESS_KEY_ID=AKIA...
 AWS_SECRET_ACCESS_KEY=...
-
-# S3 Bucket
 AWS_S3_BUCKET=hermes-generated-pages
 
 # Redis (Railway addon or external)
 REDIS_URL=redis://default:password@host:port
 
-# App Settings
-PAGE_TTL_DAYS=7
-BASE_URL=https://your-railway-app.railway.app
-
-# Rate Limiting
+# Rate Limiting (Phase 4b)
 RATE_LIMIT_PAGES_PER_DAY_PER_NUMBER=5
 RATE_LIMIT_GLOBAL_PAGES_PER_MINUTE=20
 ```
@@ -809,48 +1045,80 @@ RATE_LIMIT_GLOBAL_PAGES_PER_MINUTE=20
 
 ## Implementation Phases
 
-### Phase 3a: Infrastructure
-1. Create S3 bucket with lifecycle rules + encryption + TLS enforcement
-2. Create IAM user with minimal permissions
-3. Set up Redis (Railway addon)
-4. Configure environment variables
+### Phase 4a: Local Development (MVP)
 
-### Phase 3b: Core Module
-1. Implement `src/ui/generator.ts` (CSP wrapper with sanitization)
-2. Implement `src/ui/validator.ts` (output validation + forbidden patterns)
-3. Implement `src/ui/uploader.ts` (S3 upload)
-4. Implement `src/ui/shortener.ts` (Redis-backed URL shortener)
-5. Implement `src/ui/index.ts` (unified API)
-6. Add AWS + Redis config to `src/config.ts`
+**Goal:** Working UI generation on localhost with no cloud dependencies.
 
-### Phase 3c: Routes
-1. Implement `src/routes/redirect.ts` (page serve with CSP headers)
-2. Register `/u/:id` route in `src/index.ts`
-3. Add Twilio signature verification to SMS webhook
+1. **Provider Abstraction**
+   - Implement `src/ui/providers/types.ts` (interfaces)
+   - Implement `src/ui/providers/local-storage.ts` (file-based storage)
+   - Implement `src/ui/providers/memory-shortener.ts` (in-memory with optional persistence)
+   - Implement `src/ui/provider-factory.ts` (config-driven provider selection)
 
-### Phase 3d: Integration
-1. Add LLM integration (builds on Phase 2 messaging foundation)
-2. Add `generate_ui` tool for LLM (prompt enforces localStorage namespacing + no-network constraints)
-3. Update SMS handler to call UI generation
-4. End-to-end testing
+2. **Core Module**
+   - Implement `src/ui/generator.ts` (CSP wrapper with sanitization)
+   - Implement `src/ui/validator.ts` (output validation + forbidden patterns)
+   - Implement `src/ui/index.ts` (unified API using providers)
+   - Add UI config section to `src/config.ts`
 
-### Phase 3e: Abuse Controls
-1. Verify Twilio signature on incoming webhooks
-2. Implement rate limiting middleware (per phone number and global)
-3. Enforce max output size and timeouts
-4. Add friendly error SMS for quota exceeded
+3. **Routes**
+   - Implement `src/routes/pages.ts` (page serve with CSP headers)
+   - Register `/u/:id` route in `src/index.ts`
+
+4. **LLM Integration**
+   - Add `generate_ui` tool for LLM
+   - Tool prompt enforces localStorage namespacing + no-network constraints
+   - Test with grocery list use case
+
+5. **Manual Testing**
+   - Generate grocery list via local endpoint
+   - Verify page loads at `http://localhost:3000/u/{id}`
+   - Verify localStorage persistence works
+   - Verify CSP blocks network requests in DevTools
+
+### Phase 4b: Production Infrastructure
+
+**Goal:** Swap local providers for cloud-backed (S3 + Redis) with no code changes.
+
+1. **Cloud Providers**
+   - Implement `src/ui/providers/s3-storage.ts`
+   - Implement `src/ui/providers/redis-shortener.ts`
+   - Update `provider-factory.ts` to enable S3/Redis
+
+2. **AWS Setup**
+   - Create S3 bucket with lifecycle rules + encryption + TLS enforcement
+   - Create IAM user with minimal permissions
+   - Set up Redis (Railway addon)
+
+3. **Abuse Controls**
+   - Add Twilio signature verification to SMS webhook
+   - Implement rate limiting middleware (per phone number and global)
+   - Enforce max output size and timeouts
+   - Add friendly error SMS for quota exceeded
+
+4. **Environment Configuration**
+   - Update Railway environment variables
+   - Test with production providers
+
+### Phase 4c: Enhancements
+
+**Goal:** Polish and additional features.
+
+1. Export/import page state via clipboard
+2. Print-friendly CSS support
+3. Better error handling and user feedback
 
 ---
 
-## Transition to Phase 4
+## Future Phases (Phase 5+)
 
-Phase 3 establishes the secure UI generation foundation. Future enhancements:
+Phase 4 establishes the secure UI generation foundation. Future enhancements:
 
-- **Phase 4a**: Template library (faster generation, consistent styling)
-- **Phase 4b**: Backend integration (authenticated API calls from pages)
-- **Phase 4c**: Collaborative pages (shared state via WebSocket)
-- **Phase 4d**: Page analytics (view counts, interaction tracking)
-- **Phase 4e**: PIN gate for sensitive pages (optional access control)
+- **Phase 5a**: Template library (faster generation, consistent styling)
+- **Phase 5b**: Backend integration (authenticated API calls from pages)
+- **Phase 5c**: Collaborative pages (shared state via WebSocket)
+- **Phase 5d**: Page analytics (view counts, interaction tracking)
+- **Phase 5e**: PIN gate for sensitive pages (optional access control)
 
 ---
 
@@ -861,3 +1129,4 @@ Phase 3 establishes the secure UI generation foundation. Future enhancements:
 | 1.0 | 2025-01-11 | Initial Phase 2 spec |
 | 1.1 | 2025-01-11 | Simplified to S3-only (removed CloudFront/Lambda@Edge) |
 | 2.0 | 2025-01-11 | Major revision: Redis persistence, server-side page serving with CSP headers, hardened CSP (navigate-to, base-uri, frame-ancestors), enhanced sanitization, output validation, abuse controls, S3 security hardening, localStorage namespacing, ~80-bit short URL IDs, export/import + print support |
+| 3.0 | 2025-01-18 | Renamed to Phase 4. Added storage provider abstraction for incremental development. Phase 4a: local file storage + memory shortener for dev. Phase 4b: S3 + Redis for production. Config-driven provider selection. |

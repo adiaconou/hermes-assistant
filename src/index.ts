@@ -11,6 +11,7 @@
 import express from 'express';
 import config from './config.js';
 import smsRouter from './routes/sms.js';
+import pagesRouter from './routes/pages.js';
 
 const app = express();
 
@@ -27,6 +28,9 @@ app.get('/health', (_req, res) => {
 
 // SMS routes
 app.use(smsRouter);
+
+// Generated UI pages route
+app.use(pagesRouter);
 
 app.listen(config.port, () => {
   console.log(

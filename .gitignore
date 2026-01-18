@@ -29,3 +29,6 @@ coverage/
 # Temporary files
 tmp/
 temp/
+
+# Local UI generation data (Phase 4a)
+data/
