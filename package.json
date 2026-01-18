@@ -7,7 +7,9 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "tsx watch src/index.ts",
+    "dev": "concurrently -n server,tunnel -c blue,green \"npm run dev:server\" \"npm run dev:tunnel\"",
+    "dev:server": "tsx watch src/index.ts",
+    "dev:tunnel": "$HOME/.local/bin/ngrok http 3000",
     "lint": "eslint src/",
     "test": "vitest"
   },
@@ -20,12 +22,16 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
+    "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
-    "typescript": "^5.7.0",
+    "concurrently": "^9.2.1",
     "tsx": "^4.0.0",
+    "typescript": "^5.7.0",
     "vitest": "^2.0.0"
   },
-  "dependencies": {},
+  "dependencies": {
+    "express": "^4.21.0"
+  },
   "engines": {
     "node": ">=20.0.0"
   }
