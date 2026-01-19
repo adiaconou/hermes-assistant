@@ -149,7 +149,18 @@ When generating UI:
 4. Keep it simple and functional
 5. Size limits: HTML ${sizeLimits.html} bytes, CSS ${sizeLimits.css} bytes, JS ${sizeLimits.js} bytes
 
-Example: For a grocery list, create checkboxes that save their state when clicked.`;
+Example: For a grocery list, create checkboxes that save their state when clicked.
+
+## Before Sharing UI URLs
+
+After calling generate_ui, mentally review your code:
+- Is the HTML structure valid (proper nesting, closed tags)?
+- Does the JavaScript have syntax errors (typos, missing brackets)?
+- Did you implement all requested functionality?
+- Will it work on mobile (touch-friendly, responsive)?
+- Does state management use hermesLoadState/hermesSaveState correctly?
+
+If you spot issues, call generate_ui again with fixes. Only share the URL once confident the page works.`;
 
 /**
  * Tool definitions for the LLM.
@@ -307,8 +318,21 @@ export async function generateResponse(
 
   // Handle tool use loop
   let loopCount = 0;
+  const MAX_TOOL_LOOPS = 5;
+
   while (response.stop_reason === 'tool_use') {
     loopCount++;
+
+    if (loopCount > MAX_TOOL_LOOPS) {
+      console.warn(JSON.stringify({
+        level: 'warn',
+        message: 'Tool loop limit reached',
+        loopCount,
+        timestamp: new Date().toISOString(),
+      }));
+      break;
+    }
+
     console.log(JSON.stringify({
       level: 'info',
       message: 'Processing tool use loop',
