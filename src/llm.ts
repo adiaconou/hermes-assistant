@@ -172,7 +172,18 @@ The tool response includes generatedCode with your html, css, and js. Review thi
 - Does the JavaScript have syntax errors?
 - Does state management use hermesLoadState/hermesSaveState correctly?
 
-If you find issues in generatedCode, call generate_ui again with fixes before sharing the URL.`;
+If you find issues in generatedCode, call generate_ui again with fixes before sharing the URL.
+
+## Response Format After UI Generation
+
+Keep your response SHORT. Just confirm what you made and share the link. Example:
+"Here's your grocery list for lasagna: [link]"
+
+Do NOT:
+- List features of the UI
+- Explain how to use it
+- Add filler like "I've included all the essentials"
+- Describe what tabs or buttons do`;
 
 /**
  * Tool definitions for the LLM.
