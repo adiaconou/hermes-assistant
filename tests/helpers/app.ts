@@ -8,6 +8,7 @@
 import express from 'express';
 import smsRouter from '../../src/routes/sms.js';
 import pagesRouter from '../../src/routes/pages.js';
+import authRouter from '../../src/routes/auth.js';
 
 /**
  * Create a test Express app with all routes configured.
@@ -28,6 +29,9 @@ export function createTestApp(): express.Application {
 
   // SMS routes
   app.use(smsRouter);
+
+  // Auth routes (OAuth flow)
+  app.use(authRouter);
 
   // Generated UI pages route
   app.use(pagesRouter);

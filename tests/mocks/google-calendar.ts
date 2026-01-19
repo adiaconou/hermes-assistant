@@ -1,0 +1,139 @@
+/**
+ * Mock for googleapis module (Google Calendar).
+ *
+ * Provides configurable mock responses for testing calendar operations
+ * without making real API calls.
+ */
+
+import { vi } from 'vitest';
+
+/**
+ * Mock calendar event structure.
+ */
+export interface MockCalendarEvent {
+  id: string;
+  summary: string;
+  start: { dateTime?: string; date?: string };
+  end: { dateTime?: string; date?: string };
+  location?: string;
+}
+
+// Mock state
+let mockEvents: MockCalendarEvent[] = [];
+let listCallCount = 0;
+let insertCallCount = 0;
+let lastInsertedEvent: Partial<MockCalendarEvent> | null = null;
+let shouldFailRefresh = false;
+
+/**
+ * Set the mock events to return from events.list().
+ */
+export function setMockEvents(events: MockCalendarEvent[]): void {
+  mockEvents = [...events];
+}
+
+/**
+ * Set whether token refresh should fail.
+ */
+export function setShouldFailRefresh(fail: boolean): void {
+  shouldFailRefresh = fail;
+}
+
+/**
+ * Get call counts for assertions.
+ */
+export function getCallCounts(): { list: number; insert: number } {
+  return { list: listCallCount, insert: insertCallCount };
+}
+
+/**
+ * Get the last inserted event.
+ */
+export function getLastInsertedEvent(): Partial<MockCalendarEvent> | null {
+  return lastInsertedEvent;
+}
+
+/**
+ * Clear mock state. Call this in beforeEach.
+ */
+export function clearMockState(): void {
+  mockEvents = [];
+  listCallCount = 0;
+  insertCallCount = 0;
+  lastInsertedEvent = null;
+  shouldFailRefresh = false;
+}
+
+// Mock calendar.events.list
+const mockEventsList = vi.fn(async () => {
+  listCallCount++;
+  return {
+    data: {
+      items: mockEvents,
+    },
+  };
+});
+
+// Mock calendar.events.insert
+const mockEventsInsert = vi.fn(async (params: { requestBody: Partial<MockCalendarEvent> }) => {
+  insertCallCount++;
+  const event = params.requestBody;
+  lastInsertedEvent = event;
+  return {
+    data: {
+      id: 'new-event-id',
+      summary: event.summary,
+      start: event.start,
+      end: event.end,
+      location: event.location,
+    },
+  };
+});
+
+// Mock calendar object
+const mockCalendar = {
+  events: {
+    list: mockEventsList,
+    insert: mockEventsInsert,
+  },
+};
+
+// Mock OAuth2 client
+const mockRefreshAccessToken = vi.fn(async () => {
+  if (shouldFailRefresh) {
+    throw new Error('Token has been revoked');
+  }
+  return {
+    credentials: {
+      access_token: 'new-access-token',
+      expiry_date: Date.now() + 3600000,
+    },
+  };
+});
+
+const mockSetCredentials = vi.fn();
+
+const mockGenerateAuthUrl = vi.fn((options: { scope: string[]; state?: string }) => {
+  return `https://accounts.google.com/o/oauth2/auth?scope=${options.scope.join('+')}&state=${options.state || ''}`;
+});
+
+class MockOAuth2 {
+  setCredentials = mockSetCredentials;
+  refreshAccessToken = mockRefreshAccessToken;
+  generateAuthUrl = mockGenerateAuthUrl;
+}
+
+// Mock google object
+const mockGoogle = {
+  auth: {
+    OAuth2: MockOAuth2,
+  },
+  calendar: vi.fn(() => mockCalendar),
+};
+
+// Set up the module mock
+vi.mock('googleapis', () => ({
+  google: mockGoogle,
+}));
+
+export { mockGoogle, mockEventsList, mockEventsInsert, mockSetCredentials, mockRefreshAccessToken, mockGenerateAuthUrl };

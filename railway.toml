@@ -8,3 +8,8 @@ healthcheckPath = "/health"
 healthcheckTimeout = 100
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
+
+# Persistent storage for credentials database
+[[mounts]]
+source = "data"
+destination = "/app/data"

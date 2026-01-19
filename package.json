@@ -26,6 +26,7 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/dotenv": "^6.1.1",
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
@@ -38,8 +39,10 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
+    "better-sqlite3": "^12.6.2",
     "dotenv": "^17.2.3",
     "express": "^4.21.0",
+    "googleapis": "^170.1.0",
     "twilio": "^5.11.2"
   },
   "engines": {

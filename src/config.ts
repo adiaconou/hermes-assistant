@@ -32,6 +32,23 @@ const config = {
     phoneNumber: process.env.TWILIO_PHONE_NUMBER,
   },
 
+  /** Google OAuth configuration */
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/auth/google/callback',
+  },
+
+  /** Credential storage configuration */
+  credentials: {
+    /** Storage provider: 'sqlite' (default) or 'memory' (tests only) */
+    provider: (process.env.CREDENTIAL_STORE_PROVIDER || 'sqlite') as 'sqlite' | 'memory',
+    /** Path to SQLite database file */
+    sqlitePath: process.env.CREDENTIAL_STORE_SQLITE_PATH || './data/credentials.db',
+    /** Encryption key for tokens at rest (32-byte hex string) */
+    encryptionKey: process.env.CREDENTIAL_ENCRYPTION_KEY,
+  },
+
   /** Base URL for generating short links */
   baseUrl: process.env.BASE_URL || 'http://localhost:3000',
 
