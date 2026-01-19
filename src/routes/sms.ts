@@ -1,13 +1,14 @@
 /**
  * SMS/WhatsApp Webhook Route
  *
- * Handles inbound messages from Twilio using an ASYNC response pattern:
+ * Handles inbound messages from Twilio using a SYNC classification pattern:
  * 1. Receive webhook from Twilio
- * 2. Return empty TwiML immediately (acknowledges receipt)
- * 3. Process message in background (LLM call, tool use, etc.)
- * 4. Send response via Twilio REST API
+ * 2. Classify message synchronously (fast LLM call)
+ * 3. Return TwiML with immediate response
+ * 4. If async work needed, spawn background processing for full response
  *
- * This avoids Twilio's 15-second webhook timeout for long-running operations.
+ * Classification is fast (<5s typically) and provides a meaningful immediate
+ * response. Heavy work (UI generation, complex queries) runs asynchronously.
  */
 import { Router, Request, Response } from 'express';
 import { generateResponse, classifyMessage } from '../llm.js';
@@ -58,6 +59,16 @@ function stripPrefix(address: string): string {
 function sanitizePhone(phone: string): string {
   if (phone.length < 4) return '****';
   return '***' + phone.slice(-4);
+}
+
+/** Escapes special XML characters for safe TwiML embedding. */
+function escapeXml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 }
 
 /**
@@ -128,102 +139,14 @@ async function processAsyncWork(
 }
 
 /**
- * Process message with classification-based async pattern:
- * 1. Classify message to determine if async work is needed
- * 2. Send immediate response
- * 3. If async work needed, spawn background processing
- */
-async function processMessageAsync(
-  sender: string,
-  message: string,
-  channel: MessageChannel
-): Promise<void> {
-  const startTime = Date.now();
-
-  try {
-    const history = getHistory(sender);
-    console.log(JSON.stringify({
-      level: 'info',
-      message: 'Processing message with classification',
-      channel,
-      historyLength: history.length,
-      messageLength: message.length,
-      timestamp: new Date().toISOString(),
-    }));
-
-    // Step 1: Quick classification
-    const classification = await classifyMessage(message, history);
-
-    console.log(JSON.stringify({
-      level: 'info',
-      message: 'Classification complete',
-      needsAsyncWork: classification.needsAsyncWork,
-      classificationDurationMs: Date.now() - startTime,
-      timestamp: new Date().toISOString(),
-    }));
-
-    // Step 2: Send immediate response
-    await sendResponse(sender, channel, classification.immediateResponse);
-
-    // Store messages in history
-    addMessage(sender, 'user', message);
-    addMessage(sender, 'assistant', classification.immediateResponse);
-
-    console.log(JSON.stringify({
-      level: 'info',
-      message: 'Immediate response sent',
-      channel,
-      durationMs: Date.now() - startTime,
-      timestamp: new Date().toISOString(),
-    }));
-
-    // Step 3: If async work needed, continue processing
-    if (classification.needsAsyncWork) {
-      // Get updated history (includes the ack we just added)
-      const updatedHistory = getHistory(sender);
-
-      // Fire and forget - don't await
-      processAsyncWork(sender, message, channel, updatedHistory).catch((error) => {
-        console.error(JSON.stringify({
-          level: 'error',
-          message: 'Unhandled error in async work',
-          error: error instanceof Error ? error.message : String(error),
-          timestamp: new Date().toISOString(),
-        }));
-      });
-    }
-  } catch (error) {
-    console.error(JSON.stringify({
-      level: 'error',
-      message: 'Failed to process message',
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-      durationMs: Date.now() - startTime,
-      timestamp: new Date().toISOString(),
-    }));
-
-    // Try to send error message to user
-    try {
-      const errorMessage = 'Sorry, I encountered an error processing your message. Please try again.';
-      await sendResponse(sender, channel, errorMessage);
-    } catch (sendError) {
-      console.error(JSON.stringify({
-        level: 'error',
-        message: 'Failed to send error message to user',
-        error: sendError instanceof Error ? sendError.message : String(sendError),
-        timestamp: new Date().toISOString(),
-      }));
-    }
-  }
-}
-
-/**
  * POST /webhook/sms
  *
  * Twilio calls this endpoint when an SMS or WhatsApp message is received.
- * Returns empty TwiML immediately, processes message in background.
+ * Classifies message synchronously and returns TwiML with immediate response.
+ * Spawns async work if classification indicates it's needed.
  */
-router.post('/webhook/sms', (req: Request, res: Response) => {
+router.post('/webhook/sms', async (req: Request, res: Response) => {
+  const startTime = Date.now();
   const { From, Body } = req.body as TwilioWebhookBody;
 
   const channel = detectChannel(From || '');
@@ -241,21 +164,83 @@ router.post('/webhook/sms', (req: Request, res: Response) => {
     })
   );
 
-  // Return empty TwiML immediately to acknowledge receipt
-  // This prevents Twilio timeout (15s for SMS, longer for WhatsApp)
-  res.type('text/xml');
-  res.send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+  try {
+    // Get conversation history for classification
+    const history = getHistory(sender);
 
-  // Process message in background (don't await)
-  processMessageAsync(sender, message, channel).catch((error) => {
-    // This catch is a safety net - errors should be handled in processMessageAsync
-    console.error(JSON.stringify({
-      level: 'error',
-      message: 'Unhandled error in async processing',
-      error: error instanceof Error ? error.message : String(error),
+    // Classify message synchronously - this should be fast
+    const classification = await classifyMessage(message, history);
+
+    console.log(JSON.stringify({
+      level: 'info',
+      message: 'Classification complete',
+      needsAsyncWork: classification.needsAsyncWork,
+      classificationDurationMs: Date.now() - startTime,
       timestamp: new Date().toISOString(),
     }));
-  });
+
+    // Store messages in history
+    addMessage(sender, 'user', message);
+    addMessage(sender, 'assistant', classification.immediateResponse);
+
+    // Return TwiML with the immediate response
+    res.type('text/xml');
+    res.send(
+      `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(classification.immediateResponse)}</Message></Response>`
+    );
+
+    console.log(JSON.stringify({
+      level: 'info',
+      message: 'TwiML response sent',
+      channel,
+      durationMs: Date.now() - startTime,
+      timestamp: new Date().toISOString(),
+    }));
+
+    // If async work needed, spawn background processing (fire and forget)
+    if (classification.needsAsyncWork) {
+      const updatedHistory = getHistory(sender);
+
+      processAsyncWork(sender, message, channel, updatedHistory).catch((error) => {
+        console.error(JSON.stringify({
+          level: 'error',
+          message: 'Unhandled error in async work',
+          error: error instanceof Error ? error.message : String(error),
+          timestamp: new Date().toISOString(),
+        }));
+      });
+    }
+  } catch (error) {
+    console.error(JSON.stringify({
+      level: 'error',
+      message: 'Failed to classify message',
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      durationMs: Date.now() - startTime,
+      timestamp: new Date().toISOString(),
+    }));
+
+    // Fall back to generic response if classification fails
+    const fallbackMessage = "I'm processing your message and will respond shortly.";
+    addMessage(sender, 'user', message);
+    addMessage(sender, 'assistant', fallbackMessage);
+
+    res.type('text/xml');
+    res.send(
+      `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(fallbackMessage)}</Message></Response>`
+    );
+
+    // Try to process with full LLM since classification failed
+    const history = getHistory(sender);
+    processAsyncWork(sender, message, channel, history).catch((asyncError) => {
+      console.error(JSON.stringify({
+        level: 'error',
+        message: 'Async fallback processing failed',
+        error: asyncError instanceof Error ? asyncError.message : String(asyncError),
+        timestamp: new Date().toISOString(),
+      }));
+    });
+  }
 });
 
 export default router;

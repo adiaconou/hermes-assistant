@@ -24,8 +24,8 @@ describe('POST /webhook/sms', () => {
   });
 
   describe('basic response flow', () => {
-    it('should return empty TwiML response immediately', async () => {
-      // Set up mock to return a simple response
+    it('should return TwiML with immediate response from classification', async () => {
+      // Set up mock to return a simple response (no async work)
       setMockResponses([
         createTextResponse('{"needsAsyncWork": false, "immediateResponse": "Hello!"}'),
       ]);
@@ -39,10 +39,10 @@ describe('POST /webhook/sms', () => {
 
       expect(response.status).toBe(200);
       expect(response.type).toBe('text/xml');
-      expect(response.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+      expect(response.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Message>Hello!</Message></Response>');
     });
 
-    it('should process SMS messages and send response via Twilio API', async () => {
+    it('should not send via Twilio API when no async work needed', async () => {
       // Set up mock for classification (simple response, no async work)
       setMockResponses([
         createTextResponse('{"needsAsyncWork": false, "immediateResponse": "Hi there! How can I help you today?"}'),
@@ -55,36 +55,53 @@ describe('POST /webhook/sms', () => {
         .type('form')
         .send(payload);
 
-      // Wait for async processing
-      await vi.waitFor(() => {
-        const messages = getSentMessages();
-        expect(messages.length).toBeGreaterThan(0);
-      }, { timeout: 2000 });
+      // Give time for any potential async processing
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
+      // No messages should be sent via Twilio API - response is in TwiML
       const sentMessages = getSentMessages();
-      expect(sentMessages[0].to).toBe('+15551234567');
-      expect(sentMessages[0].body).toBe('Hi there! How can I help you today?');
+      expect(sentMessages.length).toBe(0);
     });
   });
 
   describe('WhatsApp messages', () => {
-    it('should handle WhatsApp messages with whatsapp: prefix', async () => {
+    it('should return TwiML response for WhatsApp messages', async () => {
       setMockResponses([
         createTextResponse('{"needsAsyncWork": false, "immediateResponse": "Hello via WhatsApp!"}'),
       ]);
 
       const payload = createWhatsAppPayload('Hi from WhatsApp', '+15551234567');
 
+      const response = await request(app)
+        .post('/webhook/sms')
+        .type('form')
+        .send(payload);
+
+      expect(response.status).toBe(200);
+      expect(response.type).toBe('text/xml');
+      expect(response.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Message>Hello via WhatsApp!</Message></Response>');
+    });
+
+    it('should send async follow-up via WhatsApp API with correct prefix', async () => {
+      // First call: classification says async work needed
+      // Second call: full response generation
+      setMockResponses([
+        createTextResponse('{"needsAsyncWork": true, "immediateResponse": "Working on it!"}'),
+        createTextResponse('Here is your WhatsApp response.'),
+      ]);
+
+      const payload = createWhatsAppPayload('Create something complex', '+15551234567');
+
       await request(app)
         .post('/webhook/sms')
         .type('form')
         .send(payload);
 
-      // Wait for async processing
+      // Wait for async response
       await vi.waitFor(() => {
         const messages = getSentMessages();
         expect(messages.length).toBeGreaterThan(0);
-      }, { timeout: 2000 });
+      }, { timeout: 5000 });
 
       const sentMessages = getSentMessages();
       // WhatsApp messages should have whatsapp: prefix
@@ -94,7 +111,7 @@ describe('POST /webhook/sms', () => {
   });
 
   describe('async work flow', () => {
-    it('should send immediate ack then full response for async work', async () => {
+    it('should return immediate ack in TwiML and send full response via API', async () => {
       // First call: classification says async work needed
       // Second call: full response generation
       setMockResponses([
@@ -104,24 +121,27 @@ describe('POST /webhook/sms', () => {
 
       const payload = createSmsPayload('Create a grocery list', '+15559999999');
 
-      await request(app)
+      const response = await request(app)
         .post('/webhook/sms')
         .type('form')
         .send(payload);
 
-      // Wait for both messages to be sent
+      // Immediate ack should be in TwiML response
+      expect(response.status).toBe(200);
+      expect(response.type).toBe('text/xml');
+      expect(response.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Message>Let me work on that!</Message></Response>');
+
+      // Wait for async follow-up message
       await vi.waitFor(() => {
         const messages = getSentMessages();
-        expect(messages.length).toBeGreaterThanOrEqual(2);
+        expect(messages.length).toBeGreaterThanOrEqual(1);
       }, { timeout: 5000 });
 
       const sentMessages = getSentMessages();
 
-      // First message is the immediate ack
-      expect(sentMessages[0].body).toBe('Let me work on that!');
-
-      // Second message is the full response
-      expect(sentMessages[1].body).toContain('detailed response');
+      // Only the async follow-up goes via Twilio API
+      expect(sentMessages[0].body).toContain('detailed response');
+      expect(sentMessages[0].to).toBe('+15559999999');
     });
   });
 
@@ -138,9 +158,11 @@ describe('POST /webhook/sms', () => {
         .type('form')
         .send(payload);
 
-      // Should still return valid TwiML
+      // Should return valid TwiML with response message
       expect(response.status).toBe(200);
-      expect(response.text).toContain('<Response>');
+      expect(response.type).toBe('text/xml');
+      expect(response.text).toContain('<Message>');
+      expect(response.text).toContain('empty message');
     });
 
     it('should handle missing From field gracefully', async () => {
@@ -153,9 +175,10 @@ describe('POST /webhook/sms', () => {
         .type('form')
         .send({ Body: 'Test message' });
 
-      // Should return valid TwiML even with missing fields
+      // Should return valid TwiML with message even with missing fields
       expect(response.status).toBe(200);
       expect(response.type).toBe('text/xml');
+      expect(response.text).toContain('<Message>Hello!</Message>');
     });
   });
 });
