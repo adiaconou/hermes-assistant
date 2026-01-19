@@ -22,16 +22,19 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
+    "@types/dotenv": "^6.1.1",
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
     "concurrently": "^9.2.1",
     "tsx": "^4.0.0",
-    "typescript": "^5.7.0",
+    "typescript": "^5.9.3",
     "vitest": "^2.0.0"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
-    "express": "^4.21.0"
+    "dotenv": "^17.2.3",
+    "express": "^4.21.0",
+    "twilio": "^5.11.2"
   },
   "engines": {
     "node": ">=20.0.0"

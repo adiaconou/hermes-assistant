@@ -8,6 +8,8 @@
  * @see .env.example for required environment variables
  */
 
+import 'dotenv/config';
+
 /**
  * Application configuration loaded from environment variables.
  *
@@ -21,8 +23,14 @@
 const config = {
   port: parseInt(process.env.PORT || '3000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
-  twilioPhoneNumber: process.env.TWILIO_PHONE_NUMBER,
   anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+
+  /** Twilio configuration for SMS */
+  twilio: {
+    accountSid: process.env.TWILIO_ACCOUNT_SID,
+    authToken: process.env.TWILIO_AUTH_TOKEN,
+    phoneNumber: process.env.TWILIO_PHONE_NUMBER,
+  },
 
   /** Base URL for generating short links */
   baseUrl: process.env.BASE_URL || 'http://localhost:3000',

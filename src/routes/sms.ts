@@ -1,29 +1,24 @@
 /**
  * SMS/WhatsApp Webhook Route
  *
- * Handles inbound messages from Twilio. Both SMS and WhatsApp messages
- * arrive at the same endpoint—Twilio distinguishes them via the "whatsapp:"
- * prefix on the From field.
+ * Handles inbound messages from Twilio using an ASYNC response pattern:
+ * 1. Receive webhook from Twilio
+ * 2. Return empty TwiML immediately (acknowledges receipt)
+ * 3. Process message in background (LLM call, tool use, etc.)
+ * 4. Send response via Twilio REST API
  *
- * Response format: TwiML (Twilio Markup Language) XML. The response must be
- * returned synchronously in the webhook response body; Twilio does not support
- * async callbacks for message replies.
+ * This avoids Twilio's 15-second webhook timeout for long-running operations.
  */
 import { Router, Request, Response } from 'express';
 import { generateResponse } from '../llm.js';
 import { getHistory, addMessage } from '../conversation.js';
+import { sendSms, sendWhatsApp } from '../twilio.js';
 
 const router = Router();
 
 /**
  * Twilio sends these fields (among others) in the webhook POST body.
  * See: https://www.twilio.com/docs/messaging/guides/webhook-request
- *
- * Example SMS message:
- *   { From: "+15551234567", To: "+15559876543", Body: "Hello" }
- *
- * Example WhatsApp message:
- *   { From: "whatsapp:+15551234567", To: "whatsapp:+15559876543", Body: "Hello" }
  */
 type TwilioWebhookBody = {
   MessageSid: string;
@@ -50,22 +45,92 @@ function sanitizePhone(phone: string): string {
   return '***' + phone.slice(-4);
 }
 
-/** Escapes user input for safe inclusion in TwiML XML response. */
-function escapeXml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+/**
+ * Process message and send response asynchronously.
+ * This runs in the background after the webhook has returned.
+ */
+async function processMessageAsync(
+  sender: string,
+  message: string,
+  channel: MessageChannel
+): Promise<void> {
+  const startTime = Date.now();
+
+  try {
+    const history = getHistory(sender);
+    console.log(JSON.stringify({
+      level: 'info',
+      message: 'Processing message async',
+      channel,
+      historyLength: history.length,
+      messageLength: message.length,
+      timestamp: new Date().toISOString(),
+    }));
+
+    const responseText = await generateResponse(message, history);
+
+    console.log(JSON.stringify({
+      level: 'info',
+      message: 'Response generated',
+      responseLength: responseText.length,
+      durationMs: Date.now() - startTime,
+      timestamp: new Date().toISOString(),
+    }));
+
+    // Store in conversation history
+    addMessage(sender, 'user', message);
+    addMessage(sender, 'assistant', responseText);
+
+    // Send response via Twilio API
+    if (channel === 'whatsapp') {
+      await sendWhatsApp(sender, responseText);
+    } else {
+      await sendSms(sender, responseText);
+    }
+
+    console.log(JSON.stringify({
+      level: 'info',
+      message: 'Async response complete',
+      channel,
+      totalDurationMs: Date.now() - startTime,
+      timestamp: new Date().toISOString(),
+    }));
+  } catch (error) {
+    console.error(JSON.stringify({
+      level: 'error',
+      message: 'Failed to process message async',
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      durationMs: Date.now() - startTime,
+      timestamp: new Date().toISOString(),
+    }));
+
+    // Try to send error message to user
+    try {
+      const errorMessage = 'Sorry, I encountered an error processing your message. Please try again.';
+      if (channel === 'whatsapp') {
+        await sendWhatsApp(sender, errorMessage);
+      } else {
+        await sendSms(sender, errorMessage);
+      }
+    } catch (sendError) {
+      console.error(JSON.stringify({
+        level: 'error',
+        message: 'Failed to send error message to user',
+        error: sendError instanceof Error ? sendError.message : String(sendError),
+        timestamp: new Date().toISOString(),
+      }));
+    }
+  }
 }
 
 /**
  * POST /webhook/sms
  *
  * Twilio calls this endpoint when an SMS or WhatsApp message is received.
- * Must respond with TwiML XML to send a reply back to the sender.
+ * Returns empty TwiML immediately, processes message in background.
  */
-router.post('/webhook/sms', async (req: Request, res: Response) => {
+router.post('/webhook/sms', (req: Request, res: Response) => {
   const { From, Body } = req.body as TwilioWebhookBody;
 
   const channel = detectChannel(From || '');
@@ -83,49 +148,21 @@ router.post('/webhook/sms', async (req: Request, res: Response) => {
     })
   );
 
-  let responseText: string;
+  // Return empty TwiML immediately to acknowledge receipt
+  // This prevents Twilio timeout (15s for SMS, longer for WhatsApp)
+  res.type('text/xml');
+  res.send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
 
-  const startTime = Date.now();
-  try {
-    const history = getHistory(sender);
-    console.log(JSON.stringify({
-      level: 'info',
-      message: 'Generating response',
-      historyLength: history.length,
-      messageLength: message.length,
-      timestamp: new Date().toISOString(),
-    }));
-
-    responseText = await generateResponse(message, history);
-
-    console.log(JSON.stringify({
-      level: 'info',
-      message: 'Response generated',
-      responseLength: responseText.length,
-      durationMs: Date.now() - startTime,
-      timestamp: new Date().toISOString(),
-    }));
-
-    addMessage(sender, 'user', message);
-    addMessage(sender, 'assistant', responseText);
-  } catch (error) {
+  // Process message in background (don't await)
+  processMessageAsync(sender, message, channel).catch((error) => {
+    // This catch is a safety net - errors should be handled in processMessageAsync
     console.error(JSON.stringify({
       level: 'error',
-      message: 'Failed to generate response',
+      message: 'Unhandled error in async processing',
       error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-      durationMs: Date.now() - startTime,
       timestamp: new Date().toISOString(),
     }));
-    responseText = `Sorry, I encountered an error. Please try again.`;
-  }
-
-  const escapedResponse = escapeXml(responseText);
-
-  res.type('text/xml');
-  res.send(
-    `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapedResponse}</Message></Response>`
-  );
+  });
 });
 
 export default router;
