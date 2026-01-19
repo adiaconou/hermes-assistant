@@ -115,7 +115,12 @@ function sanitizeText(text: string): string {
 }
 
 /**
- * Remove risky HTML elements and attributes.
+ * Remove risky HTML elements.
+ *
+ * Note: Inline event handlers (onclick, etc.) are allowed because:
+ * 1. CSP blocks all network requests, so handlers can't exfiltrate data
+ * 2. We need onclick for interactive elements (tabs, buttons)
+ * 3. The script runs in a sandboxed context anyway
  */
 function sanitizeHtml(html: string): string {
   return (
@@ -124,9 +129,6 @@ function sanitizeHtml(html: string): string {
       .replace(/<(meta|base|link|iframe|object|embed|frame|frameset)[^>]*>/gi, '')
       // Remove closing tags for void elements we removed
       .replace(/<\/(iframe|object|embed|frame|frameset)>/gi, '')
-      // Remove inline event handlers (onclick, onerror, onload, etc.)
-      .replace(/\s+on[a-z]+\s*=\s*(['"]).*?\1/gi, '')
-      .replace(/\s+on[a-z]+\s*=\s*[^\s>]+/gi, '')
   );
 }
 
