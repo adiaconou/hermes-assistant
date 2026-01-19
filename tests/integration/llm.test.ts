@@ -196,3 +196,145 @@ describe('generateResponse', () => {
     expect(calls[0].system).toContain('generate_ui');
   });
 });
+
+describe('generateResponse with code review', () => {
+  beforeEach(() => {
+    clearMockState();
+  });
+
+  it('should pass generated code back to LLM in tool result', async () => {
+    setMockResponses([
+      createToolUseResponse('generate_ui', {
+        title: 'Test Tabs',
+        html: '<button class="tab">Tab 1</button>',
+        css: '.tab { color: blue; }',
+        js: 'function showTab() { }',
+      }),
+      createTextResponse('I created a tabbed page for you!'),
+    ]);
+
+    await generateResponse('Create a page with tabs', []);
+
+    const calls = getCreateCalls();
+    expect(calls.length).toBe(2);
+
+    // The second call should include tool results with generated code
+    const secondCallMessages = calls[1].messages as Array<{
+      role: string;
+      content: unknown;
+    }>;
+
+    // Find the user message with tool results (it's an array of tool_result blocks)
+    const toolResultMessage = secondCallMessages.find(
+      (m) => m.role === 'user' && Array.isArray(m.content)
+    );
+
+    expect(toolResultMessage).toBeDefined();
+
+    // Parse the tool result content
+    const toolResults = toolResultMessage!.content as Array<{
+      type: string;
+      tool_use_id: string;
+      content: string;
+    }>;
+    const resultContent = JSON.parse(toolResults[0].content);
+
+    expect(resultContent.success).toBe(true);
+    expect(resultContent.generatedCode).toBeDefined();
+    expect(resultContent.generatedCode.html).toContain('tab');
+    expect(resultContent.generatedCode.css).toContain('.tab');
+    expect(resultContent.generatedCode.js).toContain('showTab');
+  });
+
+  it('should include empty strings for optional css/js when not provided', async () => {
+    setMockResponses([
+      createToolUseResponse('generate_ui', {
+        title: 'Simple Page',
+        html: '<div>Hello</div>',
+        // No css or js provided
+      }),
+      createTextResponse('Created a simple page!'),
+    ]);
+
+    await generateResponse('Create a simple page', []);
+
+    const calls = getCreateCalls();
+    const secondCallMessages = calls[1].messages as Array<{
+      role: string;
+      content: unknown;
+    }>;
+
+    const toolResultMessage = secondCallMessages.find(
+      (m) => m.role === 'user' && Array.isArray(m.content)
+    );
+
+    const toolResults = toolResultMessage!.content as Array<{
+      type: string;
+      tool_use_id: string;
+      content: string;
+    }>;
+    const resultContent = JSON.parse(toolResults[0].content);
+
+    expect(resultContent.generatedCode.css).toBe('');
+    expect(resultContent.generatedCode.js).toBe('');
+  });
+
+  it('should allow LLM to regenerate UI after reviewing code', async () => {
+    // First response: LLM generates UI
+    // Second response: LLM notices issue, regenerates
+    // Third response: LLM satisfied, returns URL
+    setMockResponses([
+      createToolUseResponse('generate_ui', {
+        title: 'Buggy Tabs',
+        html: '<button class="tab">Tab 1</button>',
+        js: 'function showTab() { }', // Bug: not connected to button
+      }),
+      createToolUseResponse('generate_ui', {
+        title: 'Fixed Tabs',
+        html: '<button class="tab" onclick="showTab(\'tab1\')">Tab 1</button>',
+        js: 'function showTab(id) { document.getElementById(id).classList.add("active"); }',
+      }),
+      createTextResponse('I created a tabbed page: https://example.com/u/fixed'),
+    ]);
+
+    const response = await generateResponse('Create a page with tabs', []);
+
+    expect(response).toContain('tabbed page');
+
+    // Should have made 3 API calls (initial + 2 tool results)
+    const calls = getCreateCalls();
+    expect(calls.length).toBe(3);
+  });
+
+  it('should respect MAX_TOOL_LOOPS even with regeneration', async () => {
+    // Set up 6+ tool use responses to exceed the limit (MAX_TOOL_LOOPS = 5)
+    setMockResponses([
+      createToolUseResponse('generate_ui', { title: 'V1', html: '<div>1</div>' }),
+      createToolUseResponse('generate_ui', { title: 'V2', html: '<div>2</div>' }),
+      createToolUseResponse('generate_ui', { title: 'V3', html: '<div>3</div>' }),
+      createToolUseResponse('generate_ui', { title: 'V4', html: '<div>4</div>' }),
+      createToolUseResponse('generate_ui', { title: 'V5', html: '<div>5</div>' }),
+      createToolUseResponse('generate_ui', { title: 'V6', html: '<div>6</div>' }),
+      createTextResponse('Finally done!'),
+    ]);
+
+    await generateResponse('Create a page', []);
+
+    // Should stop at MAX_TOOL_LOOPS (5), not continue to 6
+    // 1 initial call + 5 loop iterations = 6 total calls max
+    const calls = getCreateCalls();
+    expect(calls.length).toBeLessThanOrEqual(6);
+  });
+
+  it('should include generatedCode instructions in system prompt', async () => {
+    setMockResponses([
+      createTextResponse('Test response'),
+    ]);
+
+    await generateResponse('Test', []);
+
+    const calls = getCreateCalls();
+    expect(calls[0].system).toContain('generatedCode');
+    expect(calls[0].system).toContain('event handlers');
+  });
+});

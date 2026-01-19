@@ -151,16 +151,16 @@ When generating UI:
 
 Example: For a grocery list, create checkboxes that save their state when clicked.
 
-## Before Sharing UI URLs
+## After generate_ui Returns
 
-After calling generate_ui, mentally review your code:
+The tool response includes generatedCode with your html, css, and js. Review this code carefully:
+- Are all buttons, tabs, and interactive elements wired to event handlers (onclick, addEventListener)?
+- Does every function that should be called actually get called or attached to an element?
 - Is the HTML structure valid (proper nesting, closed tags)?
-- Does the JavaScript have syntax errors (typos, missing brackets)?
-- Did you implement all requested functionality?
-- Will it work on mobile (touch-friendly, responsive)?
+- Does the JavaScript have syntax errors?
 - Does state management use hermesLoadState/hermesSaveState correctly?
 
-If you spot issues, call generate_ui again with fixes. Only share the URL once confident the page works.`;
+If you find issues in generatedCode, call generate_ui again with fixes before sharing the URL.`;
 
 /**
  * Tool definitions for the LLM.
@@ -250,6 +250,11 @@ async function handleToolCall(
           success: true,
           shortUrl: result.shortUrl,
           pageId: result.pageId,
+          generatedCode: {
+            html,
+            css: css || '',
+            js: js || '',
+          },
         });
       } else {
         return JSON.stringify({
