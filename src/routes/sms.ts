@@ -10,9 +10,24 @@
  * This avoids Twilio's 15-second webhook timeout for long-running operations.
  */
 import { Router, Request, Response } from 'express';
-import { generateResponse } from '../llm.js';
-import { getHistory, addMessage } from '../conversation.js';
+import { generateResponse, classifyMessage } from '../llm.js';
+import { getHistory, addMessage, type Message } from '../conversation.js';
 import { sendSms, sendWhatsApp } from '../twilio.js';
+
+/**
+ * Send a response via the appropriate channel (SMS or WhatsApp).
+ */
+async function sendResponse(
+  sender: string,
+  channel: MessageChannel,
+  message: string
+): Promise<void> {
+  if (channel === 'whatsapp') {
+    await sendWhatsApp(sender, message);
+  } else {
+    await sendSms(sender, message);
+  }
+}
 
 const router = Router();
 
@@ -46,8 +61,77 @@ function sanitizePhone(phone: string): string {
 }
 
 /**
- * Process message and send response asynchronously.
- * This runs in the background after the webhook has returned.
+ * Process heavy async work (UI generation, complex responses).
+ * Called when classification determines async work is needed.
+ */
+async function processAsyncWork(
+  sender: string,
+  message: string,
+  channel: MessageChannel,
+  history: Message[]
+): Promise<void> {
+  const startTime = Date.now();
+
+  try {
+    console.log(JSON.stringify({
+      level: 'info',
+      message: 'Starting async work',
+      channel,
+      timestamp: new Date().toISOString(),
+    }));
+
+    // Use the full generateResponse with tool loop
+    const responseText = await generateResponse(message, history);
+
+    console.log(JSON.stringify({
+      level: 'info',
+      message: 'Async work complete',
+      responseLength: responseText.length,
+      durationMs: Date.now() - startTime,
+      timestamp: new Date().toISOString(),
+    }));
+
+    // Store in conversation history and send response
+    addMessage(sender, 'assistant', responseText);
+    await sendResponse(sender, channel, responseText);
+
+    console.log(JSON.stringify({
+      level: 'info',
+      message: 'Async response sent',
+      channel,
+      totalDurationMs: Date.now() - startTime,
+      timestamp: new Date().toISOString(),
+    }));
+  } catch (error) {
+    console.error(JSON.stringify({
+      level: 'error',
+      message: 'Async work failed',
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      durationMs: Date.now() - startTime,
+      timestamp: new Date().toISOString(),
+    }));
+
+    // Try to send error message to user
+    try {
+      const errorMessage = 'Sorry, I encountered an error completing your request. Please try again.';
+      await sendResponse(sender, channel, errorMessage);
+    } catch (sendError) {
+      console.error(JSON.stringify({
+        level: 'error',
+        message: 'Failed to send error message to user',
+        error: sendError instanceof Error ? sendError.message : String(sendError),
+        timestamp: new Date().toISOString(),
+      }));
+    }
+  }
+}
+
+/**
+ * Process message with classification-based async pattern:
+ * 1. Classify message to determine if async work is needed
+ * 2. Send immediate response
+ * 3. If async work needed, spawn background processing
  */
 async function processMessageAsync(
   sender: string,
@@ -60,45 +144,58 @@ async function processMessageAsync(
     const history = getHistory(sender);
     console.log(JSON.stringify({
       level: 'info',
-      message: 'Processing message async',
+      message: 'Processing message with classification',
       channel,
       historyLength: history.length,
       messageLength: message.length,
       timestamp: new Date().toISOString(),
     }));
 
-    const responseText = await generateResponse(message, history);
+    // Step 1: Quick classification
+    const classification = await classifyMessage(message, history);
 
     console.log(JSON.stringify({
       level: 'info',
-      message: 'Response generated',
-      responseLength: responseText.length,
+      message: 'Classification complete',
+      needsAsyncWork: classification.needsAsyncWork,
+      classificationDurationMs: Date.now() - startTime,
+      timestamp: new Date().toISOString(),
+    }));
+
+    // Step 2: Send immediate response
+    await sendResponse(sender, channel, classification.immediateResponse);
+
+    // Store messages in history
+    addMessage(sender, 'user', message);
+    addMessage(sender, 'assistant', classification.immediateResponse);
+
+    console.log(JSON.stringify({
+      level: 'info',
+      message: 'Immediate response sent',
+      channel,
       durationMs: Date.now() - startTime,
       timestamp: new Date().toISOString(),
     }));
 
-    // Store in conversation history
-    addMessage(sender, 'user', message);
-    addMessage(sender, 'assistant', responseText);
+    // Step 3: If async work needed, continue processing
+    if (classification.needsAsyncWork) {
+      // Get updated history (includes the ack we just added)
+      const updatedHistory = getHistory(sender);
 
-    // Send response via Twilio API
-    if (channel === 'whatsapp') {
-      await sendWhatsApp(sender, responseText);
-    } else {
-      await sendSms(sender, responseText);
+      // Fire and forget - don't await
+      processAsyncWork(sender, message, channel, updatedHistory).catch((error) => {
+        console.error(JSON.stringify({
+          level: 'error',
+          message: 'Unhandled error in async work',
+          error: error instanceof Error ? error.message : String(error),
+          timestamp: new Date().toISOString(),
+        }));
+      });
     }
-
-    console.log(JSON.stringify({
-      level: 'info',
-      message: 'Async response complete',
-      channel,
-      totalDurationMs: Date.now() - startTime,
-      timestamp: new Date().toISOString(),
-    }));
   } catch (error) {
     console.error(JSON.stringify({
       level: 'error',
-      message: 'Failed to process message async',
+      message: 'Failed to process message',
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
       durationMs: Date.now() - startTime,
@@ -108,11 +205,7 @@ async function processMessageAsync(
     // Try to send error message to user
     try {
       const errorMessage = 'Sorry, I encountered an error processing your message. Please try again.';
-      if (channel === 'whatsapp') {
-        await sendWhatsApp(sender, errorMessage);
-      } else {
-        await sendSms(sender, errorMessage);
-      }
+      await sendResponse(sender, channel, errorMessage);
     } catch (sendError) {
       console.error(JSON.stringify({
         level: 'error',

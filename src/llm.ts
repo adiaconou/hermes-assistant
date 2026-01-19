@@ -30,6 +30,107 @@ function getClient(): Anthropic {
 
 const sizeLimits = getSizeLimits();
 
+/**
+ * Classification result for determining if async processing is needed.
+ */
+export interface ClassificationResult {
+  needsAsyncWork: boolean;
+  immediateResponse: string;
+}
+
+const CLASSIFICATION_PROMPT = `You are a quick-response classifier for an SMS assistant. Analyze the user's message and decide how to respond.
+
+If the user is asking for something that requires creating substantial content (lists, plans, guides, itineraries, recipes, etc.) or complex work that would benefit from a visual UI:
+- Set needsAsyncWork to true
+- Provide a brief, friendly acknowledgment as immediateResponse (e.g., "Let me work on that for you!", "I'll put together a list for you!", etc.)
+
+If the message is a simple question, greeting, or something you can answer directly and quickly:
+- Set needsAsyncWork to false
+- Provide your actual complete response as immediateResponse
+
+IMPORTANT: You must respond with ONLY valid JSON, no other text. Format:
+{"needsAsyncWork": boolean, "immediateResponse": "..."}`;
+
+/**
+ * Quickly classify a message to determine if it needs async processing.
+ * This is a fast call without tools to minimize latency.
+ */
+export async function classifyMessage(
+  userMessage: string,
+  conversationHistory: Message[]
+): Promise<ClassificationResult> {
+  const anthropic = getClient();
+
+  // Convert history to Anthropic format (keep it short for speed)
+  const recentHistory = conversationHistory.slice(-4);
+  const messages: MessageParam[] = recentHistory.map((msg) => ({
+    role: msg.role as 'user' | 'assistant',
+    content: msg.content,
+  }));
+
+  // Add current message
+  messages.push({ role: 'user', content: userMessage });
+
+  console.log(JSON.stringify({
+    level: 'info',
+    message: 'Classifying message',
+    messageLength: userMessage.length,
+    timestamp: new Date().toISOString(),
+  }));
+
+  const startTime = Date.now();
+
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 512,
+      system: CLASSIFICATION_PROMPT,
+      messages,
+    });
+
+    const textBlock = response.content.find(
+      (block): block is TextBlock => block.type === 'text'
+    );
+
+    const responseText = textBlock?.text || '';
+
+    console.log(JSON.stringify({
+      level: 'info',
+      message: 'Classification response received',
+      durationMs: Date.now() - startTime,
+      responseLength: responseText.length,
+      timestamp: new Date().toISOString(),
+    }));
+
+    // Parse JSON response
+    const parsed = JSON.parse(responseText) as ClassificationResult;
+
+    console.log(JSON.stringify({
+      level: 'info',
+      message: 'Classification result',
+      needsAsyncWork: parsed.needsAsyncWork,
+      immediateResponseLength: parsed.immediateResponse.length,
+      timestamp: new Date().toISOString(),
+    }));
+
+    return parsed;
+  } catch (error) {
+    console.error(JSON.stringify({
+      level: 'error',
+      message: 'Classification failed, defaulting to async',
+      error: error instanceof Error ? error.message : String(error),
+      durationMs: Date.now() - startTime,
+      timestamp: new Date().toISOString(),
+    }));
+
+    // Default to async processing with a generic ack on failure
+    return {
+      needsAsyncWork: true,
+      immediateResponse: "Let me work on that for you!",
+    };
+  }
+}
+
 const SYSTEM_PROMPT = `You are a helpful SMS assistant. Keep responses concise since you communicate via SMS. Be direct and helpful.
 
 ## UI Generation Capability
