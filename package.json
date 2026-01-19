@@ -11,7 +11,11 @@
     "dev:server": "tsx watch src/index.ts",
     "dev:tunnel": "$HOME/.local/bin/ngrok http 3000",
     "lint": "eslint src/",
-    "test": "vitest"
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:integration": "vitest run tests/integration/",
+    "test:unit": "vitest run tests/unit/",
+    "sms": "tsx scripts/send-sms.ts"
   },
   "keywords": [
     "assistant",
@@ -25,7 +29,9 @@
     "@types/dotenv": "^6.1.1",
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
+    "@types/supertest": "^6.0.0",
     "concurrently": "^9.2.1",
+    "supertest": "^7.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.9.3",
     "vitest": "^2.0.0"
