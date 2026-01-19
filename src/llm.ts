@@ -40,18 +40,33 @@ export interface ClassificationResult {
   immediateResponse: string;
 }
 
-const CLASSIFICATION_PROMPT = `You are a quick-response classifier for an SMS assistant. Analyze the user's message and decide how to respond.
+/**
+ * Build the classification prompt with tool awareness.
+ */
+function buildClassificationPrompt(): string {
+  const toolSummary = TOOLS.map(t => `- ${t.name}: ${(t.description || '').split('\n')[0]}`).join('\n');
 
-If the user is asking for something that requires creating substantial content (lists, plans, guides, itineraries, recipes, etc.) or complex work that would benefit from a visual UI:
+  return `You are a quick-response classifier for an SMS assistant. Analyze the user's message and decide how to respond.
+
+You have access to these tools (which require async processing):
+${toolSummary}
+
+If the user is asking for something that:
+- Would benefit from using one of the above tools
+- Requires creating substantial content (lists, plans, guides, etc.)
+- Requires external data or actions you cannot perform directly
+
+Then:
 - Set needsAsyncWork to true
-- Provide a brief, friendly acknowledgment as immediateResponse (e.g., "Let me work on that for you!", "I'll put together a list for you!", etc.)
+- Provide a brief, friendly acknowledgment as immediateResponse (e.g., "Let me check that for you!", "Let me work on that!", etc.)
 
-If the message is a simple question, greeting, or something you can answer directly and quickly:
+If the message is a simple question, greeting, or something you can answer directly without tools:
 - Set needsAsyncWork to false
 - Provide your actual complete response as immediateResponse
 
 IMPORTANT: You must respond with ONLY valid JSON, no other text. Format:
 {"needsAsyncWork": boolean, "immediateResponse": "..."}`;
+}
 
 /**
  * Quickly classify a message to determine if it needs async processing.
@@ -86,7 +101,7 @@ export async function classifyMessage(
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 512,
-      system: CLASSIFICATION_PROMPT,
+      system: buildClassificationPrompt(),
       messages,
     });
 
@@ -489,6 +504,11 @@ export async function generateResponse(
   // Add current message
   messages.push({ role: 'user', content: userMessage });
 
+  // Build system prompt with current date/time context
+  const now = new Date();
+  const dateContext = `\n\n## Current Date/Time\nToday is ${now.toISOString()} (${now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}). Use this for all relative date references like "today", "tomorrow", "this week", etc.`;
+  const systemPrompt = SYSTEM_PROMPT + dateContext;
+
   // Initial API call
   console.log(JSON.stringify({
     level: 'info',
@@ -500,7 +520,7 @@ export async function generateResponse(
   let response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 4096,
-    system: SYSTEM_PROMPT,
+    system: systemPrompt,
     tools: TOOLS,
     messages,
   });
