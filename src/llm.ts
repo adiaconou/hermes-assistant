@@ -142,14 +142,26 @@ You can generate interactive web pages for the user using the generate_ui tool. 
 
 When generating UI:
 1. Create clean, mobile-friendly HTML
-2. Use the provided helper functions for state persistence:
-   - window.hermesLoadState() - loads saved state (returns object or null)
-   - window.hermesSaveState(state) - saves state object
-3. The page runs in a strict sandbox - NO network requests are allowed
-4. Keep it simple and functional
-5. Size limits: HTML ${sizeLimits.html} bytes, CSS ${sizeLimits.css} bytes, JS ${sizeLimits.js} bytes
+2. **Render ALL content in HTML** - never generate content dynamically with JS
+3. **Use inline onclick handlers** - put onclick directly on buttons/tabs, not addEventListener
+4. JS should only handle: showing/hiding elements, updating checkbox state, saving to localStorage
+5. Use hermesLoadState()/hermesSaveState() for persistence
+6. The page runs in a strict sandbox - NO network requests allowed
+7. Size limits: HTML ${sizeLimits.html} bytes, CSS ${sizeLimits.css} bytes, JS ${sizeLimits.js} bytes
 
-Example: For a grocery list, create checkboxes that save their state when clicked.
+Example pattern for tabs:
+\`\`\`html
+<button onclick="showTab('list')">List</button>
+<button onclick="showTab('recipe')">Recipe</button>
+<div id="list" class="tab">...all list content here...</div>
+<div id="recipe" class="tab" style="display:none">...all recipe content here...</div>
+<script>
+function showTab(id) {
+  document.querySelectorAll('.tab').forEach(t => t.style.display = 'none');
+  document.getElementById(id).style.display = 'block';
+}
+</script>
+\`\`\`
 
 ## After generate_ui Returns
 
