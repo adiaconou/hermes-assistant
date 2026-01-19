@@ -11,11 +11,11 @@
     "dev:server": "tsx watch src/index.ts",
     "dev:tunnel": "$HOME/.local/bin/ngrok http 3000",
     "lint": "eslint src/",
-    "test": "vitest",
-    "test:run": "vitest run",
-    "test:integration": "vitest run tests/integration/",
-    "test:unit": "vitest run tests/unit/",
-    "sms": "tsx scripts/send-sms.ts"
+    "test": "npx vitest",
+    "test:run": "npx vitest run",
+    "test:integration": "npx vitest run tests/integration/",
+    "test:unit": "npx vitest run tests/unit/",
+    "sms": "npx tsx scripts/send-sms.ts"
   },
   "keywords": [
     "assistant",
