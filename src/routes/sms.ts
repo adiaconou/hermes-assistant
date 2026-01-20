@@ -173,7 +173,7 @@ router.post('/webhook/sms', async (req: Request, res: Response) => {
     const userConfig = await configStore.get(sender);
 
     // Classify message synchronously - this should be fast
-    const classification = await classifyMessage(message, history);
+    const classification = await classifyMessage(message, history, userConfig);
 
     console.log(JSON.stringify({
       level: 'info',

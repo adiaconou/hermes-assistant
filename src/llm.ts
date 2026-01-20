@@ -42,12 +42,40 @@ export interface ClassificationResult {
 }
 
 /**
+ * Build time context string from user config.
+ * Used by both classification and main response generation.
+ */
+function buildTimeContext(userConfig: UserConfig | null): string {
+  const now = new Date();
+  const timezone = userConfig?.timezone || null;
+
+  if (timezone) {
+    const localTime = now.toLocaleString('en-US', {
+      timeZone: timezone,
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZoneName: 'short'
+    });
+    return `Current time: ${localTime} (${timezone})`;
+  } else {
+    return `Current time: ${now.toISOString()} (UTC - user timezone unknown)`;
+  }
+}
+
+/**
  * Build the classification prompt with tool awareness.
  */
-function buildClassificationPrompt(): string {
+function buildClassificationPrompt(userConfig: UserConfig | null): string {
   const toolSummary = TOOLS.map(t => `- ${t.name}: ${(t.description || '').split('\n')[0]}`).join('\n');
+  const timeContext = buildTimeContext(userConfig);
 
   return `You are a quick-response classifier for an SMS assistant. Analyze the user's message and decide how to respond.
+
+${timeContext}
 
 You have access to these tools (which require async processing):
 ${toolSummary}
@@ -75,7 +103,8 @@ IMPORTANT: You must respond with ONLY valid JSON, no other text. Format:
  */
 export async function classifyMessage(
   userMessage: string,
-  conversationHistory: Message[]
+  conversationHistory: Message[],
+  userConfig?: UserConfig | null
 ): Promise<ClassificationResult> {
   const anthropic = getClient();
 
@@ -102,7 +131,7 @@ export async function classifyMessage(
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 512,
-      system: buildClassificationPrompt(),
+      system: buildClassificationPrompt(userConfig ?? null),
       messages,
     });
 
@@ -619,29 +648,9 @@ async function handleToolCall(
  * Build user context section for system prompt.
  */
 function buildUserContext(userConfig: UserConfig | null): string {
-  const now = new Date();
-
-  // Determine timezone
   const timezone = userConfig?.timezone || null;
   const name = userConfig?.name || null;
-
-  // Build time context
-  let timeContext: string;
-  if (timezone) {
-    const localTime = now.toLocaleString('en-US', {
-      timeZone: timezone,
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      timeZoneName: 'short'
-    });
-    timeContext = `Current local time: ${localTime} (${timezone})`;
-  } else {
-    timeContext = `Current time: ${now.toISOString()} (UTC - user timezone unknown)`;
-  }
+  const timeContext = buildTimeContext(userConfig);
 
   // Build missing fields prompt
   const missingFields: string[] = [];
@@ -774,7 +783,7 @@ export async function generateResponse(
     response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 4096,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       tools: TOOLS,
       messages,
     });

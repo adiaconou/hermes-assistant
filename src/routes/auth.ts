@@ -229,7 +229,7 @@ router.get('/auth/google/callback', async (req, res) => {
       }));
     }
 
-    res.send(successHtml());
+    res.send(successHtml(config.twilio.phoneNumber));
   } catch (error) {
     console.log(JSON.stringify({
       level: 'error',
@@ -242,15 +242,29 @@ router.get('/auth/google/callback', async (req, res) => {
 });
 
 /**
- * Success page HTML.
+ * Format phone number for WhatsApp deep link (wa.me format).
+ * Removes 'whatsapp:' prefix, '+' sign, and any non-digit characters.
  */
-function successHtml(): string {
+function formatWhatsAppNumber(phoneNumber: string | undefined): string | null {
+  if (!phoneNumber) return null;
+  // Remove 'whatsapp:' prefix if present, then strip all non-digits
+  return phoneNumber.replace(/^whatsapp:/i, '').replace(/\D/g, '');
+}
+
+/**
+ * Success page HTML with optional WhatsApp redirect.
+ */
+function successHtml(botPhoneNumber?: string): string {
+  const waNumber = formatWhatsAppNumber(botPhoneNumber);
+  const waLink = waNumber ? `https://wa.me/${waNumber}` : null;
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Connected!</title>
+  ${waLink ? `<meta http-equiv="refresh" content="3;url=${waLink}">` : ''}
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -271,14 +285,39 @@ function successHtml(): string {
     }
     .icon { font-size: 3rem; margin-bottom: 1rem; }
     h1 { margin: 0 0 0.5rem; color: #1a1a1a; }
-    p { color: #666; margin: 0; }
+    p { color: #666; margin: 0 0 1rem; }
+    .btn {
+      display: inline-block;
+      background: #25D366;
+      color: white;
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: #1da851; }
+    .countdown { font-size: 0.85rem; color: #999; margin-top: 0.75rem; }
   </style>
 </head>
 <body>
   <div class="card">
     <div class="icon">✅</div>
     <h1>All Set!</h1>
-    <p>📅 Google Calendar is connected. You can close this page and return to your messages.</p>
+    <p>📅 Google Calendar is connected.</p>
+    ${waLink ? `
+    <a href="${waLink}" class="btn">Return to WhatsApp</a>
+    <p class="countdown">Redirecting in <span id="seconds">3</span>s...</p>
+    <script>
+      let s = 3;
+      const el = document.getElementById('seconds');
+      const timer = setInterval(() => {
+        s--;
+        if (el) el.textContent = s;
+        if (s <= 0) clearInterval(timer);
+      }, 1000);
+    </script>
+    ` : '<p>You can close this page and return to your messages.</p>'}
   </div>
 </body>
 </html>`;
