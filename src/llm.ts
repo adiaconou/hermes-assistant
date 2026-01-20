@@ -213,7 +213,12 @@ If a calendar tool returns auth_required: true, tell the user to tap the link to
 When listing events, format them concisely for SMS. Example:
 - 9am: Team standup
 - 2pm: Dentist appointment
-- 5pm: Dinner with Sarah`;
+- 5pm: Dinner with Sarah
+
+**IMPORTANT - Timezone handling for calendar events:**
+When the user mentions a time (e.g., "3:30 PM Sunday"), they mean their LOCAL time. Convert to ISO 8601 with the correct UTC offset. For example, if user says "3:30 PM" and they're in PST (UTC-8):
+- Correct: "2026-01-19T15:30:00-08:00"
+- Wrong: "2026-01-19T15:30:00Z" (this would be 7:30 AM PST)`;
 
 /**
  * Tool definitions for the LLM.
@@ -506,9 +511,20 @@ export async function generateResponse(
   // Add current message
   messages.push({ role: 'user', content: userMessage });
 
-  // Build system prompt with current date/time context
+  // Build system prompt with current date/time context in user's timezone
   const now = new Date();
-  const dateContext = `\n\n## Current Date/Time\nToday is ${now.toISOString()} (${now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}). Use this for all relative date references like "today", "tomorrow", "this week", etc.`;
+  const userTimezone = 'America/Los_Angeles'; // TODO: make this per-user configurable
+  const localTime = now.toLocaleString('en-US', {
+    timeZone: userTimezone,
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short'
+  });
+  const dateContext = `\n\n## Current Date/Time\nThe user is in the ${userTimezone} timezone (Pacific Time). Current local time: ${localTime}. When creating calendar events, convert times to ISO 8601 format accounting for this timezone (PST is UTC-8, PDT is UTC-7).`;
   const systemPrompt = SYSTEM_PROMPT + dateContext;
 
   // Initial API call
