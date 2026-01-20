@@ -14,6 +14,7 @@ import { Router, Request, Response } from 'express';
 import { generateResponse, classifyMessage } from '../llm.js';
 import { getHistory, addMessage, type Message } from '../conversation.js';
 import { sendSms, sendWhatsApp } from '../twilio.js';
+import { getUserConfigStore, type UserConfig } from '../services/user-config/index.js';
 
 /**
  * Send a response via the appropriate channel (SMS or WhatsApp).
@@ -79,7 +80,8 @@ async function processAsyncWork(
   sender: string,
   message: string,
   channel: MessageChannel,
-  history: Message[]
+  history: Message[],
+  userConfig: UserConfig | null
 ): Promise<void> {
   const startTime = Date.now();
 
@@ -92,7 +94,7 @@ async function processAsyncWork(
     }));
 
     // Use the full generateResponse with tool loop
-    const responseText = await generateResponse(message, history, sender);
+    const responseText = await generateResponse(message, history, sender, userConfig);
 
     console.log(JSON.stringify({
       level: 'info',
@@ -165,8 +167,10 @@ router.post('/webhook/sms', async (req: Request, res: Response) => {
   );
 
   try {
-    // Get conversation history for classification
+    // Get conversation history and user config
     const history = getHistory(sender);
+    const configStore = getUserConfigStore();
+    const userConfig = await configStore.get(sender);
 
     // Classify message synchronously - this should be fast
     const classification = await classifyMessage(message, history);
@@ -201,7 +205,7 @@ router.post('/webhook/sms', async (req: Request, res: Response) => {
     if (classification.needsAsyncWork) {
       const updatedHistory = getHistory(sender);
 
-      processAsyncWork(sender, message, channel, updatedHistory).catch((error) => {
+      processAsyncWork(sender, message, channel, updatedHistory, userConfig).catch((error) => {
         console.error(JSON.stringify({
           level: 'error',
           message: 'Unhandled error in async work',
@@ -232,13 +236,16 @@ router.post('/webhook/sms', async (req: Request, res: Response) => {
 
     // Try to process with full LLM since classification failed
     const history = getHistory(sender);
-    processAsyncWork(sender, message, channel, history).catch((asyncError) => {
-      console.error(JSON.stringify({
-        level: 'error',
-        message: 'Async fallback processing failed',
-        error: asyncError instanceof Error ? asyncError.message : String(asyncError),
-        timestamp: new Date().toISOString(),
-      }));
+    const configStore = getUserConfigStore();
+    configStore.get(sender).then((userConfig) => {
+      processAsyncWork(sender, message, channel, history, userConfig).catch((asyncError) => {
+        console.error(JSON.stringify({
+          level: 'error',
+          message: 'Async fallback processing failed',
+          error: asyncError instanceof Error ? asyncError.message : String(asyncError),
+          timestamp: new Date().toISOString(),
+        }));
+      });
     });
   }
 });

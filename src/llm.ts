@@ -17,6 +17,7 @@ import type { Message } from './conversation.js';
 import { generatePage, isSuccess, getSizeLimits } from './ui/index.js';
 import { listEvents, createEvent, AuthRequiredError } from './services/google/calendar.js';
 import { generateAuthUrl } from './routes/auth.js';
+import { getUserConfigStore, type UserConfig } from './services/user-config/index.js';
 
 let client: Anthropic | null = null;
 
@@ -216,9 +217,10 @@ When listing events, format them concisely for SMS. Example:
 - 5pm: Dinner with Sarah
 
 **IMPORTANT - Timezone handling for calendar events:**
-When the user mentions a time (e.g., "3:30 PM Sunday"), they mean their LOCAL time. Convert to ISO 8601 with the correct UTC offset. For example, if user says "3:30 PM" and they're in PST (UTC-8):
-- Correct: "2026-01-19T15:30:00-08:00"
-- Wrong: "2026-01-19T15:30:00Z" (this would be 7:30 AM PST)`;
+When the user mentions a time (e.g., "3:30 PM Sunday"), they mean their LOCAL time. Check their timezone in User Context above and convert to ISO 8601 with the correct UTC offset. For example:
+- America/Los_Angeles (PST): "2026-01-19T15:30:00-08:00"
+- America/New_York (EST): "2026-01-19T15:30:00-05:00"
+If timezone is unknown, ask the user before creating calendar events.`;
 
 /**
  * Tool definitions for the LLM.
@@ -301,6 +303,34 @@ IMPORTANT CONSTRAINTS:
       required: ['title', 'start_time'],
     },
   },
+  {
+    name: 'set_user_config',
+    description: `Store user preferences. Call this when the user tells you:
+- Their name ("I'm John", "Call me Sarah", "My name is Mike")
+- Their timezone ("I'm in Pacific time", "EST", "I live in New York", "I'm in London")
+- When they want to update these ("Call me Mike instead", "I moved to New York")`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        name: {
+          type: 'string',
+          description: "User's preferred name or nickname",
+        },
+        timezone: {
+          type: 'string',
+          description: 'IANA timezone identifier (e.g., "America/New_York", "America/Los_Angeles", "Europe/London"). Convert user input like "Pacific time" or "EST" to proper IANA format.',
+        },
+      },
+    },
+  },
+  {
+    name: 'delete_user_data',
+    description: 'Delete all stored user data when user requests it (e.g., "forget me", "delete my data"). This removes their name, timezone, and preferences.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {},
+    },
+  },
 ];
 
 /**
@@ -310,6 +340,18 @@ function endOfDay(date: Date): Date {
   const end = new Date(date);
   end.setHours(23, 59, 59, 999);
   return end;
+}
+
+/**
+ * Validate an IANA timezone string.
+ */
+function isValidTimezone(tz: string): boolean {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -486,7 +528,139 @@ async function handleToolCall(
     }
   }
 
+  if (toolName === 'set_user_config') {
+    if (!phoneNumber) {
+      return JSON.stringify({ success: false, error: 'Phone number not available' });
+    }
+
+    const { name, timezone } = toolInput as {
+      name?: string;
+      timezone?: string;
+    };
+
+    // Validate timezone if provided
+    if (timezone && !isValidTimezone(timezone)) {
+      return JSON.stringify({
+        success: false,
+        error: `Invalid timezone: "${timezone}". Use IANA format like "America/New_York" or "America/Los_Angeles".`,
+      });
+    }
+
+    try {
+      const store = getUserConfigStore();
+      const updates: Partial<UserConfig> = {};
+      if (name !== undefined) updates.name = name;
+      if (timezone !== undefined) updates.timezone = timezone;
+
+      await store.set(phoneNumber, updates);
+
+      console.log(JSON.stringify({
+        level: 'info',
+        message: 'User config updated',
+        phone: phoneNumber.slice(-4).padStart(phoneNumber.length, '*'),
+        hasName: !!name,
+        hasTimezone: !!timezone,
+        timestamp: new Date().toISOString(),
+      }));
+
+      return JSON.stringify({
+        success: true,
+        updated: { name: !!name, timezone: !!timezone },
+      });
+    } catch (error) {
+      console.error(JSON.stringify({
+        level: 'error',
+        message: 'Failed to update user config',
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString(),
+      }));
+      return JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (toolName === 'delete_user_data') {
+    if (!phoneNumber) {
+      return JSON.stringify({ success: false, error: 'Phone number not available' });
+    }
+
+    try {
+      const store = getUserConfigStore();
+      await store.delete(phoneNumber);
+
+      console.log(JSON.stringify({
+        level: 'info',
+        message: 'User data deleted',
+        phone: phoneNumber.slice(-4).padStart(phoneNumber.length, '*'),
+        timestamp: new Date().toISOString(),
+      }));
+
+      return JSON.stringify({ success: true, message: 'All user data has been deleted.' });
+    } catch (error) {
+      console.error(JSON.stringify({
+        level: 'error',
+        message: 'Failed to delete user data',
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString(),
+      }));
+      return JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   return JSON.stringify({ error: `Unknown tool: ${toolName}` });
+}
+
+/**
+ * Build user context section for system prompt.
+ */
+function buildUserContext(userConfig: UserConfig | null): string {
+  const now = new Date();
+
+  // Determine timezone
+  const timezone = userConfig?.timezone || null;
+  const name = userConfig?.name || null;
+
+  // Build time context
+  let timeContext: string;
+  if (timezone) {
+    const localTime = now.toLocaleString('en-US', {
+      timeZone: timezone,
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZoneName: 'short'
+    });
+    timeContext = `Current local time: ${localTime} (${timezone})`;
+  } else {
+    timeContext = `Current time: ${now.toISOString()} (UTC - user timezone unknown)`;
+  }
+
+  // Build missing fields prompt
+  const missingFields: string[] = [];
+  if (!name) missingFields.push('name');
+  if (!timezone) missingFields.push('timezone');
+
+  let setupPrompt = '';
+  if (missingFields.length > 0) {
+    setupPrompt = `\n\n**Setup needed:** This user hasn't set up their profile yet. Missing: ${missingFields.join(', ')}.
+Naturally ask for this info in your response. Be conversational:
+- "Hey! I don't think we've met - what should I call you?"
+- "By the way, what timezone are you in so I can get times right for you?"
+Don't block their request - help them AND ask for the missing info.`;
+  }
+
+  return `\n\n## User Context
+- Name: ${name || 'not set'}
+- Timezone: ${timezone || 'not set'}
+- ${timeContext}${setupPrompt}`;
 }
 
 /**
@@ -494,11 +668,13 @@ async function handleToolCall(
  * @param userMessage - The user's message
  * @param conversationHistory - Previous conversation messages
  * @param phoneNumber - User's phone number (for calendar tools)
+ * @param userConfig - User's stored configuration (name, timezone)
  */
 export async function generateResponse(
   userMessage: string,
   conversationHistory: Message[],
-  phoneNumber?: string
+  phoneNumber?: string,
+  userConfig?: UserConfig | null
 ): Promise<string> {
   const anthropic = getClient();
 
@@ -511,21 +687,9 @@ export async function generateResponse(
   // Add current message
   messages.push({ role: 'user', content: userMessage });
 
-  // Build system prompt with current date/time context in user's timezone
-  const now = new Date();
-  const userTimezone = 'America/Los_Angeles'; // TODO: make this per-user configurable
-  const localTime = now.toLocaleString('en-US', {
-    timeZone: userTimezone,
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZoneName: 'short'
-  });
-  const dateContext = `\n\n## Current Date/Time\nThe user is in the ${userTimezone} timezone (Pacific Time). Current local time: ${localTime}. When creating calendar events, convert times to ISO 8601 format accounting for this timezone (PST is UTC-8, PDT is UTC-7).`;
-  const systemPrompt = SYSTEM_PROMPT + dateContext;
+  // Build system prompt with user context
+  const userContext = buildUserContext(userConfig ?? null);
+  const systemPrompt = SYSTEM_PROMPT + userContext;
 
   // Initial API call
   console.log(JSON.stringify({
