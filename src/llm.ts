@@ -73,9 +73,9 @@ function buildClassificationPrompt(userConfig: UserConfig | null): string {
   const toolSummary = TOOLS.map(t => `- ${t.name}: ${(t.description || '').split('\n')[0]}`).join('\n');
   const timeContext = buildTimeContext(userConfig);
 
-  return `You are a quick-response classifier for an SMS assistant. Analyze the user's message and decide how to respond.
+  return `**${timeContext}**
 
-${timeContext}
+You are a quick-response classifier for an SMS assistant. Analyze the user's message and decide how to respond.
 
 You have access to these tools (which require async processing):
 ${toolSummary}
@@ -245,11 +245,23 @@ When listing events, format them concisely for SMS. Example:
 - 2pm: Dentist appointment
 - 5pm: Dinner with Sarah
 
-**IMPORTANT - Timezone handling for calendar events:**
-When the user mentions a time (e.g., "3:30 PM Sunday"), they mean their LOCAL time. Check their timezone in User Context above and convert to ISO 8601 with the correct UTC offset. For example:
-- America/Los_Angeles (PST): "2026-01-19T15:30:00-08:00"
-- America/New_York (EST): "2026-01-19T15:30:00-05:00"
-If timezone is unknown, ask the user before creating calendar events.`;
+**CRITICAL - Date and Time Handling:**
+
+1. **Use User Context for current time**: The "Current time" in User Context shows the ACTUAL current date and time in the user's timezone. Use this to determine what "today", "tomorrow", "this week", etc. means.
+
+2. **Always include timezone offset**: ALL dates passed to calendar tools MUST include the UTC offset from the user's timezone:
+   - America/Los_Angeles (PST): -08:00
+   - America/New_York (EST): -05:00
+   - UTC: +00:00
+
+3. **Example calculations** (assuming current time is "Sunday, January 19, 2026, 3:45 PM PST"):
+   - "today" = 2026-01-19T00:00:00-08:00 to 2026-01-19T23:59:59-08:00
+   - "tomorrow" = 2026-01-20T00:00:00-08:00 to 2026-01-20T23:59:59-08:00
+   - "3pm tomorrow" = 2026-01-20T15:00:00-08:00
+
+4. **User times are LOCAL**: When user says "3:30 PM Sunday", they mean in their timezone. Convert using the offset.
+
+If timezone is unknown, ask the user before using calendar tools.`;
 
 /**
  * Tool definitions for the LLM.
@@ -290,17 +302,17 @@ IMPORTANT CONSTRAINTS:
   },
   {
     name: 'get_calendar_events',
-    description: "Get events from the user's Google Calendar. Use for schedule queries, finding free time, checking availability.",
+    description: "Get events from the user's Google Calendar. IMPORTANT: Use the current date/time from User Context to determine 'today', 'tomorrow', etc. Include the user's timezone offset in all dates.",
     input_schema: {
       type: 'object' as const,
       properties: {
         start_date: {
           type: 'string',
-          description: 'Start of time range (ISO 8601, e.g. "2025-01-20T00:00:00")',
+          description: 'Start of time range. MUST be ISO 8601 with timezone offset (e.g. "2026-01-20T00:00:00-08:00" for PST, "2026-01-20T00:00:00-05:00" for EST). Use the timezone from User Context.',
         },
         end_date: {
           type: 'string',
-          description: 'End of time range (ISO 8601). Defaults to end of start_date day if not provided.',
+          description: 'End of time range. MUST include timezone offset. Defaults to end of start_date day if not provided.',
         },
       },
       required: ['start_date'],
@@ -308,7 +320,7 @@ IMPORTANT CONSTRAINTS:
   },
   {
     name: 'create_calendar_event',
-    description: "Create a new event on the user's Google Calendar.",
+    description: "Create a new event on the user's Google Calendar. IMPORTANT: Use the user's timezone from User Context.",
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -318,11 +330,11 @@ IMPORTANT CONSTRAINTS:
         },
         start_time: {
           type: 'string',
-          description: 'Start time (ISO 8601)',
+          description: 'Start time. MUST be ISO 8601 with timezone offset (e.g. "2026-01-20T15:30:00-08:00" for 3:30 PM PST).',
         },
         end_time: {
           type: 'string',
-          description: 'End time (ISO 8601). Defaults to 1 hour after start if not provided.',
+          description: 'End time with timezone offset. Defaults to 1 hour after start if not provided.',
         },
         location: {
           type: 'string',
@@ -697,8 +709,10 @@ export async function generateResponse(
   messages.push({ role: 'user', content: userMessage });
 
   // Build system prompt with user context
+  // IMPORTANT: Inject current date at the BEGINNING so the model sees it first
+  const timeContext = buildTimeContext(userConfig ?? null);
   const userContext = buildUserContext(userConfig ?? null);
-  const systemPrompt = SYSTEM_PROMPT + userContext;
+  const systemPrompt = `**${timeContext}**\n\n` + SYSTEM_PROMPT + userContext;
 
   // Initial API call
   console.log(JSON.stringify({
