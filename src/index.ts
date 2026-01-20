@@ -46,4 +46,19 @@ app.listen(config.port, () => {
       timestamp: new Date().toISOString(),
     })
   );
+
+  // Debug: Log presence of critical env vars (not values)
+  console.log(
+    JSON.stringify({
+      level: 'info',
+      message: 'Config check',
+      hasCredentialEncryptionKey: !!config.credentials.encryptionKey,
+      credentialEncryptionKeyLength: config.credentials.encryptionKey?.length ?? 0,
+      hasGoogleClientId: !!config.google.clientId,
+      hasGoogleClientSecret: !!config.google.clientSecret,
+      googleRedirectUri: config.google.redirectUri,
+      baseUrl: config.baseUrl,
+      timestamp: new Date().toISOString(),
+    })
+  );
 });
