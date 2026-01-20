@@ -139,7 +139,7 @@ router.get('/auth/google', (req, res) => {
   // Validate state before redirecting (catches expired/invalid early)
   const phoneNumber = decryptState(state);
   if (!phoneNumber) {
-    res.status(400).send(errorHtml('Invalid or expired link. Please request a new one.'));
+    res.status(400).send(errorHtml('⏰ Invalid or expired link. Please request a new one.'));
     return;
   }
 
@@ -173,7 +173,7 @@ router.get('/auth/google/callback', async (req, res) => {
       error,
       timestamp: new Date().toISOString(),
     }));
-    res.send(errorHtml('Authorization was declined. You can try again anytime by asking about your calendar.'));
+    res.send(errorHtml('👋 Authorization was declined. You can try again anytime by asking about your calendar.'));
     return;
   }
 
@@ -185,7 +185,7 @@ router.get('/auth/google/callback', async (req, res) => {
   // Decrypt state to get phone number
   const phoneNumber = decryptState(state);
   if (!phoneNumber) {
-    res.status(400).send(errorHtml('Invalid or expired link. Please request a new one.'));
+    res.status(400).send(errorHtml('⏰ Invalid or expired link. Please request a new one.'));
     return;
   }
 
@@ -217,7 +217,7 @@ router.get('/auth/google/callback', async (req, res) => {
     try {
       await sendSms(
         phoneNumber,
-        "Google Calendar connected! Try asking: What's on my calendar today?"
+        "📅 Google Calendar connected! Try asking: What's on my calendar today?"
       );
     } catch (smsError) {
       // Log but don't fail - tokens are stored
@@ -237,7 +237,7 @@ router.get('/auth/google/callback', async (req, res) => {
       error: error instanceof Error ? error.message : 'Unknown error',
       timestamp: new Date().toISOString(),
     }));
-    res.status(500).send(errorHtml('Failed to connect Google account. Please try again.'));
+    res.status(500).send(errorHtml('😔 Failed to connect Google account. Please try again.'));
   }
 });
 
@@ -276,9 +276,9 @@ function successHtml(): string {
 </head>
 <body>
   <div class="card">
-    <div class="icon">✓</div>
+    <div class="icon">✅</div>
     <h1>All Set!</h1>
-    <p>Google Calendar is connected. You can close this page and return to your messages.</p>
+    <p>📅 Google Calendar is connected. You can close this page and return to your messages.</p>
   </div>
 </body>
 </html>`;
@@ -319,7 +319,7 @@ function errorHtml(message: string): string {
 </head>
 <body>
   <div class="card">
-    <div class="icon">✕</div>
+    <div class="icon">⚠️</div>
     <h1>Something Went Wrong</h1>
     <p>${escapeHtml(message)}</p>
   </div>

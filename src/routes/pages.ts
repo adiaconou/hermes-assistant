@@ -37,7 +37,7 @@ router.get('/u/:id', async (req: Request<{ id: string }>, res: Response) => {
         <html>
         <head><title>Not Found</title></head>
         <body>
-          <h1>Link expired or not found</h1>
+          <h1>🔗 Link expired or not found</h1>
           <p>This page may have expired or the link may be invalid.</p>
         </body>
         </html>
@@ -66,7 +66,7 @@ router.get('/u/:id', async (req: Request<{ id: string }>, res: Response) => {
         <html>
         <head><title>Not Found</title></head>
         <body>
-          <h1>Page not found</h1>
+          <h1>🔍 Page not found</h1>
           <p>The requested page could not be found.</p>
         </body>
         </html>
@@ -78,7 +78,7 @@ router.get('/u/:id', async (req: Request<{ id: string }>, res: Response) => {
       <html>
       <head><title>Error</title></head>
       <body>
-        <h1>Error loading page</h1>
+        <h1>⚠️ Error loading page</h1>
         <p>Something went wrong. Please try again later.</p>
       </body>
       </html>

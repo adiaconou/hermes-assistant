@@ -125,7 +125,7 @@ async function processAsyncWork(
 
     // Try to send error message to user
     try {
-      const errorMessage = 'Sorry, I encountered an error completing your request. Please try again.';
+      const errorMessage = '😔 Sorry, I encountered an error completing your request. Please try again.';
       await sendResponse(sender, channel, errorMessage);
     } catch (sendError) {
       console.error(JSON.stringify({
@@ -221,7 +221,7 @@ router.post('/webhook/sms', async (req: Request, res: Response) => {
     }));
 
     // Fall back to generic response if classification fails
-    const fallbackMessage = "I'm processing your message and will respond shortly.";
+    const fallbackMessage = "⏳ I'm processing your message and will respond shortly.";
     addMessage(sender, 'user', message);
     addMessage(sender, 'assistant', fallbackMessage);
 

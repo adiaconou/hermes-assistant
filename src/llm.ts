@@ -58,7 +58,7 @@ If the user is asking for something that:
 
 Then:
 - Set needsAsyncWork to true
-- Provide a brief, friendly acknowledgment as immediateResponse (e.g., "Let me check that for you!", "Let me work on that!", etc.)
+- Provide a brief, friendly acknowledgment as immediateResponse (e.g., "🔍 Let me check that for you!", "✨ Let me work on that!", etc.)
 
 If the message is a simple question, greeting, or something you can answer directly without tools:
 - Set needsAsyncWork to false
@@ -143,12 +143,14 @@ export async function classifyMessage(
     // Default to async processing with a generic ack on failure
     return {
       needsAsyncWork: true,
-      immediateResponse: "Let me work on that for you!",
+      immediateResponse: "✨ Let me work on that for you!",
     };
   }
 }
 
 const SYSTEM_PROMPT = `You are a helpful SMS assistant. Keep responses concise since you communicate via SMS. Be direct and helpful.
+
+When it fits naturally, include a relevant emoji to make responses more visually engaging (e.g., 📅 for calendar, ✅ for confirmations, 🛒 for shopping). Don't force it—skip emojis for simple or serious responses.
 
 ## UI Generation Capability
 
