@@ -43,8 +43,9 @@ const config = {
   credentials: {
     /** Storage provider: 'sqlite' (default) or 'memory' (tests only) */
     provider: (process.env.CREDENTIAL_STORE_PROVIDER || 'sqlite') as 'sqlite' | 'memory',
-    /** Path to SQLite database file */
-    sqlitePath: process.env.CREDENTIAL_STORE_SQLITE_PATH || './data/credentials.db',
+    /** Path to SQLite database file - uses /app/data in production for Railway volume mount */
+    sqlitePath: process.env.CREDENTIAL_STORE_SQLITE_PATH ||
+      (process.env.NODE_ENV === 'production' ? '/app/data/credentials.db' : './data/credentials.db'),
     /** Encryption key for tokens at rest (32-byte hex string) */
     encryptionKey: process.env.CREDENTIAL_ENCRYPTION_KEY,
   },
