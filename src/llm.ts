@@ -18,6 +18,7 @@ import { generatePage, isSuccess, getSizeLimits } from './ui/index.js';
 import { listEvents, createEvent, AuthRequiredError } from './services/google/calendar.js';
 import { generateAuthUrl } from './routes/auth.js';
 import { getUserConfigStore, type UserConfig } from './services/user-config/index.js';
+import * as chrono from 'chrono-node';
 
 let client: Anthropic | null = null;
 
@@ -247,19 +248,16 @@ When listing events, format them concisely for SMS. Example:
 
 **CRITICAL - Date and Time Handling:**
 
-1. **Use User Context for current time**: The "Current time" in User Context shows the ACTUAL current date and time in the user's timezone. Use this to determine what "today", "tomorrow", "this week", etc. means.
+1. **ALWAYS use resolve_date tool**: When the user mentions ANY relative date/time (e.g., "sunday", "tomorrow", "next week", "in 2 hours"), you MUST call the resolve_date tool FIRST to get the correct absolute date before calling calendar tools. DO NOT calculate dates yourself - LLMs are unreliable at calendar math.
 
-2. **Always include timezone offset**: ALL dates passed to calendar tools MUST include the UTC offset from the user's timezone:
-   - America/Los_Angeles (PST): -08:00
-   - America/New_York (EST): -05:00
-   - UTC: +00:00
+2. **Workflow for calendar requests**:
+   - User says: "Set a meeting for Sunday at 3pm"
+   - Step 1: Call resolve_date with input="Sunday at 3pm" and timezone from User Context
+   - Step 2: Use the returned ISO date string in create_calendar_event
 
-3. **Example calculations** (assuming current time is "Sunday, January 19, 2026, 3:45 PM PST"):
-   - "today" = 2026-01-19T00:00:00-08:00 to 2026-01-19T23:59:59-08:00
-   - "tomorrow" = 2026-01-20T00:00:00-08:00 to 2026-01-20T23:59:59-08:00
-   - "3pm tomorrow" = 2026-01-20T15:00:00-08:00
+3. **Always include timezone offset**: The resolve_date tool returns dates with proper timezone offsets. Pass these directly to calendar tools.
 
-4. **User times are LOCAL**: When user says "3:30 PM Sunday", they mean in their timezone. Convert using the offset.
+4. **User times are LOCAL**: When user says "3:30 PM Sunday", they mean in their timezone. The resolve_date tool handles this correctly.
 
 If timezone is unknown, ask the user before using calendar tools.`;
 
@@ -370,6 +368,32 @@ IMPORTANT CONSTRAINTS:
     input_schema: {
       type: 'object' as const,
       properties: {},
+    },
+  },
+  {
+    name: 'resolve_date',
+    description: `ALWAYS use this tool to convert relative dates to absolute ISO 8601 dates before calling calendar tools.
+
+Examples of when to use this:
+- "sunday" → returns the actual date of next Sunday
+- "tomorrow at 3pm" → returns tomorrow's date with 15:00 time
+- "next tuesday" → returns the correct date
+- "in 2 hours" → returns current time + 2 hours
+
+Call this BEFORE create_calendar_event or get_calendar_events when the user gives a relative date/time. Use the returned ISO string directly in calendar tool calls.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        input: {
+          type: 'string',
+          description: 'The natural language date/time to resolve (e.g., "sunday", "tomorrow at 3pm", "next week")',
+        },
+        timezone: {
+          type: 'string',
+          description: 'IANA timezone for the result (e.g., "America/Los_Angeles"). Use the timezone from User Context.',
+        },
+      },
+      required: ['input', 'timezone'],
     },
   },
 ];
@@ -643,6 +667,111 @@ async function handleToolCall(
       console.error(JSON.stringify({
         level: 'error',
         message: 'Failed to delete user data',
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString(),
+      }));
+      return JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (toolName === 'resolve_date') {
+    const { input, timezone } = toolInput as {
+      input: string;
+      timezone: string;
+    };
+
+    // Validate timezone
+    if (!isValidTimezone(timezone)) {
+      return JSON.stringify({
+        success: false,
+        error: `Invalid timezone: "${timezone}". Use IANA format like "America/New_York" or "America/Los_Angeles".`,
+      });
+    }
+
+    try {
+      // Get current time to use as reference
+      const now = new Date();
+
+      // Parse the natural language date with chrono
+      // Use forwardDate: true to prefer future dates (e.g., "sunday" means next Sunday, not last Sunday)
+      const results = chrono.parse(input, now, { forwardDate: true });
+
+      if (results.length === 0) {
+        return JSON.stringify({
+          success: false,
+          error: `Could not parse date/time from: "${input}"`,
+        });
+      }
+
+      const parsed = results[0];
+      const startDate = parsed.start.date();
+      const endDate = parsed.end?.date() || null;
+
+      // Format as ISO 8601 with timezone offset
+      const formatWithOffset = (date: Date, tz: string): string => {
+        // Get the offset in minutes for the target timezone
+        const formatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: tz,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false,
+        });
+
+        const parts = formatter.formatToParts(date);
+        const getPart = (type: string) => parts.find(p => p.type === type)?.value || '';
+
+        const year = getPart('year');
+        const month = getPart('month');
+        const day = getPart('day');
+        const hour = getPart('hour');
+        const minute = getPart('minute');
+        const second = getPart('second');
+
+        // Calculate offset
+        const utcDate = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }));
+        const tzDate = new Date(date.toLocaleString('en-US', { timeZone: tz }));
+        const offsetMs = tzDate.getTime() - utcDate.getTime();
+        const offsetMins = Math.round(offsetMs / 60000);
+        const offsetHours = Math.floor(Math.abs(offsetMins) / 60);
+        const offsetRemMins = Math.abs(offsetMins) % 60;
+        const offsetSign = offsetMins >= 0 ? '+' : '-';
+        const offsetStr = `${offsetSign}${String(offsetHours).padStart(2, '0')}:${String(offsetRemMins).padStart(2, '0')}`;
+
+        return `${year}-${month}-${day}T${hour}:${minute}:${second}${offsetStr}`;
+      };
+
+      const result: { success: boolean; start: string; end?: string; parsed_text: string } = {
+        success: true,
+        start: formatWithOffset(startDate, timezone),
+        parsed_text: parsed.text,
+      };
+
+      if (endDate) {
+        result.end = formatWithOffset(endDate, timezone);
+      }
+
+      console.log(JSON.stringify({
+        level: 'info',
+        message: 'Date resolved',
+        input,
+        timezone,
+        result: result.start,
+        timestamp: new Date().toISOString(),
+      }));
+
+      return JSON.stringify(result);
+    } catch (error) {
+      console.error(JSON.stringify({
+        level: 'error',
+        message: 'Failed to resolve date',
+        input,
         error: error instanceof Error ? error.message : String(error),
         timestamp: new Date().toISOString(),
       }));
