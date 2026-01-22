@@ -15,6 +15,7 @@ import type { ScheduledJob, CreateJobInput, JobUpdates } from './types.js';
 interface ScheduledJobRow {
   id: string;
   phone_number: string;
+  channel: string;
   user_request: string | null;
   prompt: string;
   cron_expression: string;
@@ -33,6 +34,7 @@ function rowToJob(row: ScheduledJobRow): ScheduledJob {
   return {
     id: row.id,
     phoneNumber: row.phone_number,
+    channel: row.channel as 'sms' | 'whatsapp',
     userRequest: row.user_request ?? undefined,
     prompt: row.prompt,
     cronExpression: row.cron_expression,
@@ -54,6 +56,7 @@ export function initSchedulerDb(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS scheduled_jobs (
       id TEXT PRIMARY KEY,
       phone_number TEXT NOT NULL,
+      channel TEXT NOT NULL DEFAULT 'sms',
       user_request TEXT,
       prompt TEXT NOT NULL,
       cron_expression TEXT NOT NULL,
@@ -70,6 +73,13 @@ export function initSchedulerDb(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_phone
       ON scheduled_jobs(phone_number);
   `);
+
+  // Migration: add channel column if it doesn't exist (for existing databases)
+  try {
+    db.exec(`ALTER TABLE scheduled_jobs ADD COLUMN channel TEXT NOT NULL DEFAULT 'sms'`);
+  } catch {
+    // Column already exists, ignore
+  }
 }
 
 /**
@@ -81,11 +91,12 @@ export function createJob(db: Database.Database, input: CreateJobInput): Schedul
 
   db.prepare(`
     INSERT INTO scheduled_jobs
-      (id, phone_number, user_request, prompt, cron_expression, timezone, next_run_at, enabled, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      (id, phone_number, channel, user_request, prompt, cron_expression, timezone, next_run_at, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
   `).run(
     id,
     input.phoneNumber,
+    input.channel,
     input.userRequest ?? null,
     input.prompt,
     input.cronExpression,
@@ -98,6 +109,7 @@ export function createJob(db: Database.Database, input: CreateJobInput): Schedul
   return {
     id,
     phoneNumber: input.phoneNumber,
+    channel: input.channel,
     userRequest: input.userRequest,
     prompt: input.prompt,
     cronExpression: input.cronExpression,

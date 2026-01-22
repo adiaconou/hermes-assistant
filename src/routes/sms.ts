@@ -94,7 +94,7 @@ async function processAsyncWork(
     }));
 
     // Use the full generateResponse with tool loop
-    const responseText = await generateResponse(message, history, sender, userConfig);
+    const responseText = await generateResponse(message, history, sender, userConfig, { channel });
 
     console.log(JSON.stringify({
       level: 'info',

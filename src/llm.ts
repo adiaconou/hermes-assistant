@@ -20,7 +20,6 @@ import { generateAuthUrl } from './routes/auth.js';
 import { getUserConfigStore, type UserConfig } from './services/user-config/index.js';
 import * as chrono from 'chrono-node';
 import { Cron } from 'croner';
-import Database from 'better-sqlite3';
 import {
   createJob,
   getJobById,
@@ -29,7 +28,7 @@ import {
   deleteJob,
   parseScheduleToCron,
   cronToHuman,
-  initSchedulerDb,
+  getSchedulerDb,
 } from './services/scheduler/index.js';
 
 let client: Anthropic | null = null;
@@ -45,17 +44,6 @@ function getClient(): Anthropic {
 }
 
 const sizeLimits = getSizeLimits();
-
-// Database connection for scheduler operations (lazy initialized)
-let schedulerDb: Database.Database | null = null;
-
-function getSchedulerDb(): Database.Database {
-  if (!schedulerDb) {
-    schedulerDb = new Database(config.credentials.sqlitePath);
-    initSchedulerDb(schedulerDb);
-  }
-  return schedulerDb;
-}
 
 /**
  * Classification result for determining if async processing is needed.
@@ -74,6 +62,8 @@ export interface GenerateOptions {
   systemPrompt?: string;
   /** Override the default tools (for restricting available tools) */
   tools?: Tool[];
+  /** Message channel (sms or whatsapp) - used for creating scheduled jobs */
+  channel?: 'sms' | 'whatsapp';
 }
 
 /**
@@ -540,7 +530,8 @@ function isValidTimezone(tz: string): boolean {
 async function handleToolCall(
   toolName: string,
   toolInput: Record<string, unknown>,
-  phoneNumber?: string
+  phoneNumber?: string,
+  options?: GenerateOptions
 ): Promise<string> {
   console.log(JSON.stringify({
     level: 'info',
@@ -932,19 +923,40 @@ async function handleToolCall(
 
     // Calculate next run time
     try {
-      const cron = new Cron(cronExpression, { timezone });
-      const nextRun = cron.nextRun();
-      if (!nextRun) {
-        return JSON.stringify({
-          success: false,
-          error: 'Could not calculate next run time for this schedule',
-        });
+      let nextRun: Date;
+
+      // For interval patterns (every N hours/minutes), the first run should be
+      // N units from now, not at the next aligned time
+      const hourIntervalMatch = cronExpression.match(/^0 \*\/(\d+) \* \* \*$/);
+      const minuteIntervalMatch = cronExpression.match(/^\*\/(\d+) \* \* \* \*$/);
+
+      if (hourIntervalMatch) {
+        // Every N hours - first run is N hours from now
+        const hours = parseInt(hourIntervalMatch[1], 10);
+        nextRun = new Date(Date.now() + hours * 60 * 60 * 1000);
+      } else if (minuteIntervalMatch) {
+        // Every N minutes - first run is N minutes from now
+        const minutes = parseInt(minuteIntervalMatch[1], 10);
+        nextRun = new Date(Date.now() + minutes * 60 * 1000);
+      } else {
+        // Standard cron - use croner to calculate next run
+        const cron = new Cron(cronExpression, { timezone });
+        const cronNextRun = cron.nextRun();
+        if (!cronNextRun) {
+          return JSON.stringify({
+            success: false,
+            error: 'Could not calculate next run time for this schedule',
+          });
+        }
+        nextRun = cronNextRun;
       }
 
       const nextRunAt = Math.floor(nextRun.getTime() / 1000);
       const db = getSchedulerDb();
+      const channel = options?.channel ?? 'sms';
       const job = createJob(db, {
         phoneNumber,
+        channel,
         userRequest: user_request,
         prompt,
         cronExpression,
@@ -1011,7 +1023,7 @@ async function handleToolCall(
 
       const jobList = jobs.map((job) => ({
         job_id: job.id,
-        description: job.userRequest || job.prompt.slice(0, 50) + '...',
+        description: job.userRequest || (job.prompt.length > 50 ? job.prompt.slice(0, 50) + '...' : job.prompt),
         schedule: cronToHuman(job.cronExpression),
         enabled: job.enabled,
         next_run: job.enabled && job.nextRunAt
@@ -1076,6 +1088,15 @@ async function handleToolCall(
 
       if (enabled !== undefined) {
         updates.enabled = enabled;
+      }
+
+      // Recalculate next_run_at when re-enabling a job (unless schedule is also being updated)
+      if (enabled === true && schedule === undefined) {
+        const cron = new Cron(job.cronExpression, { timezone: job.timezone });
+        const nextRun = cron.nextRun();
+        if (nextRun) {
+          updates.nextRunAt = Math.floor(nextRun.getTime() / 1000);
+        }
       }
 
       if (schedule !== undefined) {
@@ -1295,7 +1316,8 @@ export async function generateResponse(
         const result = await handleToolCall(
           toolUse.name,
           toolUse.input as Record<string, unknown>,
-          phoneNumber
+          phoneNumber,
+          options
         );
         return {
           type: 'tool_result' as const,

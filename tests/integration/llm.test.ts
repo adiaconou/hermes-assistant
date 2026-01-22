@@ -195,6 +195,34 @@ describe('generateResponse', () => {
     expect(calls[0].system).toContain('SMS assistant');
     expect(calls[0].system).toContain('generate_ui');
   });
+
+  it('should accept options parameter with custom system prompt', async () => {
+    setMockResponses([
+      createTextResponse('Custom prompt response'),
+    ]);
+
+    await generateResponse('Test', [], undefined, null, {
+      systemPrompt: 'You are a custom assistant for testing.',
+    });
+
+    const calls = getCreateCalls();
+    expect(calls[0].system).toContain('custom assistant for testing');
+  });
+
+  it('should accept options parameter with channel', async () => {
+    setMockResponses([
+      createTextResponse('WhatsApp response'),
+    ]);
+
+    // This verifies the options parameter is correctly typed and passed
+    // The channel option is used by handleToolCall for scheduled job creation
+    await generateResponse('Test', [], '+1234567890', null, {
+      channel: 'whatsapp',
+    });
+
+    const calls = getCreateCalls();
+    expect(calls.length).toBe(1);
+  });
 });
 
 describe('generateResponse with code review', () => {

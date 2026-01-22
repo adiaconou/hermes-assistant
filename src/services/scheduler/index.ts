@@ -20,6 +20,18 @@ import { executeJob } from './executor.js';
 import { createIntervalPoller, type Poller } from './poller.js';
 
 let pollerInstance: Poller | null = null;
+let sharedDb: Database.Database | null = null;
+
+/**
+ * Get the shared scheduler database instance.
+ * Must call initScheduler() first.
+ */
+export function getSchedulerDb(): Database.Database {
+  if (!sharedDb) {
+    throw new Error('Scheduler not initialized. Call initScheduler() first.');
+  }
+  return sharedDb;
+}
 
 /**
  * Initialize the scheduler system.
@@ -31,6 +43,9 @@ let pollerInstance: Poller | null = null;
  * @param intervalMs - Polling interval (default: 60000ms = 1 minute)
  */
 export function initScheduler(db: Database.Database, intervalMs?: number): Poller {
+  // Store shared database instance
+  sharedDb = db;
+
   // Initialize database schema
   initSchedulerDb(db);
 

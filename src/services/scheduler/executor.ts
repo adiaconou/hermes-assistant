@@ -38,14 +38,10 @@ export async function executeJob(
   const startTime = Date.now();
   logJobStart(job);
 
-  // Strip whatsapp: prefix for user lookup but keep it for sending
-  const phoneForLookup = job.phoneNumber.replace(/^whatsapp:/, '');
-  const isWhatsApp = job.phoneNumber.startsWith('whatsapp:');
-
   try {
     // Load user config for context
     const userConfigStore = getUserConfigStore();
-    const userConfig = await userConfigStore.get(phoneForLookup);
+    const userConfig = await userConfigStore.get(job.phoneNumber);
 
     // Build time context for the prompt
     const now = new Date();
@@ -69,7 +65,7 @@ export async function executeJob(
     const response = await generateResponse(
       job.prompt,
       [], // No conversation history
-      phoneForLookup,
+      job.phoneNumber,
       userConfig,
       {
         systemPrompt,
@@ -77,9 +73,9 @@ export async function executeJob(
       }
     );
 
-    // Send the response via appropriate channel
-    if (isWhatsApp) {
-      await sendWhatsApp(phoneForLookup, response);
+    // Send the response via appropriate channel (stored in job)
+    if (job.channel === 'whatsapp') {
+      await sendWhatsApp(job.phoneNumber, response);
     } else {
       await sendSms(job.phoneNumber, response);
     }

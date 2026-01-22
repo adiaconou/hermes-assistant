@@ -6,11 +6,17 @@
  */
 
 /**
+ * Message channel type.
+ */
+export type MessageChannel = 'sms' | 'whatsapp';
+
+/**
  * A scheduled job stored in the database.
  */
 export interface ScheduledJob {
   id: string;
   phoneNumber: string;
+  channel: MessageChannel; // sms or whatsapp
   userRequest?: string; // Original user request (for display)
   prompt: string; // LLM-generated execution prompt
   cronExpression: string; // Standard cron format
@@ -27,6 +33,7 @@ export interface ScheduledJob {
  */
 export interface CreateJobInput {
   phoneNumber: string;
+  channel: MessageChannel;
   userRequest?: string;
   prompt: string;
   cronExpression: string;

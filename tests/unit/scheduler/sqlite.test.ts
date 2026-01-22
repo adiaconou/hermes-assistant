@@ -47,6 +47,7 @@ describe('scheduler sqlite', () => {
     it('creates a job and returns it with generated ID', () => {
       const job = createJob(db, {
         phoneNumber: '+1234567890',
+        channel: 'sms',
         userRequest: 'Send me a daily summary',
         prompt: 'Generate a summary of today',
         cronExpression: '0 9 * * *',
@@ -69,6 +70,7 @@ describe('scheduler sqlite', () => {
     it('retrieves a job by ID', () => {
       const created = createJob(db, {
         phoneNumber: '+1234567890',
+        channel: 'sms',
         prompt: 'Test prompt',
         cronExpression: '0 9 * * *',
         timezone: 'UTC',
@@ -92,6 +94,7 @@ describe('scheduler sqlite', () => {
     it('gets jobs by phone number', () => {
       createJob(db, {
         phoneNumber: '+1234567890',
+        channel: 'sms',
         prompt: 'Job 1',
         cronExpression: '0 9 * * *',
         timezone: 'UTC',
@@ -100,6 +103,7 @@ describe('scheduler sqlite', () => {
 
       createJob(db, {
         phoneNumber: '+1234567890',
+        channel: 'sms',
         prompt: 'Job 2',
         cronExpression: '0 10 * * *',
         timezone: 'UTC',
@@ -108,6 +112,7 @@ describe('scheduler sqlite', () => {
 
       createJob(db, {
         phoneNumber: '+9999999999',
+        channel: 'whatsapp',
         prompt: 'Other user job',
         cronExpression: '0 11 * * *',
         timezone: 'UTC',
@@ -134,6 +139,7 @@ describe('scheduler sqlite', () => {
       // Due job (past)
       createJob(db, {
         phoneNumber: '+1234567890',
+        channel: 'sms',
         prompt: 'Due job',
         cronExpression: '0 9 * * *',
         timezone: 'UTC',
@@ -143,6 +149,7 @@ describe('scheduler sqlite', () => {
       // Future job
       createJob(db, {
         phoneNumber: '+1234567890',
+        channel: 'sms',
         prompt: 'Future job',
         cronExpression: '0 10 * * *',
         timezone: 'UTC',
@@ -160,6 +167,7 @@ describe('scheduler sqlite', () => {
 
       const job = createJob(db, {
         phoneNumber: '+1234567890',
+        channel: 'sms',
         prompt: 'Disabled job',
         cronExpression: '0 9 * * *',
         timezone: 'UTC',
@@ -178,6 +186,7 @@ describe('scheduler sqlite', () => {
     it('updates job fields (enabled, next_run_at)', () => {
       const job = createJob(db, {
         phoneNumber: '+1234567890',
+        channel: 'sms',
         prompt: 'Original prompt',
         cronExpression: '0 9 * * *',
         timezone: 'UTC',
@@ -205,6 +214,7 @@ describe('scheduler sqlite', () => {
     it('deletes a job', () => {
       const job = createJob(db, {
         phoneNumber: '+1234567890',
+        channel: 'sms',
         prompt: 'To be deleted',
         cronExpression: '0 9 * * *',
         timezone: 'UTC',
