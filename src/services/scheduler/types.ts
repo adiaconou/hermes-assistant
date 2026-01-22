@@ -19,11 +19,12 @@ export interface ScheduledJob {
   channel: MessageChannel; // sms or whatsapp
   userRequest?: string; // Original user request (for display)
   prompt: string; // LLM-generated execution prompt
-  cronExpression: string; // Standard cron format
+  cronExpression: string; // Standard cron format (or '@once' for one-time)
   timezone: string; // IANA timezone
   nextRunAt: number; // Unix timestamp (seconds)
   lastRunAt?: number; // Unix timestamp (seconds)
   enabled: boolean;
+  isRecurring: boolean; // true for cron jobs, false for one-time reminders
   createdAt: number; // Unix timestamp (seconds)
   updatedAt: number; // Unix timestamp (seconds)
 }
@@ -39,6 +40,7 @@ export interface CreateJobInput {
   cronExpression: string;
   timezone: string;
   nextRunAt: number;
+  isRecurring: boolean;
 }
 
 /**

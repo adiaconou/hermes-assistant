@@ -1,11 +1,149 @@
 /**
- * @fileoverview Natural language to cron expression parser.
+ * @fileoverview Natural language schedule parser.
  *
- * Converts user-friendly schedule descriptions like "daily at 9am"
- * to standard cron expressions like "0 9 * * *".
+ * Converts user-friendly schedule descriptions to either:
+ * - Cron expressions for recurring schedules ("daily at 9am" → "0 9 * * *")
+ * - Unix timestamps for one-time reminders ("tomorrow at 9am" → 1737500400)
  */
 
 import * as chrono from 'chrono-node';
+
+/**
+ * Result of parsing a schedule string.
+ * Either recurring (cron-based) or one-time (timestamp-based).
+ */
+export interface ParsedSchedule {
+  type: 'recurring' | 'once';
+  cronExpression?: string; // For recurring schedules
+  runAtTimestamp?: number; // For one-time (Unix seconds)
+}
+
+/**
+ * Keywords that indicate a recurring schedule.
+ */
+const RECURRING_KEYWORDS = [
+  'daily',
+  'every day',
+  'every morning',
+  'every evening',
+  'every night',
+  'every weekday',
+  'every weekend',
+  'every week',
+  'weekly',
+  'every monday',
+  'every tuesday',
+  'every wednesday',
+  'every thursday',
+  'every friday',
+  'every saturday',
+  'every sunday',
+  'every hour',
+  'hourly',
+  'every minute',
+];
+
+/**
+ * Check if a schedule string contains recurring keywords.
+ */
+function isRecurringSchedule(input: string): boolean {
+  const normalized = input.toLowerCase().trim();
+
+  // Check string keywords
+  if (RECURRING_KEYWORDS.some((keyword) => normalized.includes(keyword))) {
+    return true;
+  }
+
+  // Check "every N minutes/hours" pattern
+  if (/every\s+\d+\s*(minute|hour)/i.test(normalized)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Parse a natural language schedule with auto-detection.
+ *
+ * Recurring patterns (returns cron):
+ * - "daily at 9am", "every day at 9am"
+ * - "every Monday at noon"
+ * - "every weekday at 8am"
+ * - "every 30 minutes"
+ *
+ * One-time patterns (returns timestamp):
+ * - "tomorrow at 9am"
+ * - "in 2 hours"
+ * - "next Tuesday at 3pm"
+ * - "January 15 at 10am"
+ *
+ * @param input - Natural language schedule
+ * @param timezone - IANA timezone for interpreting the time (used for one-time)
+ * @returns ParsedSchedule or null if unparseable
+ */
+export function parseSchedule(input: string, timezone: string): ParsedSchedule | null {
+  if (!input || typeof input !== 'string') {
+    return null;
+  }
+
+  const normalized = input.toLowerCase().trim();
+
+  // First, check if it's a recurring pattern
+  if (isRecurringSchedule(normalized)) {
+    const cron = parseScheduleToCron(input);
+    if (cron) {
+      return { type: 'recurring', cronExpression: cron };
+    }
+  }
+
+  // Otherwise, try to parse as a one-time reminder
+  const timestamp = parseReminderTime(input, timezone);
+  if (timestamp) {
+    return { type: 'once', runAtTimestamp: timestamp };
+  }
+
+  // Final fallback: if it didn't match recurring keywords but might be a cron pattern
+  const cron = parseScheduleToCron(input);
+  if (cron) {
+    return { type: 'recurring', cronExpression: cron };
+  }
+
+  return null;
+}
+
+/**
+ * Parse natural language time into Unix timestamp for one-time reminders.
+ *
+ * Examples: "tomorrow at 9am", "in 2 hours", "next Tuesday at 3pm"
+ *
+ * @param input - Natural language time description
+ * @param timezone - IANA timezone (currently used for reference, chrono handles most timezone logic)
+ * @returns Unix timestamp in seconds, or null if unparseable
+ */
+export function parseReminderTime(input: string, timezone: string): number | null {
+  if (!input || typeof input !== 'string') {
+    return null;
+  }
+
+  // Create reference date (chrono uses this as "now")
+  const refDate = new Date();
+
+  // Use chrono to parse the natural language time
+  const results = chrono.parse(input, refDate, { forwardDate: true });
+
+  if (results.length > 0 && results[0].start) {
+    // Get the parsed date from chrono
+    const parsedDate = results[0].start.date();
+    const timestamp = Math.floor(parsedDate.getTime() / 1000);
+
+    // Only return if it's in the future
+    if (timestamp > Math.floor(Date.now() / 1000)) {
+      return timestamp;
+    }
+  }
+
+  return null;
+}
 
 /**
  * Day name to cron day number mapping.

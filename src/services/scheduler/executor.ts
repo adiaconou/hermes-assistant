@@ -10,7 +10,7 @@ import type Database from 'better-sqlite3';
 import { generateResponse, READ_ONLY_TOOLS } from '../../llm.js';
 import { getUserConfigStore } from '../user-config/index.js';
 import { sendSms, sendWhatsApp } from '../../twilio.js';
-import { updateJob } from './sqlite.js';
+import { updateJob, deleteJob } from './sqlite.js';
 import type { ScheduledJob, ExecutionResult } from './types.js';
 
 /**
@@ -80,30 +80,41 @@ export async function executeJob(
       await sendSms(job.phoneNumber, response);
     }
 
-    // Calculate next run time
-    const nextRunAt = calculateNextRun(job.cronExpression, job.timezone);
     const nowSeconds = Math.floor(Date.now() / 1000);
 
-    // Update job record
-    await updateJob(db, job.id, {
-      nextRunAt,
-      lastRunAt: nowSeconds,
-    });
+    if (job.isRecurring) {
+      // Recurring job: calculate next run time and update
+      const nextRunAt = calculateNextRun(job.cronExpression, job.timezone);
+      await updateJob(db, job.id, {
+        nextRunAt,
+        lastRunAt: nowSeconds,
+      });
+      logJobSuccess(job, Date.now() - startTime, nextRunAt);
+    } else {
+      // One-time reminder: delete after execution
+      deleteJob(db, job.id);
+      logOneTimeComplete(job, Date.now() - startTime);
+    }
 
-    logJobSuccess(job, Date.now() - startTime, nextRunAt);
     return { success: true };
 
   } catch (error) {
     logJobError(job, error as Error, Date.now() - startTime);
 
-    // Still update next_run_at so job continues on schedule
+    // For recurring jobs, update next_run_at so job continues on schedule
+    // For one-time jobs, delete them even on failure (they won't retry)
     try {
-      const nextRunAt = calculateNextRun(job.cronExpression, job.timezone);
-      const nowSeconds = Math.floor(Date.now() / 1000);
-      await updateJob(db, job.id, {
-        nextRunAt,
-        lastRunAt: nowSeconds,
-      });
+      if (job.isRecurring) {
+        const nextRunAt = calculateNextRun(job.cronExpression, job.timezone);
+        const nowSeconds = Math.floor(Date.now() / 1000);
+        await updateJob(db, job.id, {
+          nextRunAt,
+          lastRunAt: nowSeconds,
+        });
+      } else {
+        // One-time reminder: delete even on failure
+        deleteJob(db, job.id);
+      }
     } catch (updateError) {
       console.error(JSON.stringify({
         event: 'job_update_error',
@@ -152,6 +163,18 @@ function logJobSuccess(job: ScheduledJob, durationMs: number, nextRunAt: number)
     jobId: job.id,
     durationMs,
     nextRunAt: new Date(nextRunAt * 1000).toISOString(),
+    timestamp: new Date().toISOString(),
+  }));
+}
+
+/**
+ * Log one-time reminder completion (deleted after execution).
+ */
+function logOneTimeComplete(job: ScheduledJob, durationMs: number): void {
+  console.log(JSON.stringify({
+    event: 'one_time_reminder_completed',
+    jobId: job.id,
+    durationMs,
     timestamp: new Date().toISOString(),
   }));
 }

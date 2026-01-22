@@ -1,9 +1,15 @@
 /**
- * Unit tests for schedule parser (NL to cron conversion).
+ * Unit tests for schedule parser (NL to cron conversion and one-time reminders).
  */
 
 import { describe, it, expect } from 'vitest';
-import { parseScheduleToCron, isValidCron, cronToHuman } from '../../../src/services/scheduler/parser.js';
+import {
+  parseScheduleToCron,
+  parseSchedule,
+  parseReminderTime,
+  isValidCron,
+  cronToHuman,
+} from '../../../src/services/scheduler/parser.js';
 
 describe('parseScheduleToCron', () => {
   describe('happy paths', () => {
@@ -98,5 +104,109 @@ describe('cronToHuman', () => {
 
   it('converts "0 12 * * 1" to "every Monday at 12 PM"', () => {
     expect(cronToHuman('0 12 * * 1')).toBe('every Monday at 12 PM');
+  });
+});
+
+describe('parseSchedule', () => {
+  const timezone = 'America/New_York';
+
+  describe('recurring schedules', () => {
+    it('detects "daily at 9am" as recurring', () => {
+      const result = parseSchedule('daily at 9am', timezone);
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe('recurring');
+      expect(result!.cronExpression).toBe('0 9 * * *');
+    });
+
+    it('detects "every weekday at 8am" as recurring', () => {
+      const result = parseSchedule('every weekday at 8am', timezone);
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe('recurring');
+      expect(result!.cronExpression).toBe('0 8 * * 1-5');
+    });
+
+    it('detects "every monday at noon" as recurring', () => {
+      const result = parseSchedule('every monday at noon', timezone);
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe('recurring');
+      expect(result!.cronExpression).toBe('0 12 * * 1');
+    });
+
+    it('detects "every 30 minutes" as recurring', () => {
+      const result = parseSchedule('every 30 minutes', timezone);
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe('recurring');
+      expect(result!.cronExpression).toBe('*/30 * * * *');
+    });
+
+    it('detects "hourly" as recurring', () => {
+      const result = parseSchedule('hourly', timezone);
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe('recurring');
+      expect(result!.cronExpression).toBe('0 * * * *');
+    });
+  });
+
+  describe('one-time schedules', () => {
+    it('detects "tomorrow at 9am" as one-time', () => {
+      const result = parseSchedule('tomorrow at 9am', timezone);
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe('once');
+      expect(result!.runAtTimestamp).toBeGreaterThan(Math.floor(Date.now() / 1000));
+    });
+
+    it('detects "in 2 hours" as one-time', () => {
+      const result = parseSchedule('in 2 hours', timezone);
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe('once');
+      expect(result!.runAtTimestamp).toBeGreaterThan(Math.floor(Date.now() / 1000));
+    });
+
+    it('detects "next friday at 3pm" as one-time', () => {
+      const result = parseSchedule('next friday at 3pm', timezone);
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe('once');
+      expect(result!.runAtTimestamp).toBeGreaterThan(Math.floor(Date.now() / 1000));
+    });
+  });
+
+  describe('failure cases', () => {
+    it('returns null for unparseable input', () => {
+      expect(parseSchedule('banana', timezone)).toBeNull();
+    });
+
+    it('returns null for empty string', () => {
+      expect(parseSchedule('', timezone)).toBeNull();
+    });
+  });
+});
+
+describe('parseReminderTime', () => {
+  const timezone = 'America/New_York';
+
+  it('parses "tomorrow at 9am" to a future timestamp', () => {
+    const result = parseReminderTime('tomorrow at 9am', timezone);
+    expect(result).not.toBeNull();
+    expect(result).toBeGreaterThan(Math.floor(Date.now() / 1000));
+  });
+
+  it('parses "in 1 hour" to approximately 1 hour from now', () => {
+    const result = parseReminderTime('in 1 hour', timezone);
+    expect(result).not.toBeNull();
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const oneHourFromNow = nowSeconds + 3600;
+    // Allow some tolerance (within 5 minutes)
+    expect(result).toBeGreaterThan(nowSeconds + 3000);
+    expect(result).toBeLessThan(oneHourFromNow + 300);
+  });
+
+  it('returns null for past times', () => {
+    // "yesterday at 9am" should be in the past
+    const result = parseReminderTime('yesterday at 9am', timezone);
+    expect(result).toBeNull();
+  });
+
+  it('returns null for unparseable input', () => {
+    expect(parseReminderTime('banana', timezone)).toBeNull();
   });
 });

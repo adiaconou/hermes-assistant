@@ -27,6 +27,7 @@ import {
   updateJob,
   deleteJob,
   parseScheduleToCron,
+  parseSchedule,
   cronToHuman,
   getSchedulerDb,
 } from './services/scheduler/index.js';
@@ -422,9 +423,13 @@ Call this BEFORE create_calendar_event or get_calendar_events when the user give
   },
   {
     name: 'create_scheduled_job',
-    description: `Create a recurring scheduled task that will generate and send a message to the user at specified times.
-Use this when the user wants regular reminders, summaries, or any recurring notification.
-Examples: "Send me a daily summary at 9am", "Remind me every Monday to check tasks"`,
+    description: `Create a scheduled message that will be generated and sent to the user.
+Works for both one-time and recurring schedules - the system auto-detects based on the schedule.
+
+One-time examples: "tomorrow at 9am", "in 2 hours", "next Friday at 3pm"
+Recurring examples: "daily at 9am", "every Monday at noon", "every weekday at 8:30am"
+
+Use this for SMS/text reminders. For calendar events, use create_calendar_event instead.`,
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -907,48 +912,61 @@ async function handleToolCall(
       return JSON.stringify({ success: false, error: 'Prompt is too long (max 1000 characters)' });
     }
 
-    // Parse schedule to cron expression
-    const cronExpression = parseScheduleToCron(schedule);
-    if (!cronExpression) {
-      return JSON.stringify({
-        success: false,
-        error: `Could not parse schedule: "${schedule}". Try formats like "daily at 9am", "every weekday at 8:30am", "every Monday at noon"`,
-      });
-    }
-
     // Get user timezone
     const userConfigStore = getUserConfigStore();
     const userConfig = await userConfigStore.get(phoneNumber);
     const timezone = userConfig?.timezone ?? 'UTC';
 
+    // Parse schedule (auto-detects recurring vs one-time)
+    const parsed = parseSchedule(schedule, timezone);
+    if (!parsed) {
+      return JSON.stringify({
+        success: false,
+        error: `Could not parse schedule: "${schedule}". Try formats like "daily at 9am", "tomorrow at 3pm", "in 2 hours"`,
+      });
+    }
+
     // Calculate next run time
     try {
       let nextRun: Date;
+      let cronExpression: string;
+      let scheduleDescription: string;
 
-      // For interval patterns (every N hours/minutes), the first run should be
-      // N units from now, not at the next aligned time
-      const hourIntervalMatch = cronExpression.match(/^0 \*\/(\d+) \* \* \*$/);
-      const minuteIntervalMatch = cronExpression.match(/^\*\/(\d+) \* \* \* \*$/);
+      if (parsed.type === 'recurring') {
+        cronExpression = parsed.cronExpression!;
 
-      if (hourIntervalMatch) {
-        // Every N hours - first run is N hours from now
-        const hours = parseInt(hourIntervalMatch[1], 10);
-        nextRun = new Date(Date.now() + hours * 60 * 60 * 1000);
-      } else if (minuteIntervalMatch) {
-        // Every N minutes - first run is N minutes from now
-        const minutes = parseInt(minuteIntervalMatch[1], 10);
-        nextRun = new Date(Date.now() + minutes * 60 * 1000);
-      } else {
-        // Standard cron - use croner to calculate next run
-        const cron = new Cron(cronExpression, { timezone });
-        const cronNextRun = cron.nextRun();
-        if (!cronNextRun) {
-          return JSON.stringify({
-            success: false,
-            error: 'Could not calculate next run time for this schedule',
-          });
+        // For interval patterns (every N hours/minutes), the first run should be
+        // N units from now, not at the next aligned time
+        const hourIntervalMatch = cronExpression.match(/^0 \*\/(\d+) \* \* \*$/);
+        const minuteIntervalMatch = cronExpression.match(/^\*\/(\d+) \* \* \* \*$/);
+
+        if (hourIntervalMatch) {
+          // Every N hours - first run is N hours from now
+          const hours = parseInt(hourIntervalMatch[1], 10);
+          nextRun = new Date(Date.now() + hours * 60 * 60 * 1000);
+        } else if (minuteIntervalMatch) {
+          // Every N minutes - first run is N minutes from now
+          const minutes = parseInt(minuteIntervalMatch[1], 10);
+          nextRun = new Date(Date.now() + minutes * 60 * 1000);
+        } else {
+          // Standard cron - use croner to calculate next run
+          const cron = new Cron(cronExpression, { timezone });
+          const cronNextRun = cron.nextRun();
+          if (!cronNextRun) {
+            return JSON.stringify({
+              success: false,
+              error: 'Could not calculate next run time for this schedule',
+            });
+          }
+          nextRun = cronNextRun;
         }
-        nextRun = cronNextRun;
+
+        scheduleDescription = cronToHuman(cronExpression);
+      } else {
+        // One-time reminder
+        cronExpression = '@once';
+        nextRun = new Date(parsed.runAtTimestamp! * 1000);
+        scheduleDescription = 'one-time reminder';
       }
 
       const nextRunAt = Math.floor(nextRun.getTime() / 1000);
@@ -962,6 +980,7 @@ async function handleToolCall(
         cronExpression,
         timezone,
         nextRunAt,
+        isRecurring: parsed.type === 'recurring',
       });
 
       const nextRunFormatted = nextRun.toLocaleString('en-US', {
@@ -975,8 +994,9 @@ async function handleToolCall(
 
       console.log(JSON.stringify({
         level: 'info',
-        message: 'Scheduled job created',
+        message: parsed.type === 'recurring' ? 'Scheduled job created' : 'One-time reminder created',
         jobId: job.id,
+        type: parsed.type,
         cronExpression,
         timezone,
         nextRunAt: nextRun.toISOString(),
@@ -986,7 +1006,8 @@ async function handleToolCall(
       return JSON.stringify({
         success: true,
         job_id: job.id,
-        schedule_description: cronToHuman(cronExpression),
+        type: parsed.type,
+        schedule_description: scheduleDescription,
         next_run: nextRunFormatted,
         timezone,
       });
@@ -1024,7 +1045,8 @@ async function handleToolCall(
       const jobList = jobs.map((job) => ({
         job_id: job.id,
         description: job.userRequest || (job.prompt.length > 50 ? job.prompt.slice(0, 50) + '...' : job.prompt),
-        schedule: cronToHuman(job.cronExpression),
+        type: job.isRecurring ? 'recurring' : 'one-time',
+        schedule: job.isRecurring ? cronToHuman(job.cronExpression) : 'one-time',
         enabled: job.enabled,
         next_run: job.enabled && job.nextRunAt
           ? new Date(job.nextRunAt * 1000).toLocaleString('en-US', {

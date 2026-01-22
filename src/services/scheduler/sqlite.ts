@@ -23,6 +23,7 @@ interface ScheduledJobRow {
   next_run_at: number;
   last_run_at: number | null;
   enabled: number;
+  is_recurring: number;
   created_at: number;
   updated_at: number;
 }
@@ -42,6 +43,7 @@ function rowToJob(row: ScheduledJobRow): ScheduledJob {
     nextRunAt: row.next_run_at,
     lastRunAt: row.last_run_at ?? undefined,
     enabled: row.enabled === 1,
+    isRecurring: row.is_recurring === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -80,6 +82,14 @@ export function initSchedulerDb(db: Database.Database): void {
   } catch {
     // Column already exists, ignore
   }
+
+  // Migration: add is_recurring column if it doesn't exist (for existing databases)
+  // Default to 1 (true) since all existing jobs are recurring
+  try {
+    db.exec(`ALTER TABLE scheduled_jobs ADD COLUMN is_recurring INTEGER NOT NULL DEFAULT 1`);
+  } catch {
+    // Column already exists, ignore
+  }
 }
 
 /**
@@ -91,8 +101,8 @@ export function createJob(db: Database.Database, input: CreateJobInput): Schedul
 
   db.prepare(`
     INSERT INTO scheduled_jobs
-      (id, phone_number, channel, user_request, prompt, cron_expression, timezone, next_run_at, enabled, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      (id, phone_number, channel, user_request, prompt, cron_expression, timezone, next_run_at, is_recurring, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
   `).run(
     id,
     input.phoneNumber,
@@ -102,6 +112,7 @@ export function createJob(db: Database.Database, input: CreateJobInput): Schedul
     input.cronExpression,
     input.timezone,
     input.nextRunAt,
+    input.isRecurring ? 1 : 0,
     now,
     now
   );
@@ -117,6 +128,7 @@ export function createJob(db: Database.Database, input: CreateJobInput): Schedul
     nextRunAt: input.nextRunAt,
     lastRunAt: undefined,
     enabled: true,
+    isRecurring: input.isRecurring,
     createdAt: now,
     updatedAt: now,
   };

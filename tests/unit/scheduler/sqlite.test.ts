@@ -44,7 +44,7 @@ describe('scheduler sqlite', () => {
   });
 
   describe('createJob', () => {
-    it('creates a job and returns it with generated ID', () => {
+    it('creates a recurring job and returns it with generated ID', () => {
       const job = createJob(db, {
         phoneNumber: '+1234567890',
         channel: 'sms',
@@ -53,6 +53,7 @@ describe('scheduler sqlite', () => {
         cronExpression: '0 9 * * *',
         timezone: 'America/New_York',
         nextRunAt: Math.floor(Date.now() / 1000) + 3600,
+        isRecurring: true,
       });
 
       expect(job.id).toBeDefined();
@@ -63,6 +64,24 @@ describe('scheduler sqlite', () => {
       expect(job.cronExpression).toBe('0 9 * * *');
       expect(job.timezone).toBe('America/New_York');
       expect(job.enabled).toBe(true);
+      expect(job.isRecurring).toBe(true);
+    });
+
+    it('creates a one-time reminder with isRecurring=false', () => {
+      const job = createJob(db, {
+        phoneNumber: '+1234567890',
+        channel: 'sms',
+        userRequest: 'Remind me to call mom',
+        prompt: 'Reminder: Call mom',
+        cronExpression: '@once',
+        timezone: 'America/New_York',
+        nextRunAt: Math.floor(Date.now() / 1000) + 3600,
+        isRecurring: false,
+      });
+
+      expect(job.id).toBeDefined();
+      expect(job.isRecurring).toBe(false);
+      expect(job.cronExpression).toBe('@once');
     });
   });
 
@@ -75,6 +94,7 @@ describe('scheduler sqlite', () => {
         cronExpression: '0 9 * * *',
         timezone: 'UTC',
         nextRunAt: Math.floor(Date.now() / 1000) + 3600,
+        isRecurring: true,
       });
 
       const retrieved = getJobById(db, created.id);
@@ -82,6 +102,7 @@ describe('scheduler sqlite', () => {
       expect(retrieved).not.toBeNull();
       expect(retrieved?.id).toBe(created.id);
       expect(retrieved?.prompt).toBe('Test prompt');
+      expect(retrieved?.isRecurring).toBe(true);
     });
 
     it('returns null for non-existent ID', () => {
@@ -99,6 +120,7 @@ describe('scheduler sqlite', () => {
         cronExpression: '0 9 * * *',
         timezone: 'UTC',
         nextRunAt: Math.floor(Date.now() / 1000) + 3600,
+        isRecurring: true,
       });
 
       createJob(db, {
@@ -108,6 +130,7 @@ describe('scheduler sqlite', () => {
         cronExpression: '0 10 * * *',
         timezone: 'UTC',
         nextRunAt: Math.floor(Date.now() / 1000) + 7200,
+        isRecurring: true,
       });
 
       createJob(db, {
@@ -117,6 +140,7 @@ describe('scheduler sqlite', () => {
         cronExpression: '0 11 * * *',
         timezone: 'UTC',
         nextRunAt: Math.floor(Date.now() / 1000) + 10800,
+        isRecurring: true,
       });
 
       const jobs = getJobsByPhone(db, '+1234567890');
@@ -144,6 +168,7 @@ describe('scheduler sqlite', () => {
         cronExpression: '0 9 * * *',
         timezone: 'UTC',
         nextRunAt: now - 60, // 1 minute ago
+        isRecurring: true,
       });
 
       // Future job
@@ -154,6 +179,7 @@ describe('scheduler sqlite', () => {
         cronExpression: '0 10 * * *',
         timezone: 'UTC',
         nextRunAt: now + 3600, // 1 hour from now
+        isRecurring: true,
       });
 
       const dueJobs = getDueJobs(db, now);
@@ -172,6 +198,7 @@ describe('scheduler sqlite', () => {
         cronExpression: '0 9 * * *',
         timezone: 'UTC',
         nextRunAt: now - 60,
+        isRecurring: true,
       });
 
       // Disable the job
@@ -191,6 +218,7 @@ describe('scheduler sqlite', () => {
         cronExpression: '0 9 * * *',
         timezone: 'UTC',
         nextRunAt: 1000,
+        isRecurring: true,
       });
 
       const updated = updateJob(db, job.id, {
@@ -219,6 +247,7 @@ describe('scheduler sqlite', () => {
         cronExpression: '0 9 * * *',
         timezone: 'UTC',
         nextRunAt: 1000,
+        isRecurring: true,
       });
 
       const deleted = deleteJob(db, job.id);
