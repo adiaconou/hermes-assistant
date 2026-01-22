@@ -22,7 +22,11 @@ export interface MockCalendarEvent {
 let mockEvents: MockCalendarEvent[] = [];
 let listCallCount = 0;
 let insertCallCount = 0;
+let patchCallCount = 0;
+let deleteCallCount = 0;
 let lastInsertedEvent: Partial<MockCalendarEvent> | null = null;
+let lastPatchedEvent: { eventId: string; requestBody: Partial<MockCalendarEvent> } | null = null;
+let lastDeletedEventId: string | null = null;
 let shouldFailRefresh = false;
 
 /**
@@ -54,13 +58,31 @@ export function getLastInsertedEvent(): Partial<MockCalendarEvent> | null {
 }
 
 /**
+ * Get the last patched event.
+ */
+export function getLastPatchedEvent(): { eventId: string; requestBody: Partial<MockCalendarEvent> } | null {
+  return lastPatchedEvent;
+}
+
+/**
+ * Get the last deleted event ID.
+ */
+export function getLastDeletedEventId(): string | null {
+  return lastDeletedEventId;
+}
+
+/**
  * Clear mock state. Call this in beforeEach.
  */
 export function clearMockState(): void {
   mockEvents = [];
   listCallCount = 0;
   insertCallCount = 0;
+  patchCallCount = 0;
+  deleteCallCount = 0;
   lastInsertedEvent = null;
+  lastPatchedEvent = null;
+  lastDeletedEventId = null;
   shouldFailRefresh = false;
 }
 
@@ -90,11 +112,39 @@ const mockEventsInsert = vi.fn(async (params: { requestBody: Partial<MockCalenda
   };
 });
 
+// Mock calendar.events.patch
+const mockEventsPatch = vi.fn(async (params: { eventId: string; requestBody: Partial<MockCalendarEvent> }) => {
+  patchCallCount++;
+  lastPatchedEvent = params;
+
+  // Find existing event to merge with updates
+  const existing = mockEvents.find(e => e.id === params.eventId);
+
+  return {
+    data: {
+      id: params.eventId,
+      summary: params.requestBody.summary ?? existing?.summary ?? '',
+      start: params.requestBody.start ?? existing?.start ?? { dateTime: '' },
+      end: params.requestBody.end ?? existing?.end ?? { dateTime: '' },
+      location: params.requestBody.location ?? existing?.location,
+    },
+  };
+});
+
+// Mock calendar.events.delete
+const mockEventsDelete = vi.fn(async (params: { eventId: string }) => {
+  deleteCallCount++;
+  lastDeletedEventId = params.eventId;
+  return { data: {} };
+});
+
 // Mock calendar object
 const mockCalendar = {
   events: {
     list: mockEventsList,
     insert: mockEventsInsert,
+    patch: mockEventsPatch,
+    delete: mockEventsDelete,
   },
 };
 
@@ -136,4 +186,4 @@ vi.mock('googleapis', () => ({
   google: mockGoogle,
 }));
 
-export { mockGoogle, mockEventsList, mockEventsInsert, mockSetCredentials, mockRefreshAccessToken, mockGenerateAuthUrl };
+export { mockGoogle, mockEventsList, mockEventsInsert, mockEventsPatch, mockEventsDelete, mockSetCredentials, mockRefreshAccessToken, mockGenerateAuthUrl };

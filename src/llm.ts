@@ -15,7 +15,7 @@ import type {
 import config from './config.js';
 import type { Message } from './conversation.js';
 import { generatePage, isSuccess, getSizeLimits } from './ui/index.js';
-import { listEvents, createEvent, AuthRequiredError } from './services/google/calendar.js';
+import { listEvents, createEvent, updateEvent, deleteEvent, AuthRequiredError } from './services/google/calendar.js';
 import { generateAuthUrl } from './routes/auth.js';
 import { getUserConfigStore, type UserConfig } from './services/user-config/index.js';
 import * as chrono from 'chrono-node';
@@ -262,7 +262,7 @@ Do NOT:
 
 ## Google Calendar Integration
 
-You can access the user's Google Calendar using the get_calendar_events and create_calendar_event tools.
+You can access the user's Google Calendar using the get_calendar_events, create_calendar_event, update_calendar_event, and delete_calendar_event tools.
 
 If a calendar tool returns auth_required: true, tell the user to tap the link to connect their Google Calendar. Be natural about it, e.g., "To access your calendar, tap this link: [url]"
 
@@ -365,6 +365,50 @@ IMPORTANT CONSTRAINTS:
         },
       },
       required: ['title', 'start_time'],
+    },
+  },
+  {
+    name: 'update_calendar_event',
+    description: "Update an existing event on the user's Google Calendar. Use get_calendar_events first to find the event ID.",
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        event_id: {
+          type: 'string',
+          description: 'The event ID to update (from get_calendar_events)',
+        },
+        title: {
+          type: 'string',
+          description: 'New event title (optional)',
+        },
+        start_time: {
+          type: 'string',
+          description: 'New start time with timezone offset (optional)',
+        },
+        end_time: {
+          type: 'string',
+          description: 'New end time with timezone offset (optional)',
+        },
+        location: {
+          type: 'string',
+          description: 'New location (optional)',
+        },
+      },
+      required: ['event_id'],
+    },
+  },
+  {
+    name: 'delete_calendar_event',
+    description: "Delete an event from the user's Google Calendar. Use get_calendar_events first to find the event ID. Ask for confirmation before deleting.",
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        event_id: {
+          type: 'string',
+          description: 'The event ID to delete (from get_calendar_events)',
+        },
+      },
+      required: ['event_id'],
     },
   },
   {
@@ -694,6 +738,108 @@ async function handleToolCall(
       console.error(JSON.stringify({
         level: 'error',
         message: 'Calendar event creation failed',
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString(),
+      }));
+      return JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (toolName === 'update_calendar_event') {
+    if (!phoneNumber) {
+      return JSON.stringify({ success: false, error: 'Phone number not available' });
+    }
+
+    const { event_id, title, start_time, end_time, location } = toolInput as {
+      event_id: string;
+      title?: string;
+      start_time?: string;
+      end_time?: string;
+      location?: string;
+    };
+
+    try {
+      const updates: {
+        title?: string;
+        start?: Date;
+        end?: Date;
+        location?: string;
+      } = {};
+
+      if (title !== undefined) updates.title = title;
+      if (start_time !== undefined) updates.start = new Date(start_time);
+      if (end_time !== undefined) updates.end = new Date(end_time);
+      if (location !== undefined) updates.location = location;
+
+      console.log(JSON.stringify({
+        level: 'info',
+        message: 'Updating calendar event',
+        eventId: event_id,
+        hasTitle: !!title,
+        hasStart: !!start_time,
+        hasEnd: !!end_time,
+        hasLocation: !!location,
+        timestamp: new Date().toISOString(),
+      }));
+
+      const event = await updateEvent(phoneNumber, event_id, updates);
+
+      return JSON.stringify({ success: true, event });
+    } catch (error) {
+      if (error instanceof AuthRequiredError) {
+        const authUrl = generateAuthUrl(phoneNumber);
+        return JSON.stringify({
+          success: false,
+          auth_required: true,
+          auth_url: authUrl,
+        });
+      }
+      console.error(JSON.stringify({
+        level: 'error',
+        message: 'Calendar event update failed',
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString(),
+      }));
+      return JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (toolName === 'delete_calendar_event') {
+    if (!phoneNumber) {
+      return JSON.stringify({ success: false, error: 'Phone number not available' });
+    }
+
+    const { event_id } = toolInput as { event_id: string };
+
+    try {
+      console.log(JSON.stringify({
+        level: 'info',
+        message: 'Deleting calendar event',
+        eventId: event_id,
+        timestamp: new Date().toISOString(),
+      }));
+
+      await deleteEvent(phoneNumber, event_id);
+
+      return JSON.stringify({ success: true, deleted: event_id });
+    } catch (error) {
+      if (error instanceof AuthRequiredError) {
+        const authUrl = generateAuthUrl(phoneNumber);
+        return JSON.stringify({
+          success: false,
+          auth_required: true,
+          auth_url: authUrl,
+        });
+      }
+      console.error(JSON.stringify({
+        level: 'error',
+        message: 'Calendar event deletion failed',
         error: error instanceof Error ? error.message : String(error),
         timestamp: new Date().toISOString(),
       }));

@@ -7,6 +7,8 @@ import {
   setMockEvents,
   clearMockState,
   setShouldFailRefresh,
+  getLastPatchedEvent,
+  getLastDeletedEventId,
   type MockCalendarEvent
 } from '../mocks/google-calendar.js';
 import {
@@ -15,7 +17,7 @@ import {
 } from '../../src/services/credentials/index.js';
 
 // Import after mocks are set up
-import { listEvents, createEvent, AuthRequiredError } from '../../src/services/google/calendar.js';
+import { listEvents, createEvent, updateEvent, deleteEvent, AuthRequiredError } from '../../src/services/google/calendar.js';
 
 describe('Calendar Service', () => {
   const testPhone = '+1234567890';
@@ -128,5 +130,70 @@ describe('Calendar Service', () => {
     // Credentials should be deleted
     const creds = await store.get(testPhone, 'google');
     expect(creds).toBeNull();
+  });
+
+  describe('updateEvent', () => {
+    it('updates event title', async () => {
+      const store = getCredentialStore();
+      await store.set(testPhone, 'google', validCredential);
+
+      setMockEvents([{
+        id: 'event1',
+        summary: 'Old Title',
+        start: { dateTime: '2025-01-20T10:00:00Z' },
+        end: { dateTime: '2025-01-20T11:00:00Z' },
+      }]);
+
+      const result = await updateEvent(testPhone, 'event1', { title: 'New Title' });
+
+      expect(result.title).toBe('New Title');
+      const patched = getLastPatchedEvent();
+      expect(patched?.eventId).toBe('event1');
+      expect(patched?.requestBody.summary).toBe('New Title');
+    });
+
+    it('updates event time', async () => {
+      const store = getCredentialStore();
+      await store.set(testPhone, 'google', validCredential);
+
+      setMockEvents([{
+        id: 'event1',
+        summary: 'Meeting',
+        start: { dateTime: '2025-01-20T10:00:00Z' },
+        end: { dateTime: '2025-01-20T11:00:00Z' },
+      }]);
+
+      const newStart = new Date('2025-01-20T14:00:00Z');
+      const newEnd = new Date('2025-01-20T15:00:00Z');
+
+      await updateEvent(testPhone, 'event1', { start: newStart, end: newEnd });
+
+      const patched = getLastPatchedEvent();
+      expect(patched?.requestBody.start?.dateTime).toBe(newStart.toISOString());
+      expect(patched?.requestBody.end?.dateTime).toBe(newEnd.toISOString());
+    });
+
+    it('throws AuthRequiredError when no credentials', async () => {
+      await expect(
+        updateEvent(testPhone, 'event1', { title: 'New Title' })
+      ).rejects.toThrow(AuthRequiredError);
+    });
+  });
+
+  describe('deleteEvent', () => {
+    it('deletes event by ID', async () => {
+      const store = getCredentialStore();
+      await store.set(testPhone, 'google', validCredential);
+
+      await deleteEvent(testPhone, 'event1');
+
+      expect(getLastDeletedEventId()).toBe('event1');
+    });
+
+    it('throws AuthRequiredError when no credentials', async () => {
+      await expect(
+        deleteEvent(testPhone, 'event1')
+      ).rejects.toThrow(AuthRequiredError);
+    });
   });
 });

@@ -191,3 +191,67 @@ export async function createEvent(
     location: event.location || undefined,
   };
 }
+
+/**
+ * Update an existing calendar event.
+ *
+ * @param phoneNumber - User's phone number
+ * @param eventId - ID of the event to update
+ * @param updates - Fields to update (all optional)
+ * @returns Updated event
+ * @throws AuthRequiredError if not authenticated
+ */
+export async function updateEvent(
+  phoneNumber: string,
+  eventId: string,
+  updates: {
+    title?: string;
+    start?: Date;
+    end?: Date;
+    location?: string;
+  }
+): Promise<CalendarEvent> {
+  const calendar = await getCalendarClient(phoneNumber);
+
+  // Build request body with only provided fields
+  const requestBody: calendar_v3.Schema$Event = {};
+  if (updates.title !== undefined) requestBody.summary = updates.title;
+  if (updates.start !== undefined) requestBody.start = { dateTime: updates.start.toISOString() };
+  if (updates.end !== undefined) requestBody.end = { dateTime: updates.end.toISOString() };
+  if (updates.location !== undefined) requestBody.location = updates.location;
+
+  const response = await calendar.events.patch({
+    calendarId: 'primary',
+    eventId: eventId,
+    requestBody,
+  });
+
+  const event = response.data;
+
+  return {
+    id: event.id || eventId,
+    title: event.summary || '',
+    start: event.start?.dateTime || event.start?.date || '',
+    end: event.end?.dateTime || event.end?.date || '',
+    location: event.location || undefined,
+  };
+}
+
+/**
+ * Delete a calendar event.
+ *
+ * @param phoneNumber - User's phone number
+ * @param eventId - ID of the event to delete
+ * @throws AuthRequiredError if not authenticated
+ */
+export async function deleteEvent(
+  phoneNumber: string,
+  eventId: string
+): Promise<void> {
+  const calendar = await getCalendarClient(phoneNumber);
+
+  await calendar.events.delete({
+    calendarId: 'primary',
+    eventId: eventId,
+  });
+}
