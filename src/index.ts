@@ -9,10 +9,14 @@
  */
 
 import express from 'express';
+import Database from 'better-sqlite3';
+import path from 'path';
+import fs from 'fs';
 import config from './config.js';
 import smsRouter from './routes/sms.js';
 import pagesRouter from './routes/pages.js';
 import authRouter from './routes/auth.js';
+import { initScheduler, stopScheduler } from './services/scheduler/index.js';
 
 const app = express();
 
@@ -36,7 +40,18 @@ app.use(authRouter);
 // Generated UI pages route
 app.use(pagesRouter);
 
-app.listen(config.port, () => {
+// Initialize database for scheduler
+const dbPath = config.credentials.sqlitePath;
+const dbDir = path.dirname(dbPath);
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
+const db = new Database(dbPath);
+
+// Initialize scheduler (creates tables, sets up poller)
+const poller = initScheduler(db);
+
+const server = app.listen(config.port, () => {
   console.log(
     JSON.stringify({
       level: 'info',
@@ -61,4 +76,36 @@ app.listen(config.port, () => {
       timestamp: new Date().toISOString(),
     })
   );
+
+  // Start the scheduler poller after server is ready
+  poller.start();
 });
+
+// Graceful shutdown
+function shutdown(signal: string) {
+  console.log(
+    JSON.stringify({
+      level: 'info',
+      message: 'Shutdown signal received',
+      signal,
+      timestamp: new Date().toISOString(),
+    })
+  );
+
+  stopScheduler();
+  db.close();
+
+  server.close(() => {
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        message: 'Server closed',
+        timestamp: new Date().toISOString(),
+      })
+    );
+    process.exit(0);
+  });
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

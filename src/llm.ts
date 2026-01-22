@@ -19,6 +19,18 @@ import { listEvents, createEvent, AuthRequiredError } from './services/google/ca
 import { generateAuthUrl } from './routes/auth.js';
 import { getUserConfigStore, type UserConfig } from './services/user-config/index.js';
 import * as chrono from 'chrono-node';
+import { Cron } from 'croner';
+import Database from 'better-sqlite3';
+import {
+  createJob,
+  getJobById,
+  getJobsByPhone,
+  updateJob,
+  deleteJob,
+  parseScheduleToCron,
+  cronToHuman,
+  initSchedulerDb,
+} from './services/scheduler/index.js';
 
 let client: Anthropic | null = null;
 
@@ -34,12 +46,34 @@ function getClient(): Anthropic {
 
 const sizeLimits = getSizeLimits();
 
+// Database connection for scheduler operations (lazy initialized)
+let schedulerDb: Database.Database | null = null;
+
+function getSchedulerDb(): Database.Database {
+  if (!schedulerDb) {
+    schedulerDb = new Database(config.credentials.sqlitePath);
+    initSchedulerDb(schedulerDb);
+  }
+  return schedulerDb;
+}
+
 /**
  * Classification result for determining if async processing is needed.
  */
 export interface ClassificationResult {
   needsAsyncWork: boolean;
   immediateResponse: string;
+}
+
+/**
+ * Options for customizing generateResponse behavior.
+ * Used by scheduled job executor to customize system prompt and tools.
+ */
+export interface GenerateOptions {
+  /** Override the default system prompt */
+  systemPrompt?: string;
+  /** Override the default tools (for restricting available tools) */
+  tools?: Tool[];
 }
 
 /**
@@ -396,7 +430,88 @@ Call this BEFORE create_calendar_event or get_calendar_events when the user give
       required: ['input', 'timezone'],
     },
   },
+  {
+    name: 'create_scheduled_job',
+    description: `Create a recurring scheduled task that will generate and send a message to the user at specified times.
+Use this when the user wants regular reminders, summaries, or any recurring notification.
+Examples: "Send me a daily summary at 9am", "Remind me every Monday to check tasks"`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        user_request: {
+          type: 'string',
+          description: "The user's original request in their own words. Used for display when listing jobs.",
+        },
+        prompt: {
+          type: 'string',
+          description: "What should be generated and sent. Be specific. Example: 'Generate a brief morning summary including today's calendar events'",
+        },
+        schedule: {
+          type: 'string',
+          description: "When to run, in natural language. Examples: 'daily at 9am', 'every weekday at 8:30am', 'every Monday at noon', 'every hour'",
+        },
+      },
+      required: ['prompt', 'schedule'],
+    },
+  },
+  {
+    name: 'list_scheduled_jobs',
+    description: 'List all scheduled jobs for the current user. Shows what recurring tasks are set up.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: 'update_scheduled_job',
+    description: 'Update an existing scheduled job. Can change the prompt, schedule, or pause/resume the job.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        job_id: {
+          type: 'string',
+          description: 'The job ID to update',
+        },
+        prompt: {
+          type: 'string',
+          description: 'New prompt for what to generate (optional)',
+        },
+        schedule: {
+          type: 'string',
+          description: 'New schedule in natural language (optional)',
+        },
+        enabled: {
+          type: 'boolean',
+          description: 'Set to false to pause, true to resume (optional)',
+        },
+      },
+      required: ['job_id'],
+    },
+  },
+  {
+    name: 'delete_scheduled_job',
+    description: 'Delete a scheduled job permanently.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        job_id: {
+          type: 'string',
+          description: 'The job ID to delete',
+        },
+      },
+      required: ['job_id'],
+    },
+  },
 ];
+
+/**
+ * Read-only tools safe for scheduled job execution.
+ * These tools can gather information but not modify user data.
+ */
+export const READ_ONLY_TOOLS = TOOLS.filter((t) =>
+  ['get_calendar_events', 'resolve_date'].includes(t.name)
+);
 
 /**
  * Helper to get end of day for a date.
@@ -782,6 +897,281 @@ async function handleToolCall(
     }
   }
 
+  if (toolName === 'create_scheduled_job') {
+    if (!phoneNumber) {
+      return JSON.stringify({ success: false, error: 'Phone number not available' });
+    }
+
+    const { user_request, prompt, schedule } = toolInput as {
+      user_request?: string;
+      prompt: string;
+      schedule: string;
+    };
+
+    // Validate prompt length (max 1000 chars)
+    if (!prompt || prompt.length === 0) {
+      return JSON.stringify({ success: false, error: 'Prompt is required' });
+    }
+    if (prompt.length > 1000) {
+      return JSON.stringify({ success: false, error: 'Prompt is too long (max 1000 characters)' });
+    }
+
+    // Parse schedule to cron expression
+    const cronExpression = parseScheduleToCron(schedule);
+    if (!cronExpression) {
+      return JSON.stringify({
+        success: false,
+        error: `Could not parse schedule: "${schedule}". Try formats like "daily at 9am", "every weekday at 8:30am", "every Monday at noon"`,
+      });
+    }
+
+    // Get user timezone
+    const userConfigStore = getUserConfigStore();
+    const userConfig = await userConfigStore.get(phoneNumber);
+    const timezone = userConfig?.timezone ?? 'UTC';
+
+    // Calculate next run time
+    try {
+      const cron = new Cron(cronExpression, { timezone });
+      const nextRun = cron.nextRun();
+      if (!nextRun) {
+        return JSON.stringify({
+          success: false,
+          error: 'Could not calculate next run time for this schedule',
+        });
+      }
+
+      const nextRunAt = Math.floor(nextRun.getTime() / 1000);
+      const db = getSchedulerDb();
+      const job = createJob(db, {
+        phoneNumber,
+        userRequest: user_request,
+        prompt,
+        cronExpression,
+        timezone,
+        nextRunAt,
+      });
+
+      const nextRunFormatted = nextRun.toLocaleString('en-US', {
+        timeZone: timezone,
+        weekday: 'long',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+
+      console.log(JSON.stringify({
+        level: 'info',
+        message: 'Scheduled job created',
+        jobId: job.id,
+        cronExpression,
+        timezone,
+        nextRunAt: nextRun.toISOString(),
+        timestamp: new Date().toISOString(),
+      }));
+
+      return JSON.stringify({
+        success: true,
+        job_id: job.id,
+        schedule_description: cronToHuman(cronExpression),
+        next_run: nextRunFormatted,
+        timezone,
+      });
+    } catch (error) {
+      console.error(JSON.stringify({
+        level: 'error',
+        message: 'Failed to create scheduled job',
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString(),
+      }));
+      return JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (toolName === 'list_scheduled_jobs') {
+    if (!phoneNumber) {
+      return JSON.stringify({ success: false, error: 'Phone number not available' });
+    }
+
+    try {
+      const db = getSchedulerDb();
+      const jobs = getJobsByPhone(db, phoneNumber);
+
+      if (jobs.length === 0) {
+        return JSON.stringify({
+          success: true,
+          jobs: [],
+          message: 'No scheduled jobs found',
+        });
+      }
+
+      const jobList = jobs.map((job) => ({
+        job_id: job.id,
+        description: job.userRequest || job.prompt.slice(0, 50) + '...',
+        schedule: cronToHuman(job.cronExpression),
+        enabled: job.enabled,
+        next_run: job.enabled && job.nextRunAt
+          ? new Date(job.nextRunAt * 1000).toLocaleString('en-US', {
+              timeZone: job.timezone,
+              weekday: 'short',
+              month: 'short',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+            })
+          : 'paused',
+      }));
+
+      return JSON.stringify({
+        success: true,
+        jobs: jobList,
+      });
+    } catch (error) {
+      console.error(JSON.stringify({
+        level: 'error',
+        message: 'Failed to list scheduled jobs',
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString(),
+      }));
+      return JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (toolName === 'update_scheduled_job') {
+    if (!phoneNumber) {
+      return JSON.stringify({ success: false, error: 'Phone number not available' });
+    }
+
+    const { job_id, prompt, schedule, enabled } = toolInput as {
+      job_id: string;
+      prompt?: string;
+      schedule?: string;
+      enabled?: boolean;
+    };
+
+    try {
+      const db = getSchedulerDb();
+      const job = getJobById(db, job_id);
+
+      if (!job) {
+        return JSON.stringify({ success: false, error: 'Job not found' });
+      }
+
+      if (job.phoneNumber !== phoneNumber) {
+        return JSON.stringify({ success: false, error: 'Job not found' });
+      }
+
+      const updates: Record<string, unknown> = {};
+
+      if (prompt !== undefined) {
+        updates.prompt = prompt;
+      }
+
+      if (enabled !== undefined) {
+        updates.enabled = enabled;
+      }
+
+      if (schedule !== undefined) {
+        const cronExpression = parseScheduleToCron(schedule);
+        if (!cronExpression) {
+          return JSON.stringify({
+            success: false,
+            error: `Could not parse schedule: "${schedule}"`,
+          });
+        }
+        updates.cronExpression = cronExpression;
+
+        // Recalculate next run time
+        const cron = new Cron(cronExpression, { timezone: job.timezone });
+        const nextRun = cron.nextRun();
+        if (nextRun) {
+          updates.nextRunAt = Math.floor(nextRun.getTime() / 1000);
+        }
+      }
+
+      const updatedJob = updateJob(db, job_id, updates);
+
+      console.log(JSON.stringify({
+        level: 'info',
+        message: 'Scheduled job updated',
+        jobId: job_id,
+        updates: Object.keys(updates),
+        timestamp: new Date().toISOString(),
+      }));
+
+      return JSON.stringify({
+        success: true,
+        job_id,
+        updated_fields: Object.keys(updates),
+        enabled: updatedJob?.enabled,
+      });
+    } catch (error) {
+      console.error(JSON.stringify({
+        level: 'error',
+        message: 'Failed to update scheduled job',
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString(),
+      }));
+      return JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (toolName === 'delete_scheduled_job') {
+    if (!phoneNumber) {
+      return JSON.stringify({ success: false, error: 'Phone number not available' });
+    }
+
+    const { job_id } = toolInput as { job_id: string };
+
+    try {
+      const db = getSchedulerDb();
+      const job = getJobById(db, job_id);
+
+      if (!job) {
+        return JSON.stringify({ success: false, error: 'Job not found' });
+      }
+
+      if (job.phoneNumber !== phoneNumber) {
+        return JSON.stringify({ success: false, error: 'Job not found' });
+      }
+
+      deleteJob(db, job_id);
+
+      console.log(JSON.stringify({
+        level: 'info',
+        message: 'Scheduled job deleted',
+        jobId: job_id,
+        timestamp: new Date().toISOString(),
+      }));
+
+      return JSON.stringify({
+        success: true,
+        message: 'Job deleted successfully',
+      });
+    } catch (error) {
+      console.error(JSON.stringify({
+        level: 'error',
+        message: 'Failed to delete scheduled job',
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString(),
+      }));
+      return JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   return JSON.stringify({ error: `Unknown tool: ${toolName}` });
 }
 
@@ -819,12 +1209,14 @@ Don't block their request - help them AND ask for the missing info.`;
  * @param conversationHistory - Previous conversation messages
  * @param phoneNumber - User's phone number (for calendar tools)
  * @param userConfig - User's stored configuration (name, timezone)
+ * @param options - Optional overrides for system prompt and tools
  */
 export async function generateResponse(
   userMessage: string,
   conversationHistory: Message[],
   phoneNumber?: string,
-  userConfig?: UserConfig | null
+  userConfig?: UserConfig | null,
+  options?: GenerateOptions
 ): Promise<string> {
   const anthropic = getClient();
 
@@ -837,11 +1229,13 @@ export async function generateResponse(
   // Add current message
   messages.push({ role: 'user', content: userMessage });
 
-  // Build system prompt with user context
-  // IMPORTANT: Inject current date at the BEGINNING so the model sees it first
+  // Build system prompt - use provided or build default with user context
   const timeContext = buildTimeContext(userConfig ?? null);
-  const userContext = buildUserContext(userConfig ?? null);
-  const systemPrompt = `**${timeContext}**\n\n` + SYSTEM_PROMPT + userContext;
+  const systemPrompt = options?.systemPrompt
+    ?? (`**${timeContext}**\n\n` + SYSTEM_PROMPT + buildUserContext(userConfig ?? null));
+
+  // Use provided tools or default
+  const tools = options?.tools ?? TOOLS;
 
   // Initial API call
   console.log(JSON.stringify({
@@ -855,7 +1249,7 @@ export async function generateResponse(
     model: 'claude-sonnet-4-20250514',
     max_tokens: 4096,
     system: systemPrompt,
-    tools: TOOLS,
+    tools,
     messages,
   });
 
@@ -927,7 +1321,7 @@ export async function generateResponse(
       model: 'claude-sonnet-4-20250514',
       max_tokens: 4096,
       system: systemPrompt,
-      tools: TOOLS,
+      tools,
       messages,
     });
 
