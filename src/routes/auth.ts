@@ -18,10 +18,11 @@ import { sendSms } from '../twilio.js';
 
 const router = Router();
 
-// Google Calendar scopes - read and write events
+// Google API scopes - Calendar and Gmail
 const SCOPES = [
   'https://www.googleapis.com/auth/calendar.readonly',
   'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/gmail.readonly',
 ];
 
 // State encryption (same key as credentials for simplicity)
@@ -217,7 +218,7 @@ router.get('/auth/google/callback', async (req, res) => {
     try {
       await sendSms(
         phoneNumber,
-        "📅 Google Calendar connected! Try asking: What's on my calendar today?"
+        "✅ Google account connected! You can now ask about your calendar and email."
       );
     } catch (smsError) {
       // Log but don't fail - tokens are stored
@@ -304,7 +305,7 @@ function successHtml(botPhoneNumber?: string): string {
   <div class="card">
     <div class="icon">✅</div>
     <h1>All Set!</h1>
-    <p>📅 Google Calendar is connected.</p>
+    <p>✅ Google account is connected.</p>
     ${waLink ? `
     <a href="${waLink}" class="btn">Return to WhatsApp</a>
     <p class="countdown">Redirecting in <span id="seconds">3</span>s...</p>

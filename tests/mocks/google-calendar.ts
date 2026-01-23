@@ -1,7 +1,7 @@
 /**
- * Mock for googleapis module (Google Calendar).
+ * Mock for googleapis module (Google Calendar and Gmail).
  *
- * Provides configurable mock responses for testing calendar operations
+ * Provides configurable mock responses for testing calendar and email operations
  * without making real API calls.
  */
 
@@ -18,7 +18,27 @@ export interface MockCalendarEvent {
   location?: string;
 }
 
-// Mock state
+/**
+ * Mock email structure.
+ */
+export interface MockEmail {
+  id: string;
+  threadId: string;
+  labelIds?: string[];
+  snippet?: string;
+  payload?: {
+    headers?: Array<{ name: string; value: string }>;
+    mimeType?: string;
+    body?: { data?: string };
+    parts?: Array<{
+      mimeType?: string;
+      body?: { data?: string };
+      parts?: Array<{ mimeType?: string; body?: { data?: string } }>;
+    }>;
+  };
+}
+
+// Calendar mock state
 let mockEvents: MockCalendarEvent[] = [];
 let listCallCount = 0;
 let insertCallCount = 0;
@@ -29,11 +49,30 @@ let lastPatchedEvent: { eventId: string; requestBody: Partial<MockCalendarEvent>
 let lastDeletedEventId: string | null = null;
 let shouldFailRefresh = false;
 
+// Gmail mock state
+let mockEmails: MockEmail[] = [];
+let gmailListCallCount = 0;
+let gmailGetCallCount = 0;
+
 /**
- * Set the mock events to return from events.list().
+ * Set the mock calendar events to return from events.list().
  */
 export function setMockEvents(events: MockCalendarEvent[]): void {
   mockEvents = [...events];
+}
+
+/**
+ * Set the mock emails to return from messages.list() and messages.get().
+ */
+export function setMockEmails(emails: MockEmail[]): void {
+  mockEmails = [...emails];
+}
+
+/**
+ * Get Gmail call counts for assertions.
+ */
+export function getGmailCallCounts(): { list: number; get: number } {
+  return { list: gmailListCallCount, get: gmailGetCallCount };
 }
 
 /**
@@ -75,6 +114,7 @@ export function getLastDeletedEventId(): string | null {
  * Clear mock state. Call this in beforeEach.
  */
 export function clearMockState(): void {
+  // Calendar state
   mockEvents = [];
   listCallCount = 0;
   insertCallCount = 0;
@@ -84,6 +124,10 @@ export function clearMockState(): void {
   lastPatchedEvent = null;
   lastDeletedEventId = null;
   shouldFailRefresh = false;
+  // Gmail state
+  mockEmails = [];
+  gmailListCallCount = 0;
+  gmailGetCallCount = 0;
 }
 
 // Mock calendar.events.list
@@ -148,6 +192,38 @@ const mockCalendar = {
   },
 };
 
+// Mock gmail.users.messages.list
+const mockMessagesList = vi.fn(async () => {
+  gmailListCallCount++;
+  return {
+    data: {
+      messages: mockEmails.map(e => ({ id: e.id, threadId: e.threadId })),
+    },
+  };
+});
+
+// Mock gmail.users.messages.get
+const mockMessagesGet = vi.fn(async (params: { id: string; format?: string }) => {
+  gmailGetCallCount++;
+  const email = mockEmails.find(e => e.id === params.id);
+  if (!email) {
+    throw new Error('Email not found');
+  }
+  return {
+    data: email,
+  };
+});
+
+// Mock gmail object
+const mockGmail = {
+  users: {
+    messages: {
+      list: mockMessagesList,
+      get: mockMessagesGet,
+    },
+  },
+};
+
 // Mock OAuth2 client
 const mockRefreshAccessToken = vi.fn(async () => {
   if (shouldFailRefresh) {
@@ -179,6 +255,7 @@ const mockGoogle = {
     OAuth2: MockOAuth2,
   },
   calendar: vi.fn(() => mockCalendar),
+  gmail: vi.fn(() => mockGmail),
 };
 
 // Set up the module mock
@@ -186,4 +263,18 @@ vi.mock('googleapis', () => ({
   google: mockGoogle,
 }));
 
-export { mockGoogle, mockEventsList, mockEventsInsert, mockEventsPatch, mockEventsDelete, mockSetCredentials, mockRefreshAccessToken, mockGenerateAuthUrl };
+export {
+  mockGoogle,
+  // Calendar mocks
+  mockEventsList,
+  mockEventsInsert,
+  mockEventsPatch,
+  mockEventsDelete,
+  // Gmail mocks
+  mockMessagesList,
+  mockMessagesGet,
+  // OAuth mocks
+  mockSetCredentials,
+  mockRefreshAccessToken,
+  mockGenerateAuthUrl,
+};
