@@ -146,12 +146,21 @@ export function getJobById(db: Database.Database, id: string): ScheduledJob | nu
 }
 
 /**
- * Get all jobs for a phone number.
+ * Get active jobs for a phone number.
+ * Returns only enabled jobs with future next_run_at, sorted by next execution date.
  */
-export function getJobsByPhone(db: Database.Database, phoneNumber: string): ScheduledJob[] {
+export function getJobsByPhone(
+  db: Database.Database,
+  phoneNumber: string,
+  nowSeconds: number
+): ScheduledJob[] {
   const rows = db.prepare(`
-    SELECT * FROM scheduled_jobs WHERE phone_number = ? ORDER BY created_at DESC
-  `).all(phoneNumber) as ScheduledJobRow[];
+    SELECT * FROM scheduled_jobs
+    WHERE phone_number = ?
+      AND enabled = 1
+      AND next_run_at > ?
+    ORDER BY next_run_at ASC
+  `).all(phoneNumber, nowSeconds) as ScheduledJobRow[];
 
   return rows.map(rowToJob);
 }

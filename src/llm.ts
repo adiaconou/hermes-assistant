@@ -1247,7 +1247,8 @@ async function handleToolCall(
 
     try {
       const db = getSchedulerDb();
-      const jobs = getJobsByPhone(db, phoneNumber);
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const jobs = getJobsByPhone(db, phoneNumber, nowSeconds);
 
       if (jobs.length === 0) {
         return JSON.stringify({

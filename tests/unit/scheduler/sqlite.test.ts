@@ -112,24 +112,26 @@ describe('scheduler sqlite', () => {
   });
 
   describe('getJobsByPhone', () => {
-    it('gets jobs by phone number', () => {
+    it('gets active jobs by phone number sorted by next_run_at', () => {
+      const now = Math.floor(Date.now() / 1000);
+
       createJob(db, {
         phoneNumber: '+1234567890',
         channel: 'sms',
-        prompt: 'Job 1',
+        prompt: 'Job 1 (runs later)',
         cronExpression: '0 9 * * *',
         timezone: 'UTC',
-        nextRunAt: Math.floor(Date.now() / 1000) + 3600,
+        nextRunAt: now + 7200, // 2 hours from now
         isRecurring: true,
       });
 
       createJob(db, {
         phoneNumber: '+1234567890',
         channel: 'sms',
-        prompt: 'Job 2',
+        prompt: 'Job 2 (runs sooner)',
         cronExpression: '0 10 * * *',
         timezone: 'UTC',
-        nextRunAt: Math.floor(Date.now() / 1000) + 7200,
+        nextRunAt: now + 3600, // 1 hour from now
         isRecurring: true,
       });
 
@@ -139,19 +141,64 @@ describe('scheduler sqlite', () => {
         prompt: 'Other user job',
         cronExpression: '0 11 * * *',
         timezone: 'UTC',
-        nextRunAt: Math.floor(Date.now() / 1000) + 10800,
+        nextRunAt: now + 10800,
         isRecurring: true,
       });
 
-      const jobs = getJobsByPhone(db, '+1234567890');
+      const jobs = getJobsByPhone(db, '+1234567890', now);
 
       expect(jobs).toHaveLength(2);
-      expect(jobs.map((j) => j.prompt)).toContain('Job 1');
-      expect(jobs.map((j) => j.prompt)).toContain('Job 2');
+      // Should be sorted by next_run_at ASC (soonest first)
+      expect(jobs[0].prompt).toBe('Job 2 (runs sooner)');
+      expect(jobs[1].prompt).toBe('Job 1 (runs later)');
+    });
+
+    it('excludes disabled jobs and jobs with past next_run_at', () => {
+      const now = Math.floor(Date.now() / 1000);
+
+      // Active future job - should be included
+      createJob(db, {
+        phoneNumber: '+1234567890',
+        channel: 'sms',
+        prompt: 'Active job',
+        cronExpression: '0 9 * * *',
+        timezone: 'UTC',
+        nextRunAt: now + 3600,
+        isRecurring: true,
+      });
+
+      // Job with past next_run_at - should be excluded
+      createJob(db, {
+        phoneNumber: '+1234567890',
+        channel: 'sms',
+        prompt: 'Past job',
+        cronExpression: '0 9 * * *',
+        timezone: 'UTC',
+        nextRunAt: now - 3600, // 1 hour ago
+        isRecurring: true,
+      });
+
+      // Disabled job - should be excluded
+      const disabledJob = createJob(db, {
+        phoneNumber: '+1234567890',
+        channel: 'sms',
+        prompt: 'Disabled job',
+        cronExpression: '0 9 * * *',
+        timezone: 'UTC',
+        nextRunAt: now + 7200,
+        isRecurring: true,
+      });
+      updateJob(db, disabledJob.id, { enabled: false });
+
+      const jobs = getJobsByPhone(db, '+1234567890', now);
+
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0].prompt).toBe('Active job');
     });
 
     it('returns empty array when no jobs for phone', () => {
-      const jobs = getJobsByPhone(db, '+9999999999');
+      const now = Math.floor(Date.now() / 1000);
+      const jobs = getJobsByPhone(db, '+9999999999', now);
       expect(jobs).toEqual([]);
     });
   });
