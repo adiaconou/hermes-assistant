@@ -265,7 +265,7 @@ Do NOT:
 
 You can access the user's Google Calendar using the get_calendar_events, create_calendar_event, update_calendar_event, and delete_calendar_event tools.
 
-If a calendar tool returns auth_required: true, tell the user to tap the link to connect their Google Calendar. Be natural about it, e.g., "To access your calendar, tap this link: [url]"
+If a calendar tool returns auth_required: true, tell the user to tap the auth_url from the response to connect their Google account. IMPORTANT: Always use the exact auth_url returned by the tool - never make up a URL.
 
 When listing events, format them concisely for SMS. Example:
 - 9am: Team standup
@@ -291,7 +291,7 @@ If timezone is unknown, ask the user before using calendar tools.
 
 You can access the user's Gmail using the get_emails and read_email tools.
 
-If a Gmail tool returns auth_required: true, tell the user to tap the link to connect their Google account.
+If a Gmail tool returns auth_required: true, tell the user to tap the auth_url from the response to connect their Google account. IMPORTANT: Always use the exact auth_url returned by the tool - never make up a URL.
 
 When listing emails, format them concisely for SMS:
 - Show sender name (not full email), subject, and relative time
