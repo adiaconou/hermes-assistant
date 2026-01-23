@@ -1469,6 +1469,12 @@ async function handleToolCall(
     } catch (error) {
       if (error instanceof AuthRequiredError) {
         const authUrl = generateAuthUrl(phoneNumber);
+        console.log(JSON.stringify({
+          level: 'info',
+          message: 'Gmail auth required, returning auth URL',
+          authUrl,
+          timestamp: new Date().toISOString(),
+        }));
         return JSON.stringify({
           success: false,
           auth_required: true,
@@ -1504,8 +1510,8 @@ async function handleToolCall(
         return JSON.stringify({ success: false, error: 'Email not found' });
       }
 
-      // Truncate body for SMS-friendly response
-      const maxBodyLength = 500;
+      // Truncate very long emails to avoid context limits
+      const maxBodyLength = 30000;
       const truncatedBody = email.body.length > maxBodyLength
         ? email.body.substring(0, maxBodyLength) + '...'
         : email.body;
