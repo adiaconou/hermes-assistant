@@ -303,7 +303,11 @@ Example response for "Any new emails?":
 2. Amazon - Your order shipped (5h ago)
 3. Mom - Dinner Sunday? (yesterday)"
 
-For reading full emails, summarize if the content is long.`;
+For reading full emails, summarize if the content is long.
+
+## Post-Authentication Continuation
+
+When you see a message like "[Authentication successful - continue with the previous request]", the user just completed Google authentication. Look at the conversation history to see what they originally asked for, then complete that request. Start with a brief acknowledgment like "Got it!" or "All set!" then seamlessly continue with their original request.`;
 
 /**
  * Tool definitions for the LLM.

@@ -14,7 +14,10 @@ import { google } from 'googleapis';
 import crypto from 'crypto';
 import config from '../config.js';
 import { getCredentialStore } from '../services/credentials/index.js';
-import { sendSms } from '../twilio.js';
+import { sendSms, sendWhatsApp } from '../twilio.js';
+import { generateResponse } from '../llm.js';
+import { getHistory, addMessage } from '../conversation.js';
+import { getUserConfigStore } from '../services/user-config/index.js';
 
 const router = Router();
 
@@ -126,6 +129,54 @@ export function generateAuthUrl(phoneNumber: string): string {
 }
 
 /**
+ * Continue the conversation after successful OAuth.
+ * Triggers the LLM to pick up where it left off.
+ */
+async function continueAfterAuth(phoneNumber: string): Promise<void> {
+  // Determine channel from phone number format
+  const isWhatsApp = phoneNumber.startsWith('whatsapp:');
+  const cleanPhone = phoneNumber.replace('whatsapp:', '');
+
+  // Get conversation history and user config
+  const history = getHistory(cleanPhone);
+  const configStore = getUserConfigStore();
+  const userConfig = await configStore.get(cleanPhone);
+
+  // Create a system message to prompt continuation
+  const continuationMessage = '[Authentication successful - continue with the previous request]';
+
+  // Add the continuation trigger to history
+  addMessage(cleanPhone, 'user', continuationMessage);
+
+  // Generate response - the LLM will see the previous context and continue
+  const response = await generateResponse(
+    continuationMessage,
+    history,
+    cleanPhone,
+    userConfig,
+    { channel: isWhatsApp ? 'whatsapp' : 'sms' }
+  );
+
+  // Store response in history
+  addMessage(cleanPhone, 'assistant', response);
+
+  // Send via appropriate channel
+  if (isWhatsApp) {
+    await sendWhatsApp(phoneNumber, response);
+  } else {
+    await sendSms(cleanPhone, response);
+  }
+
+  console.log(JSON.stringify({
+    level: 'info',
+    message: 'Sent post-auth continuation response',
+    phone: cleanPhone.slice(-4).padStart(cleanPhone.length, '*'),
+    responseLength: response.length,
+    timestamp: new Date().toISOString(),
+  }));
+}
+
+/**
  * GET /auth/google
  * Initiates OAuth flow - redirects to Google consent screen.
  */
@@ -214,23 +265,18 @@ router.get('/auth/google/callback', async (req, res) => {
       timestamp: new Date().toISOString(),
     }));
 
-    // Send confirmation SMS
-    try {
-      await sendSms(
-        phoneNumber,
-        "✅ Google account connected! You can now ask about your calendar and email."
-      );
-    } catch (smsError) {
-      // Log but don't fail - tokens are stored
+    // Send success page immediately
+    res.send(successHtml(config.twilio.phoneNumber));
+
+    // Continue the conversation asynchronously
+    continueAfterAuth(phoneNumber).catch((error) => {
       console.log(JSON.stringify({
         level: 'error',
-        message: 'Failed to send OAuth confirmation SMS',
-        error: smsError instanceof Error ? smsError.message : 'Unknown error',
+        message: 'Failed to continue after OAuth',
+        error: error instanceof Error ? error.message : 'Unknown error',
         timestamp: new Date().toISOString(),
       }));
-    }
-
-    res.send(successHtml(config.twilio.phoneNumber));
+    });
   } catch (error) {
     console.log(JSON.stringify({
       level: 'error',
