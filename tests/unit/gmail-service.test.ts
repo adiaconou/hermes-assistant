@@ -7,6 +7,7 @@ import {
   setMockEmails,
   clearMockState,
   setShouldFailRefresh,
+  setShouldFailWithInsufficientScopes,
   getGmailCallCounts,
   type MockEmail,
 } from '../mocks/google-calendar.js';
@@ -144,6 +145,24 @@ describe('Gmail Service', () => {
     ).rejects.toThrow(AuthRequiredError);
 
     // Credentials should be deleted
+    const creds = await store.get(testPhone, 'google');
+    expect(creds).toBeNull();
+  });
+
+  it('throws AuthRequiredError and deletes credentials on insufficient scopes', async () => {
+    // Store valid credentials (but missing Gmail scope)
+    const store = getCredentialStore();
+    await store.set(testPhone, 'google', validCredential);
+
+    // Make Gmail API fail with insufficient scopes
+    setShouldFailWithInsufficientScopes(true);
+
+    // Call should throw AuthRequiredError
+    await expect(
+      listEmails(testPhone)
+    ).rejects.toThrow(AuthRequiredError);
+
+    // Credentials should be deleted so user can re-auth with correct scopes
     const creds = await store.get(testPhone, 'google');
     expect(creds).toBeNull();
   });

@@ -53,6 +53,7 @@ let shouldFailRefresh = false;
 let mockEmails: MockEmail[] = [];
 let gmailListCallCount = 0;
 let gmailGetCallCount = 0;
+let shouldFailWithInsufficientScopes = false;
 
 /**
  * Set the mock calendar events to return from events.list().
@@ -80,6 +81,13 @@ export function getGmailCallCounts(): { list: number; get: number } {
  */
 export function setShouldFailRefresh(fail: boolean): void {
   shouldFailRefresh = fail;
+}
+
+/**
+ * Set whether Gmail API calls should fail with insufficient scopes error.
+ */
+export function setShouldFailWithInsufficientScopes(fail: boolean): void {
+  shouldFailWithInsufficientScopes = fail;
 }
 
 /**
@@ -128,6 +136,7 @@ export function clearMockState(): void {
   mockEmails = [];
   gmailListCallCount = 0;
   gmailGetCallCount = 0;
+  shouldFailWithInsufficientScopes = false;
 }
 
 // Mock calendar.events.list
@@ -195,6 +204,9 @@ const mockCalendar = {
 // Mock gmail.users.messages.list
 const mockMessagesList = vi.fn(async () => {
   gmailListCallCount++;
+  if (shouldFailWithInsufficientScopes) {
+    throw new Error('Request had insufficient authentication scopes.');
+  }
   return {
     data: {
       messages: mockEmails.map(e => ({ id: e.id, threadId: e.threadId })),
@@ -205,6 +217,9 @@ const mockMessagesList = vi.fn(async () => {
 // Mock gmail.users.messages.get
 const mockMessagesGet = vi.fn(async (params: { id: string; format?: string }) => {
   gmailGetCallCount++;
+  if (shouldFailWithInsufficientScopes) {
+    throw new Error('Request had insufficient authentication scopes.');
+  }
   const email = mockEmails.find(e => e.id === params.id);
   if (!email) {
     throw new Error('Email not found');

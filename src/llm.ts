@@ -1475,15 +1475,17 @@ async function handleToolCall(
           auth_url: authUrl,
         });
       }
+      const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(JSON.stringify({
         level: 'error',
         message: 'Email fetch failed',
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage,
         timestamp: new Date().toISOString(),
       }));
       return JSON.stringify({
         success: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: `Failed to fetch emails: ${errorMessage}`,
+        hint: 'This is an unexpected error. Please try again or contact support.',
       });
     }
   }
@@ -1534,15 +1536,17 @@ async function handleToolCall(
           auth_url: authUrl,
         });
       }
+      const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(JSON.stringify({
         level: 'error',
         message: 'Email read failed',
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage,
         timestamp: new Date().toISOString(),
       }));
       return JSON.stringify({
         success: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: `Failed to read email: ${errorMessage}`,
+        hint: 'This is an unexpected error. Please try again or contact support.',
       });
     }
   }

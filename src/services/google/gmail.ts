@@ -63,6 +63,44 @@ async function refreshAccessToken(
 }
 
 /**
+ * Check if an error is due to insufficient OAuth scopes.
+ * This happens when user authenticated before Gmail was added.
+ */
+function isInsufficientScopesError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('insufficient authentication scopes') ||
+         message.includes('Insufficient Permission');
+}
+
+/**
+ * Handle Gmail API errors, converting scope errors to AuthRequiredError.
+ * Deletes credentials if scopes are insufficient so user can re-auth.
+ */
+async function handleGmailApiError(
+  error: unknown,
+  phoneNumber: string
+): Promise<never> {
+  if (isInsufficientScopesError(error)) {
+    console.log(JSON.stringify({
+      level: 'warn',
+      message: 'Gmail scope missing, removing credentials for re-auth',
+      phone: phoneNumber.slice(-4).padStart(phoneNumber.length, '*'),
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString(),
+    }));
+
+    // Delete credentials so user can re-authenticate with Gmail scope
+    const store = getCredentialStore();
+    await store.delete(phoneNumber, 'google');
+
+    throw new AuthRequiredError(phoneNumber);
+  }
+
+  // Re-throw other errors as-is
+  throw error;
+}
+
+/**
  * Get an authenticated Gmail client for a phone number.
  * Automatically refreshes token if expired.
  * @throws AuthRequiredError if no credentials exist
@@ -130,43 +168,47 @@ export async function listEmails(
   const gmail = await getGmailClient(phoneNumber);
   const { query = 'is:inbox', maxResults = 10 } = options;
 
-  const response = await gmail.users.messages.list({
-    userId: 'me',
-    maxResults,
-    q: query,
-  });
+  try {
+    const response = await gmail.users.messages.list({
+      userId: 'me',
+      maxResults,
+      q: query,
+    });
 
-  if (!response.data.messages?.length) {
-    return [];
+    if (!response.data.messages?.length) {
+      return [];
+    }
+
+    // Fetch metadata for each message
+    const emails = await Promise.all(
+      response.data.messages.map(async (msg) => {
+        const detail = await gmail.users.messages.get({
+          userId: 'me',
+          id: msg.id!,
+          format: 'metadata',
+          metadataHeaders: ['From', 'Subject', 'Date'],
+        });
+
+        const headers = detail.data.payload?.headers || [];
+        const getHeader = (name: string) =>
+          headers.find((h) => h.name === name)?.value || '';
+
+        return {
+          id: msg.id!,
+          threadId: msg.threadId!,
+          from: getHeader('From'),
+          subject: getHeader('Subject'),
+          snippet: detail.data.snippet || '',
+          date: getHeader('Date'),
+          isUnread: detail.data.labelIds?.includes('UNREAD') || false,
+        };
+      })
+    );
+
+    return emails;
+  } catch (error) {
+    return handleGmailApiError(error, phoneNumber);
   }
-
-  // Fetch metadata for each message
-  const emails = await Promise.all(
-    response.data.messages.map(async (msg) => {
-      const detail = await gmail.users.messages.get({
-        userId: 'me',
-        id: msg.id!,
-        format: 'metadata',
-        metadataHeaders: ['From', 'Subject', 'Date'],
-      });
-
-      const headers = detail.data.payload?.headers || [];
-      const getHeader = (name: string) =>
-        headers.find((h) => h.name === name)?.value || '';
-
-      return {
-        id: msg.id!,
-        threadId: msg.threadId!,
-        from: getHeader('From'),
-        subject: getHeader('Subject'),
-        snippet: detail.data.snippet || '',
-        date: getHeader('Date'),
-        isUnread: detail.data.labelIds?.includes('UNREAD') || false,
-      };
-    })
-  );
-
-  return emails;
 }
 
 /**
@@ -183,30 +225,34 @@ export async function getEmail(
 ): Promise<EmailDetail | null> {
   const gmail = await getGmailClient(phoneNumber);
 
-  const response = await gmail.users.messages.get({
-    userId: 'me',
-    id: emailId,
-    format: 'full',
-  });
+  try {
+    const response = await gmail.users.messages.get({
+      userId: 'me',
+      id: emailId,
+      format: 'full',
+    });
 
-  if (!response.data) return null;
+    if (!response.data) return null;
 
-  const headers = response.data.payload?.headers || [];
-  const getHeader = (name: string) =>
-    headers.find((h) => h.name === name)?.value || '';
+    const headers = response.data.payload?.headers || [];
+    const getHeader = (name: string) =>
+      headers.find((h) => h.name === name)?.value || '';
 
-  const body = extractBodyText(response.data.payload);
+    const body = extractBodyText(response.data.payload);
 
-  return {
-    id: response.data.id!,
-    threadId: response.data.threadId!,
-    from: getHeader('From'),
-    subject: getHeader('Subject'),
-    snippet: response.data.snippet || '',
-    date: getHeader('Date'),
-    isUnread: response.data.labelIds?.includes('UNREAD') || false,
-    body,
-  };
+    return {
+      id: response.data.id!,
+      threadId: response.data.threadId!,
+      from: getHeader('From'),
+      subject: getHeader('Subject'),
+      snippet: response.data.snippet || '',
+      date: getHeader('Date'),
+      isUnread: response.data.labelIds?.includes('UNREAD') || false,
+      body,
+    };
+  } catch (error) {
+    return handleGmailApiError(error, phoneNumber);
+  }
 }
 
 /**
