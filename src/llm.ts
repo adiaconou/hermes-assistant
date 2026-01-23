@@ -1268,7 +1268,7 @@ async function handleToolCall(
           ? new Date(job.nextRunAt * 1000).toLocaleString('en-US', {
               timeZone: job.timezone,
               weekday: 'short',
-              month: 'short',
+              month: 'numeric',
               day: 'numeric',
               hour: 'numeric',
               minute: '2-digit',
