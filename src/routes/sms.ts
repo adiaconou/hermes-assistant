@@ -13,8 +13,9 @@
 import { Router, Request, Response } from 'express';
 import { generateResponse, classifyMessage } from '../llm/index.js';
 import { getHistory, addMessage, type Message } from '../conversation.js';
-import { sendSms, sendWhatsApp } from '../twilio.js';
+import { sendSms, sendWhatsApp, validateTwilioSignature } from '../twilio.js';
 import { getUserConfigStore, type UserConfig } from '../services/user-config/index.js';
+import config from '../config.js';
 
 /**
  * Send a response via the appropriate channel (SMS or WhatsApp).
@@ -70,6 +71,24 @@ function escapeXml(text: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
+}
+
+/** SMS has a 160 character limit per segment. */
+const SMS_MAX_LENGTH = 160;
+
+/**
+ * Enforce SMS length limits for synchronous TwiML responses.
+ * WhatsApp supports longer messages, so only SMS is truncated.
+ * Exported for testing.
+ */
+export function enforceSmsLength(message: string, channel: MessageChannel): string {
+  // WhatsApp doesn't need truncation
+  if (channel === 'whatsapp') return message;
+
+  if (message.length <= SMS_MAX_LENGTH) return message;
+
+  // Use canned acknowledgment for long responses - better UX than truncation
+  return "Working on your request. I'll send the full response shortly.";
 }
 
 /**
@@ -149,6 +168,21 @@ async function processAsyncWork(
  */
 router.post('/webhook/sms', async (req: Request, res: Response) => {
   const startTime = Date.now();
+
+  // Validate Twilio signature before processing
+  const signature = req.headers['x-twilio-signature'] as string | undefined;
+  const webhookUrl = `${config.baseUrl}/webhook/sms`;
+
+  if (!validateTwilioSignature(signature, webhookUrl, req.body)) {
+    console.log(JSON.stringify({
+      level: 'warn',
+      message: 'Invalid Twilio signature - rejecting request',
+      timestamp: new Date().toISOString(),
+    }));
+    res.status(403).send('Forbidden');
+    return;
+  }
+
   const { From, Body } = req.body as TwilioWebhookBody;
 
   const channel = detectChannel(From || '');
@@ -187,10 +221,13 @@ router.post('/webhook/sms', async (req: Request, res: Response) => {
     addMessage(sender, 'user', message);
     addMessage(sender, 'assistant', classification.immediateResponse);
 
+    // Enforce SMS length limits for TwiML response (WhatsApp is unaffected)
+    const immediateResponse = enforceSmsLength(classification.immediateResponse, channel);
+
     // Return TwiML with the immediate response
     res.type('text/xml');
     res.send(
-      `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(classification.immediateResponse)}</Message></Response>`
+      `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(immediateResponse)}</Message></Response>`
     );
 
     console.log(JSON.stringify({

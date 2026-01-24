@@ -72,7 +72,7 @@ Returns sender, subject, date, and preview snippet.`,
         })),
       };
     } catch (error) {
-      const authResult = handleAuthError(error, phoneNumber);
+      const authResult = handleAuthError(error, phoneNumber, context.channel);
       if (authResult) {
         console.log(JSON.stringify({
           level: 'info',
@@ -152,7 +152,7 @@ Use after get_emails when the user wants to read the full message, not just the 
         },
       };
     } catch (error) {
-      const authResult = handleAuthError(error, phoneNumber);
+      const authResult = handleAuthError(error, phoneNumber, context.channel);
       if (authResult) return authResult;
 
       const errorMessage = error instanceof Error ? error.message : String(error);

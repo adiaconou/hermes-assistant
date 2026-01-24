@@ -14,9 +14,16 @@ import {
   clearMockState,
 } from '../mocks/anthropic.js';
 import { getSentMessages, clearSentMessages } from '../mocks/twilio.js';
+import { getExpectedTwilioSignature } from 'twilio/lib/webhooks/webhooks.js';
 
 describe('POST /webhook/sms', () => {
   const app = createTestApp();
+  const webhookUrl = 'http://localhost:3000/webhook/sms';
+  const authToken = process.env.TWILIO_AUTH_TOKEN || 'test-auth-token';
+
+  function signPayload(payload: Record<string, string>): string {
+    return getExpectedTwilioSignature(authToken, webhookUrl, payload);
+  }
 
   beforeEach(() => {
     clearMockState();
@@ -35,6 +42,7 @@ describe('POST /webhook/sms', () => {
       const response = await request(app)
         .post('/webhook/sms')
         .type('form')
+        .set('X-Twilio-Signature', signPayload(payload))
         .send(payload);
 
       expect(response.status).toBe(200);
@@ -53,6 +61,7 @@ describe('POST /webhook/sms', () => {
       await request(app)
         .post('/webhook/sms')
         .type('form')
+        .set('X-Twilio-Signature', signPayload(payload))
         .send(payload);
 
       // Give time for any potential async processing
@@ -75,6 +84,7 @@ describe('POST /webhook/sms', () => {
       const response = await request(app)
         .post('/webhook/sms')
         .type('form')
+        .set('X-Twilio-Signature', signPayload(payload))
         .send(payload);
 
       expect(response.status).toBe(200);
@@ -95,6 +105,7 @@ describe('POST /webhook/sms', () => {
       await request(app)
         .post('/webhook/sms')
         .type('form')
+        .set('X-Twilio-Signature', signPayload(payload))
         .send(payload);
 
       // Wait for async response
@@ -124,6 +135,7 @@ describe('POST /webhook/sms', () => {
       const response = await request(app)
         .post('/webhook/sms')
         .type('form')
+        .set('X-Twilio-Signature', signPayload(payload))
         .send(payload);
 
       // Immediate ack should be in TwiML response
@@ -156,6 +168,7 @@ describe('POST /webhook/sms', () => {
       const response = await request(app)
         .post('/webhook/sms')
         .type('form')
+        .set('X-Twilio-Signature', signPayload(payload))
         .send(payload);
 
       // Should return valid TwiML with response message
@@ -173,6 +186,7 @@ describe('POST /webhook/sms', () => {
       const response = await request(app)
         .post('/webhook/sms')
         .type('form')
+        .set('X-Twilio-Signature', signPayload({ Body: 'Test message' }))
         .send({ Body: 'Test message' });
 
       // Should return valid TwiML with message even with missing fields

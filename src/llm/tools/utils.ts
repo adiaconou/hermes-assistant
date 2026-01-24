@@ -22,10 +22,11 @@ export function requirePhoneNumber(context: ToolContext): string {
  */
 export function handleAuthError(
   error: unknown,
-  phoneNumber: string
+  phoneNumber: string,
+  channel: 'sms' | 'whatsapp' = 'sms'
 ): Record<string, unknown> | null {
   if (error instanceof AuthRequiredError) {
-    const authUrl = generateAuthUrl(phoneNumber);
+    const authUrl = generateAuthUrl(phoneNumber, channel);
     return {
       success: false,
       auth_required: true,

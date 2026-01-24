@@ -73,7 +73,12 @@ export class SqliteCredentialStore implements CredentialStore {
   private decrypt(encrypted: Buffer, iv: Buffer, authTag: Buffer): string {
     const decipher = crypto.createDecipheriv(ALGORITHM, this.encryptionKey, iv);
     decipher.setAuthTag(authTag);
-    return decipher.update(encrypted) + decipher.final('utf8');
+    // Use Buffer.concat for deterministic encoding (handles multi-byte UTF-8 correctly)
+    const decryptedBuffer = Buffer.concat([
+      decipher.update(encrypted),
+      decipher.final(),
+    ]);
+    return decryptedBuffer.toString('utf8');
   }
 
   async get(

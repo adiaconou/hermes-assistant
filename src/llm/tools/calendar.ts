@@ -50,7 +50,7 @@ export const getCalendarEvents: ToolDefinition = {
 
       return { success: true, events };
     } catch (error) {
-      const authResult = handleAuthError(error, phoneNumber);
+      const authResult = handleAuthError(error, phoneNumber, context.channel);
       if (authResult) return authResult;
 
       console.error(JSON.stringify({
@@ -122,7 +122,7 @@ export const createCalendarEvent: ToolDefinition = {
 
       return { success: true, event };
     } catch (error) {
-      const authResult = handleAuthError(error, phoneNumber);
+      const authResult = handleAuthError(error, phoneNumber, context.channel);
       if (authResult) return authResult;
 
       console.error(JSON.stringify({
@@ -209,7 +209,7 @@ export const updateCalendarEvent: ToolDefinition = {
 
       return { success: true, event };
     } catch (error) {
-      const authResult = handleAuthError(error, phoneNumber);
+      const authResult = handleAuthError(error, phoneNumber, context.channel);
       if (authResult) return authResult;
 
       console.error(JSON.stringify({
@@ -258,7 +258,7 @@ export const deleteCalendarEvent: ToolDefinition = {
 
       return { success: true, deleted: event_id };
     } catch (error) {
-      const authResult = handleAuthError(error, phoneNumber);
+      const authResult = handleAuthError(error, phoneNumber, context.channel);
       if (authResult) return authResult;
 
       console.error(JSON.stringify({

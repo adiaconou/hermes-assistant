@@ -1,14 +1,53 @@
 /**
- * Twilio client module for sending outbound SMS.
+ * Twilio client module for sending outbound SMS and webhook validation.
  *
  * Used for async response pattern where we return immediately from the webhook
  * and send the actual response via Twilio's REST API.
  */
 
-import Twilio from 'twilio';
+import Twilio, { validateRequest } from 'twilio';
 import config from './config.js';
 
 let client: Twilio.Twilio | null = null;
+
+/**
+ * Validate Twilio webhook signature.
+ *
+ * @param signature - X-Twilio-Signature header value
+ * @param url - Full webhook URL (must match exactly what Twilio sends)
+ * @param params - Request body parameters
+ * @returns true if signature is valid
+ */
+export function validateTwilioSignature(
+  signature: string | undefined,
+  url: string,
+  params: Record<string, string>
+): boolean {
+  // Skip validation in development if explicitly disabled
+  if (config.nodeEnv === 'development' && process.env.SKIP_TWILIO_VALIDATION === 'true') {
+    console.log(JSON.stringify({
+      level: 'warn',
+      message: 'Twilio signature validation SKIPPED (dev mode)',
+      timestamp: new Date().toISOString(),
+    }));
+    return true;
+  }
+
+  if (!signature) {
+    return false;
+  }
+
+  if (!config.twilio.authToken) {
+    console.log(JSON.stringify({
+      level: 'error',
+      message: 'Cannot validate Twilio signature: TWILIO_AUTH_TOKEN not configured',
+      timestamp: new Date().toISOString(),
+    }));
+    return false;
+  }
+
+  return validateRequest(config.twilio.authToken, signature, url, params);
+}
 
 /**
  * Get or create the Twilio client singleton.

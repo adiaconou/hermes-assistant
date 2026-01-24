@@ -5,6 +5,7 @@
  */
 
 import { vi } from 'vitest';
+import { validateRequest } from 'twilio/lib/webhooks/webhooks.js';
 
 /**
  * Captured message from a send operation.
@@ -94,7 +95,12 @@ export default MockTwilio;
 // Also export the mock function for direct access in tests
 export { mockMessagesCreate };
 
-// Set up the module mock
-vi.mock('twilio', () => ({
-  default: MockTwilio,
-}));
+// Set up the module mock (keep named exports like validateRequest/getExpectedTwilioSignature)
+vi.mock('twilio', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('twilio')>();
+  return {
+    ...actual,
+    default: MockTwilio,
+    validateRequest,
+  };
+});

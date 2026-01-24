@@ -33,6 +33,22 @@ const STATE_ALGORITHM = 'aes-256-gcm';
 const STATE_IV_LENGTH = 12;
 const STATE_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
 
+/** Channel type for message routing */
+type MessageChannel = 'sms' | 'whatsapp';
+
+/** OAuth state payload structure */
+interface OAuthStatePayload {
+  phone: string;
+  channel: MessageChannel;
+  exp: number;
+}
+
+/** Decrypted OAuth state */
+interface DecryptedState {
+  phone: string;
+  channel: MessageChannel;
+}
+
 /**
  * Create an OAuth2 client configured with our credentials.
  */
@@ -45,25 +61,27 @@ function getOAuth2Client() {
 }
 
 /**
- * Encrypt state parameter containing phone number and expiry.
+ * Encrypt state parameter containing phone number, channel, and expiry.
+ * Exported for testing.
  */
-function encryptState(phoneNumber: string): string {
+export function encryptState(phoneNumber: string, channel: MessageChannel = 'sms'): string {
   const key = config.credentials.encryptionKey;
   if (!key) {
     throw new Error('CREDENTIAL_ENCRYPTION_KEY required for OAuth state');
   }
 
-  const payload = JSON.stringify({
+  const payload: OAuthStatePayload = {
     phone: phoneNumber,
+    channel,
     exp: Date.now() + STATE_EXPIRY_MS,
-  });
+  };
 
   const keyBuffer = Buffer.from(key, 'hex');
   const iv = crypto.randomBytes(STATE_IV_LENGTH);
   const cipher = crypto.createCipheriv(STATE_ALGORITHM, keyBuffer, iv);
 
   const encrypted = Buffer.concat([
-    cipher.update(payload, 'utf8'),
+    cipher.update(JSON.stringify(payload), 'utf8'),
     cipher.final(),
   ]);
   const authTag = cipher.getAuthTag();
@@ -75,9 +93,10 @@ function encryptState(phoneNumber: string): string {
 
 /**
  * Decrypt and validate state parameter.
- * @returns Phone number if valid, null if invalid/expired
+ * Exported for testing.
+ * @returns Decrypted state with phone and channel if valid, null if invalid/expired
  */
-function decryptState(state: string): string | null {
+export function decryptState(state: string): DecryptedState | null {
   const key = config.credentials.encryptionKey;
   if (!key) {
     return null;
@@ -93,9 +112,13 @@ function decryptState(state: string): string | null {
     const decipher = crypto.createDecipheriv(STATE_ALGORITHM, keyBuffer, iv);
     decipher.setAuthTag(authTag);
 
-    const decrypted =
-      decipher.update(encrypted) + decipher.final('utf8');
-    const payload = JSON.parse(decrypted) as { phone: string; exp: number };
+    // Use Buffer.concat for deterministic encoding (handles multi-byte UTF-8 correctly)
+    const decryptedBuffer = Buffer.concat([
+      decipher.update(encrypted),
+      decipher.final(),
+    ]);
+    const decrypted = decryptedBuffer.toString('utf8');
+    const payload = JSON.parse(decrypted) as OAuthStatePayload;
 
     // Check expiry
     if (payload.exp < Date.now()) {
@@ -107,7 +130,11 @@ function decryptState(state: string): string | null {
       return null;
     }
 
-    return payload.phone;
+    return {
+      phone: payload.phone,
+      // Fallback to 'sms' for legacy tokens without channel
+      channel: payload.channel || 'sms',
+    };
   } catch (error) {
     console.log(JSON.stringify({
       level: 'warn',
@@ -120,11 +147,11 @@ function decryptState(state: string): string | null {
 }
 
 /**
- * Generate an auth URL for a phone number.
+ * Generate an auth URL for a phone number and channel.
  * Used by calendar tools when auth is required.
  */
-export function generateAuthUrl(phoneNumber: string): string {
-  const state = encryptState(phoneNumber);
+export function generateAuthUrl(phoneNumber: string, channel: MessageChannel = 'sms'): string {
+  const state = encryptState(phoneNumber, channel);
   return `${config.baseUrl}/auth/google?state=${state}`;
 }
 
@@ -132,45 +159,43 @@ export function generateAuthUrl(phoneNumber: string): string {
  * Continue the conversation after successful OAuth.
  * Triggers the LLM to pick up where it left off.
  */
-async function continueAfterAuth(phoneNumber: string): Promise<void> {
-  // Determine channel from phone number format
-  const isWhatsApp = phoneNumber.startsWith('whatsapp:');
-  const cleanPhone = phoneNumber.replace('whatsapp:', '');
+async function continueAfterAuth(decryptedState: DecryptedState): Promise<void> {
+  const { phone, channel } = decryptedState;
 
   // Get conversation history and user config
-  const history = getHistory(cleanPhone);
+  const history = getHistory(phone);
   const configStore = getUserConfigStore();
-  const userConfig = await configStore.get(cleanPhone);
+  const userConfig = await configStore.get(phone);
 
   // Create a system message to prompt continuation
   const continuationMessage = '[Authentication successful - continue with the previous request]';
 
-  // Add the continuation trigger to history
-  addMessage(cleanPhone, 'user', continuationMessage);
-
   // Generate response - the LLM will see the previous context and continue
+  // Note: We add to history AFTER generating, not before
   const response = await generateResponse(
     continuationMessage,
     history,
-    cleanPhone,
+    phone,
     userConfig,
-    { channel: isWhatsApp ? 'whatsapp' : 'sms' }
+    { channel }
   );
 
-  // Store response in history
-  addMessage(cleanPhone, 'assistant', response);
+  // Store messages in history after response generation
+  addMessage(phone, 'user', continuationMessage);
+  addMessage(phone, 'assistant', response);
 
-  // Send via appropriate channel
-  if (isWhatsApp) {
-    await sendWhatsApp(phoneNumber, response);
+  // Send via appropriate channel (channel is now explicit, not inferred)
+  if (channel === 'whatsapp') {
+    await sendWhatsApp(phone, response);
   } else {
-    await sendSms(cleanPhone, response);
+    await sendSms(phone, response);
   }
 
   console.log(JSON.stringify({
     level: 'info',
     message: 'Sent post-auth continuation response',
-    phone: cleanPhone.slice(-4).padStart(cleanPhone.length, '*'),
+    phone: phone.slice(-4).padStart(phone.length, '*'),
+    channel,
     responseLength: response.length,
     timestamp: new Date().toISOString(),
   }));
@@ -189,8 +214,8 @@ router.get('/auth/google', (req, res) => {
   }
 
   // Validate state before redirecting (catches expired/invalid early)
-  const phoneNumber = decryptState(state);
-  if (!phoneNumber) {
+  const decrypted = decryptState(state);
+  if (!decrypted) {
     res.status(400).send(errorHtml('⏰ Invalid or expired link. Please request a new one.'));
     return;
   }
@@ -234,9 +259,9 @@ router.get('/auth/google/callback', async (req, res) => {
     return;
   }
 
-  // Decrypt state to get phone number
-  const phoneNumber = decryptState(state);
-  if (!phoneNumber) {
+  // Decrypt state to get phone number and channel
+  const decrypted = decryptState(state);
+  if (!decrypted) {
     res.status(400).send(errorHtml('⏰ Invalid or expired link. Please request a new one.'));
     return;
   }
@@ -250,9 +275,9 @@ router.get('/auth/google/callback', async (req, res) => {
       throw new Error('Missing tokens in response');
     }
 
-    // Store credentials
+    // Store credentials (use phone number as key)
     const store = getCredentialStore();
-    await store.set(phoneNumber, 'google', {
+    await store.set(decrypted.phone, 'google', {
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       expiresAt: tokens.expiry_date || Date.now() + 3600000,
@@ -261,15 +286,16 @@ router.get('/auth/google/callback', async (req, res) => {
     console.log(JSON.stringify({
       level: 'info',
       message: 'Google OAuth completed',
-      phone: phoneNumber.slice(-4).padStart(phoneNumber.length, '*'),
+      phone: decrypted.phone.slice(-4).padStart(decrypted.phone.length, '*'),
+      channel: decrypted.channel,
       timestamp: new Date().toISOString(),
     }));
 
     // Send success page immediately
     res.send(successHtml(config.twilio.phoneNumber));
 
-    // Continue the conversation asynchronously
-    continueAfterAuth(phoneNumber).catch((error) => {
+    // Continue the conversation asynchronously with preserved channel
+    continueAfterAuth(decrypted).catch((error) => {
       console.log(JSON.stringify({
         level: 'error',
         message: 'Failed to continue after OAuth',
