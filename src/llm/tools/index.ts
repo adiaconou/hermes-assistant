@@ -1,0 +1,110 @@
+/**
+ * Tool registry - exports all tools and handlers.
+ */
+
+import type { Tool } from '@anthropic-ai/sdk/resources/messages';
+import type { ToolDefinition, ToolHandler, ToolContext } from '../types.js';
+
+// Import all tool definitions
+import { generateUi } from './ui.js';
+import { getCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, resolveDate } from './calendar.js';
+import { getEmails, readEmail } from './email.js';
+import { extractMemory, listMemories, updateMemory, removeMemory } from './memory.js';
+import { setUserConfig, deleteUserData } from './user-config.js';
+import { createScheduledJob, listScheduledJobs, updateScheduledJob, deleteScheduledJob } from './scheduler.js';
+
+/**
+ * All tool definitions.
+ */
+const allTools: ToolDefinition[] = [
+  // UI
+  generateUi,
+  // Calendar
+  getCalendarEvents,
+  createCalendarEvent,
+  updateCalendarEvent,
+  deleteCalendarEvent,
+  resolveDate,
+  // Email
+  getEmails,
+  readEmail,
+  // Memory
+  extractMemory,
+  listMemories,
+  updateMemory,
+  removeMemory,
+  // User Config
+  setUserConfig,
+  deleteUserData,
+  // Scheduler
+  createScheduledJob,
+  listScheduledJobs,
+  updateScheduledJob,
+  deleteScheduledJob,
+];
+
+/**
+ * Tool definitions for the Anthropic API.
+ */
+export const TOOLS: Tool[] = allTools.map(t => t.tool);
+
+/**
+ * Map of tool handlers by name.
+ */
+export const toolHandlers = new Map<string, ToolHandler>(
+  allTools.map(t => [t.tool.name, t.handler])
+);
+
+/**
+ * Read-only tools safe for scheduled job execution.
+ * These tools can gather information but not modify user data.
+ */
+export const READ_ONLY_TOOLS: Tool[] = [
+  getCalendarEvents.tool,
+  resolveDate.tool,
+  getEmails.tool,
+  readEmail.tool,
+];
+
+/**
+ * Execute a tool by name.
+ */
+export async function executeTool(
+  name: string,
+  input: Record<string, unknown>,
+  context: ToolContext
+): Promise<string> {
+  const handler = toolHandlers.get(name);
+
+  if (!handler) {
+    return JSON.stringify({ error: `Unknown tool: ${name}` });
+  }
+
+  console.log(JSON.stringify({
+    level: 'info',
+    message: 'Tool call received',
+    toolName: name,
+    inputKeys: Object.keys(input),
+    timestamp: new Date().toISOString(),
+  }));
+
+  try {
+    const result = await handler(input, context);
+    return JSON.stringify(result);
+  } catch (error) {
+    console.error(JSON.stringify({
+      level: 'error',
+      message: 'Tool execution failed',
+      toolName: name,
+      error: error instanceof Error ? error.message : String(error),
+      timestamp: new Date().toISOString(),
+    }));
+    return JSON.stringify({
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+// Re-export types
+export type { ToolDefinition, ToolHandler, ToolContext } from '../types.js';

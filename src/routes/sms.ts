@@ -11,7 +11,7 @@
  * response. Heavy work (UI generation, complex queries) runs asynchronously.
  */
 import { Router, Request, Response } from 'express';
-import { generateResponse, classifyMessage } from '../llm.js';
+import { generateResponse, classifyMessage } from '../llm/index.js';
 import { getHistory, addMessage, type Message } from '../conversation.js';
 import { sendSms, sendWhatsApp } from '../twilio.js';
 import { getUserConfigStore, type UserConfig } from '../services/user-config/index.js';

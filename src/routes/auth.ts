@@ -15,7 +15,7 @@ import crypto from 'crypto';
 import config from '../config.js';
 import { getCredentialStore } from '../services/credentials/index.js';
 import { sendSms, sendWhatsApp } from '../twilio.js';
-import { generateResponse } from '../llm.js';
+import { generateResponse } from '../llm/index.js';
 import { getHistory, addMessage } from '../conversation.js';
 import { getUserConfigStore } from '../services/user-config/index.js';
 

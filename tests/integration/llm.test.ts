@@ -14,7 +14,7 @@ import {
 } from '../mocks/anthropic.js';
 
 // Import after mocks are set up
-import { classifyMessage, generateResponse } from '../../src/llm.js';
+import { classifyMessage, generateResponse } from '../../src/llm/index.js';
 import type { Message } from '../../src/conversation.js';
 
 describe('classifyMessage', () => {

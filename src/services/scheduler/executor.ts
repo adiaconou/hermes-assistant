@@ -7,7 +7,7 @@
 
 import { Cron } from 'croner';
 import type Database from 'better-sqlite3';
-import { generateResponse, READ_ONLY_TOOLS } from '../../llm.js';
+import { generateResponse, READ_ONLY_TOOLS } from '../../llm/index.js';
 import { getUserConfigStore } from '../user-config/index.js';
 import { sendSms, sendWhatsApp } from '../../twilio.js';
 import { updateJob, deleteJob } from './sqlite.js';
