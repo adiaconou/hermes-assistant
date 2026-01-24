@@ -4,14 +4,17 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { validateTwilioSignature } from '../../src/twilio.js';
-import { validateRequest } from 'twilio';
+import Twilio from 'twilio';
 
 // Mock the twilio module
 vi.mock('twilio', async () => {
   const actual = await vi.importActual('twilio');
   return {
     ...actual,
-    validateRequest: vi.fn(),
+    default: {
+      ...(actual as Record<string, unknown>).default,
+      validateRequest: vi.fn(),
+    },
   };
 });
 
@@ -57,7 +60,7 @@ describe('validateTwilioSignature', () => {
   });
 
   it('calls Twilio validateRequest with correct parameters', () => {
-    const mockValidateRequest = vi.mocked(validateRequest);
+    const mockValidateRequest = vi.mocked(Twilio.validateRequest);
     mockValidateRequest.mockReturnValue(true);
 
     const signature = 'valid-signature';
@@ -75,7 +78,7 @@ describe('validateTwilioSignature', () => {
   });
 
   it('returns true when Twilio validates signature', () => {
-    const mockValidateRequest = vi.mocked(validateRequest);
+    const mockValidateRequest = vi.mocked(Twilio.validateRequest);
     mockValidateRequest.mockReturnValue(true);
 
     const result = validateTwilioSignature(
@@ -88,7 +91,7 @@ describe('validateTwilioSignature', () => {
   });
 
   it('returns false when Twilio rejects signature', () => {
-    const mockValidateRequest = vi.mocked(validateRequest);
+    const mockValidateRequest = vi.mocked(Twilio.validateRequest);
     mockValidateRequest.mockReturnValue(false);
 
     const result = validateTwilioSignature(

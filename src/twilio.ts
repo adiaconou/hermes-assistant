@@ -5,7 +5,7 @@
  * and send the actual response via Twilio's REST API.
  */
 
-import Twilio, { validateRequest } from 'twilio';
+import Twilio from 'twilio';
 import config from './config.js';
 
 let client: Twilio.Twilio | null = null;
@@ -46,7 +46,7 @@ export function validateTwilioSignature(
     return false;
   }
 
-  return validateRequest(config.twilio.authToken, signature, url, params);
+  return Twilio.validateRequest(config.twilio.authToken, signature, url, params);
 }
 
 /**
