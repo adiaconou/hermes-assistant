@@ -50,6 +50,13 @@ const config = {
     encryptionKey: process.env.CREDENTIAL_ENCRYPTION_KEY,
   },
 
+  /** Memory system configuration */
+  memory: {
+    /** Path to SQLite database file - uses /app/data in production for Railway volume mount */
+    sqlitePath: process.env.MEMORY_SQLITE_PATH ||
+      (process.env.NODE_ENV === 'production' ? '/app/data/memory.db' : './data/memory.db'),
+  },
+
   /** Base URL for generating short links */
   baseUrl: process.env.BASE_URL || 'http://localhost:3000',
 
