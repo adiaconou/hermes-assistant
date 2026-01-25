@@ -57,6 +57,25 @@ const config = {
       (process.env.NODE_ENV === 'production' ? '/app/data/memory.db' : './data/memory.db'),
   },
 
+  /** Conversation storage configuration */
+  conversation: {
+    /** Path to SQLite database file */
+    sqlitePath: process.env.CONVERSATION_DB_PATH ||
+      (process.env.NODE_ENV === 'production' ? '/app/data/conversation.db' : './data/conversation.db'),
+  },
+
+  /** Async memory processor configuration */
+  memoryProcessor: {
+    /** Interval between processing runs in milliseconds (default: 5 minutes) */
+    intervalMs: parseInt(process.env.MEMORY_PROCESSOR_INTERVAL_MS || '300000', 10),
+    /** Maximum messages to process per run */
+    batchSize: parseInt(process.env.MEMORY_PROCESSOR_BATCH_SIZE || '100', 10),
+    /** Maximum messages per user per run */
+    perUserBatchSize: parseInt(process.env.MEMORY_PROCESSOR_PER_USER_BATCH_SIZE || '25', 10),
+    /** Whether async processing is enabled */
+    enabled: process.env.MEMORY_PROCESSOR_ENABLED !== 'false',
+  },
+
   /** Base URL for generating short links */
   baseUrl: process.env.BASE_URL || 'http://localhost:3000',
 

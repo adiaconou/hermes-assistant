@@ -12,7 +12,7 @@
  */
 import { Router, Request, Response } from 'express';
 import { generateResponse, classifyMessage } from '../llm/index.js';
-import { getHistory, addMessage, type Message } from '../conversation.js';
+import { getHistory, addMessage } from '../conversation.js';
 import { sendSms, sendWhatsApp, validateTwilioSignature } from '../twilio.js';
 import { getUserConfigStore, type UserConfig } from '../services/user-config/index.js';
 import config from '../config.js';
@@ -99,7 +99,6 @@ async function processAsyncWork(
   sender: string,
   message: string,
   channel: MessageChannel,
-  history: Message[],
   userConfig: UserConfig | null
 ): Promise<void> {
   const startTime = Date.now();
@@ -111,6 +110,9 @@ async function processAsyncWork(
       channel,
       timestamp: new Date().toISOString(),
     }));
+
+    // Fetch history inside the function
+    const history = await getHistory(sender);
 
     // Use the full generateResponse with tool loop
     const responseText = await generateResponse(message, history, sender, userConfig, { channel });
@@ -124,7 +126,7 @@ async function processAsyncWork(
     }));
 
     // Store in conversation history and send response
-    addMessage(sender, 'assistant', responseText);
+    await addMessage(sender, 'assistant', responseText, channel);
     await sendResponse(sender, channel, responseText);
 
     console.log(JSON.stringify({
@@ -202,7 +204,7 @@ router.post('/webhook/sms', async (req: Request, res: Response) => {
 
   try {
     // Get conversation history and user config
-    const history = getHistory(sender);
+    const history = await getHistory(sender);
     const configStore = getUserConfigStore();
     const userConfig = await configStore.get(sender);
 
@@ -218,8 +220,8 @@ router.post('/webhook/sms', async (req: Request, res: Response) => {
     }));
 
     // Store messages in history
-    addMessage(sender, 'user', message);
-    addMessage(sender, 'assistant', classification.immediateResponse);
+    await addMessage(sender, 'user', message, channel);
+    await addMessage(sender, 'assistant', classification.immediateResponse, channel);
 
     // Enforce SMS length limits for TwiML response (WhatsApp is unaffected)
     const immediateResponse = enforceSmsLength(classification.immediateResponse, channel);
@@ -240,9 +242,7 @@ router.post('/webhook/sms', async (req: Request, res: Response) => {
 
     // If async work needed, spawn background processing (fire and forget)
     if (classification.needsAsyncWork) {
-      const updatedHistory = getHistory(sender);
-
-      processAsyncWork(sender, message, channel, updatedHistory, userConfig).catch((error) => {
+      processAsyncWork(sender, message, channel, userConfig).catch((error) => {
         console.error(JSON.stringify({
           level: 'error',
           message: 'Unhandled error in async work',
@@ -263,8 +263,8 @@ router.post('/webhook/sms', async (req: Request, res: Response) => {
 
     // Fall back to generic response if classification fails
     const fallbackMessage = "⏳ I'm processing your message and will respond shortly.";
-    addMessage(sender, 'user', message);
-    addMessage(sender, 'assistant', fallbackMessage);
+    await addMessage(sender, 'user', message, channel);
+    await addMessage(sender, 'assistant', fallbackMessage, channel);
 
     res.type('text/xml');
     res.send(
@@ -272,10 +272,9 @@ router.post('/webhook/sms', async (req: Request, res: Response) => {
     );
 
     // Try to process with full LLM since classification failed
-    const history = getHistory(sender);
     const configStore = getUserConfigStore();
     configStore.get(sender).then((userConfig) => {
-      processAsyncWork(sender, message, channel, history, userConfig).catch((asyncError) => {
+      processAsyncWork(sender, message, channel, userConfig).catch((asyncError) => {
         console.error(JSON.stringify({
           level: 'error',
           message: 'Async fallback processing failed',

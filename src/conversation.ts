@@ -1,8 +1,11 @@
 /**
- * In-memory conversation store.
+ * Conversation history management.
  *
- * Stores conversation history per phone number. Memory clears on server restart.
+ * Provides interface for conversation history storage.
+ * Uses SQLite for persistence (survives server restarts).
  */
+
+import { getConversationStore } from './services/conversation/index.js';
 
 export type Message = {
   role: 'user' | 'assistant';
@@ -11,34 +14,30 @@ export type Message = {
 
 const MAX_MESSAGES = 50;
 
-const conversations = new Map<string, Message[]>();
-
 /**
  * Get conversation history for a phone number.
+ * Returns messages in chronological order (oldest first).
  */
-export function getHistory(phoneNumber: string): Message[] {
-  return conversations.get(phoneNumber) || [];
+export async function getHistory(phoneNumber: string): Promise<Message[]> {
+  const store = getConversationStore();
+  const messages = await store.getHistory(phoneNumber, { limit: MAX_MESSAGES });
+
+  // Convert to simple Message format for backward compatibility
+  return messages.map((m) => ({
+    role: m.role,
+    content: m.content,
+  }));
 }
 
 /**
  * Add a message to conversation history.
  */
-export function addMessage(
+export async function addMessage(
   phoneNumber: string,
   role: 'user' | 'assistant',
-  content: string
-): void {
-  let history = conversations.get(phoneNumber);
-
-  if (!history) {
-    history = [];
-    conversations.set(phoneNumber, history);
-  }
-
-  history.push({ role, content });
-
-  // Keep only last MAX_MESSAGES
-  if (history.length > MAX_MESSAGES) {
-    conversations.set(phoneNumber, history.slice(-MAX_MESSAGES));
-  }
+  content: string,
+  channel: 'sms' | 'whatsapp' = 'sms'
+): Promise<void> {
+  const store = getConversationStore();
+  await store.addMessage(phoneNumber, role, content, channel);
 }

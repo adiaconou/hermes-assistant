@@ -17,6 +17,8 @@ import smsRouter from './routes/sms.js';
 import pagesRouter from './routes/pages.js';
 import authRouter from './routes/auth.js';
 import { initScheduler, stopScheduler } from './services/scheduler/index.js';
+import { closeConversationStore } from './services/conversation/index.js';
+import { startMemoryProcessor, stopMemoryProcessor } from './services/memory/processor.js';
 
 const app = express();
 
@@ -79,6 +81,9 @@ const server = app.listen(config.port, () => {
 
   // Start the scheduler poller after server is ready
   poller.start();
+
+  // Start the memory processor
+  startMemoryProcessor();
 });
 
 // Graceful shutdown
@@ -93,6 +98,8 @@ function shutdown(signal: string) {
   );
 
   stopScheduler();
+  stopMemoryProcessor();
+  closeConversationStore();
   db.close();
 
   server.close(() => {

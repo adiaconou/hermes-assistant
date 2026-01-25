@@ -163,7 +163,7 @@ async function continueAfterAuth(decryptedState: DecryptedState): Promise<void> 
   const { phone, channel } = decryptedState;
 
   // Get conversation history and user config
-  const history = getHistory(phone);
+  const history = await getHistory(phone);
   const configStore = getUserConfigStore();
   const userConfig = await configStore.get(phone);
 
@@ -181,8 +181,8 @@ async function continueAfterAuth(decryptedState: DecryptedState): Promise<void> 
   );
 
   // Store messages in history after response generation
-  addMessage(phone, 'user', continuationMessage);
-  addMessage(phone, 'assistant', response);
+  await addMessage(phone, 'user', continuationMessage);
+  await addMessage(phone, 'assistant', response);
 
   // Send via appropriate channel (channel is now explicit, not inferred)
   if (channel === 'whatsapp') {
