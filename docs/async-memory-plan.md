@@ -764,7 +764,7 @@ async function processUserMessages(
   const prompt = buildExtractionPrompt(existingFacts, messages);
 
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-opus-4-5-20251101',
     max_tokens: 1024,
     messages: [{ role: 'user', content: prompt }],
   });
@@ -820,6 +820,10 @@ export async function processUnprocessedMessages(): Promise<ProcessingResult> {
   });
 
   if (messages.length === 0) {
+    console.log(JSON.stringify({
+      event: 'memory_processor_no_work',
+      timestamp: new Date().toISOString(),
+    }));
     return { messagesProcessed: 0, factsExtracted: 0, errors: [] };
   }
 
