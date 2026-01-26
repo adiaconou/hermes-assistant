@@ -206,8 +206,10 @@ export async function updateEvent(
   eventId: string,
   updates: {
     title?: string;
-    start?: Date;
-    end?: Date;
+    startTime?: Date;
+    endTime?: Date;
+    startDate?: string;
+    endDate?: string;
     location?: string;
   }
 ): Promise<CalendarEvent> {
@@ -216,8 +218,10 @@ export async function updateEvent(
   // Build request body with only provided fields
   const requestBody: calendar_v3.Schema$Event = {};
   if (updates.title !== undefined) requestBody.summary = updates.title;
-  if (updates.start !== undefined) requestBody.start = { dateTime: updates.start.toISOString() };
-  if (updates.end !== undefined) requestBody.end = { dateTime: updates.end.toISOString() };
+  if (updates.startDate !== undefined) requestBody.start = { date: updates.startDate };
+  if (updates.endDate !== undefined) requestBody.end = { date: updates.endDate };
+  if (updates.startTime !== undefined) requestBody.start = { dateTime: updates.startTime.toISOString() };
+  if (updates.endTime !== undefined) requestBody.end = { dateTime: updates.endTime.toISOString() };
   if (updates.location !== undefined) requestBody.location = updates.location;
 
   const response = await calendar.events.patch({
@@ -235,6 +239,28 @@ export async function updateEvent(
     end: event.end?.dateTime || event.end?.date || '',
     location: event.location || undefined,
   };
+}
+
+/**
+ * Fetch an existing calendar event.
+ *
+ * @param phoneNumber - User's phone number
+ * @param eventId - ID of the event to fetch
+ * @returns Event data from Google Calendar
+ * @throws AuthRequiredError if not authenticated
+ */
+export async function getEvent(
+  phoneNumber: string,
+  eventId: string
+): Promise<calendar_v3.Schema$Event> {
+  const calendar = await getCalendarClient(phoneNumber);
+
+  const response = await calendar.events.get({
+    calendarId: 'primary',
+    eventId: eventId,
+  });
+
+  return response.data;
 }
 
 /**

@@ -4,7 +4,7 @@
 
 import type { ToolDefinition } from '../types.js';
 import { requirePhoneNumber, handleAuthError, endOfDay, isValidTimezone } from './utils.js';
-import { listEvents, createEvent, updateEvent, deleteEvent } from '../../services/google/calendar.js';
+import { listEvents, createEvent, updateEvent, deleteEvent, getEvent } from '../../services/google/calendar.js';
 import * as chrono from 'chrono-node';
 
 export const getCalendarEvents: ToolDefinition = {
@@ -184,15 +184,37 @@ export const updateCalendarEvent: ToolDefinition = {
     try {
       const updates: {
         title?: string;
-        start?: Date;
-        end?: Date;
+        startTime?: Date;
+        endTime?: Date;
+        startDate?: string;
+        endDate?: string;
         location?: string;
       } = {};
 
+      const needsDateUpdate = start_time !== undefined || end_time !== undefined;
+      let isAllDay = false;
+      if (needsDateUpdate) {
+        const existingEvent = await getEvent(phoneNumber, event_id);
+        isAllDay = !!existingEvent.start?.date && !existingEvent.start?.dateTime;
+      }
+
+      const datePart = (value: string) => value.slice(0, 10);
+      const addDays = (value: string, days: number) => {
+        const [year, month, day] = value.split('-').map(Number);
+        const utcDate = new Date(Date.UTC(year, month - 1, day + days));
+        return utcDate.toISOString().slice(0, 10);
+      };
+
       if (title !== undefined) updates.title = title;
-      if (start_time !== undefined) updates.start = new Date(start_time);
-      if (end_time !== undefined) updates.end = new Date(end_time);
       if (location !== undefined) updates.location = location;
+
+      if (isAllDay) {
+        if (start_time !== undefined) updates.startDate = datePart(start_time);
+        if (end_time !== undefined) updates.endDate = addDays(datePart(end_time), 1);
+      } else {
+        if (start_time !== undefined) updates.startTime = new Date(start_time);
+        if (end_time !== undefined) updates.endTime = new Date(end_time);
+      }
 
       console.log(JSON.stringify({
         level: 'info',
@@ -202,6 +224,7 @@ export const updateCalendarEvent: ToolDefinition = {
         hasStart: !!start_time,
         hasEnd: !!end_time,
         hasLocation: !!location,
+        isAllDay,
         timestamp: new Date().toISOString(),
       }));
 
