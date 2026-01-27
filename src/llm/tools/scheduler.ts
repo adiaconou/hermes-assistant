@@ -369,6 +369,9 @@ When updating the schedule of a one-time reminder, parse the input as a specific
         level: 'info',
         message: 'Scheduled job updated',
         jobId: job_id,
+        type: job.isRecurring ? 'recurring' : 'one-time',
+        scheduleDescription,
+        nextRun: nextRunFormatted,
         updates: Object.keys(updates),
         timestamp: new Date().toISOString(),
       }));
