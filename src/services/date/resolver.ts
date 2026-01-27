@@ -1,0 +1,351 @@
+/**
+ * @fileoverview Shared date resolution utilities (single dates + ranges).
+ */
+
+import * as chrono from 'chrono-node';
+import { DateTime } from 'luxon';
+
+export type ResolvedDate = {
+  timestamp: number; // UTC Unix timestamp (seconds)
+  iso: string; // ISO 8601 with timezone offset
+  formatted: string; // Human-readable in user's timezone
+  components: {
+    year: number;
+    month: number;
+    day: number;
+    hour: number;
+    minute: number;
+    second: number;
+  };
+};
+
+export type ResolvedDateRange = {
+  start: ResolvedDate;
+  end: ResolvedDate;
+  granularity: 'day' | 'week' | 'month' | 'custom';
+};
+
+export type ResolveDateOptions = {
+  timezone: string; // IANA timezone (required)
+  referenceDate?: Date; // For testing, defaults to now
+  forwardDate?: boolean; // Prefer future dates (default: true)
+};
+
+const RANGE_PATTERNS = [
+  /\bfrom\s+.+\s+to\s+.+/i,
+  /\bbetween\s+.+\s+and\s+.+/i,
+];
+
+const PERIOD_PATTERNS = [
+  /^today$/i,
+  /^tomorrow$/i,
+  /^this\s+week$/i,
+  /^this\s+month$/i,
+];
+
+function isRangeInput(input: string): boolean {
+  const normalized = input.trim().toLowerCase();
+  return RANGE_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+function isPeriodInput(input: string): boolean {
+  const normalized = input.trim().toLowerCase();
+  return PERIOD_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+const WEEKDAY_MAP: Record<string, number> = {
+  sunday: 7,
+  monday: 1,
+  tuesday: 2,
+  wednesday: 3,
+  thursday: 4,
+  friday: 5,
+  saturday: 6,
+};
+
+function parseNextWeekday(
+  input: string,
+  referenceDate: Date,
+  timezone: string
+): DateTime | null {
+  const match = input.trim().toLowerCase().match(/^next\s+(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/);
+  if (!match) {
+    return null;
+  }
+
+  const weekday = WEEKDAY_MAP[match[1]];
+  if (!weekday) {
+    return null;
+  }
+
+  const refLocal = DateTime.fromJSDate(referenceDate, { zone: 'utc' }).setZone(timezone);
+  const currentWeekday = refLocal.weekday; // 1=Mon .. 7=Sun
+  let daysAhead = weekday - currentWeekday;
+  if (daysAhead <= 0) {
+    daysAhead += 7;
+  }
+
+  const results = chrono.parse(
+    input,
+    { instant: referenceDate, timezone: refLocal.offset },
+    { forwardDate: true }
+  );
+  const parsed = results[0]?.start;
+  const hour = parsed?.get('hour') ?? 0;
+  const minute = parsed?.get('minute') ?? 0;
+  const second = parsed?.get('second') ?? 0;
+
+  const candidate = refLocal.plus({ days: daysAhead }).set({ hour, minute, second });
+  return candidate.isValid ? candidate : null;
+}
+
+function requireValidTimezone(timezone: string): void {
+  if (!isValidTimezone(timezone)) {
+    throw new Error(`Invalid timezone: "${timezone}"`);
+  }
+}
+
+function getReferenceDate(options: ResolveDateOptions): Date {
+  return options.referenceDate ?? new Date();
+}
+
+function toResolvedDate(dateTime: DateTime, timezone: string): ResolvedDate {
+  const local = dateTime.setZone(timezone);
+  const utc = local.toUTC();
+
+  return {
+    timestamp: Math.floor(utc.toSeconds()),
+    iso: local.toISO({ suppressMilliseconds: true }) || utc.toISO({ suppressMilliseconds: true }) || '',
+    formatted: formatInTimezone(utc.toJSDate(), timezone, 'long'),
+    components: {
+      year: local.year,
+      month: local.month,
+      day: local.day,
+      hour: local.hour,
+      minute: local.minute,
+      second: local.second,
+    },
+  };
+}
+
+/**
+ * Parse natural language date/time into structured result.
+ * Returns null if parsing fails.
+ */
+export function resolveDate(
+  input: string,
+  options: ResolveDateOptions
+): ResolvedDate | null {
+  if (!input || typeof input !== 'string') {
+    return null;
+  }
+
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  requireValidTimezone(options.timezone);
+
+  if (isRangeInput(trimmed) || isPeriodInput(trimmed)) {
+    return null;
+  }
+
+  const forwardDate = options.forwardDate ?? true;
+  const referenceDate = getReferenceDate(options);
+
+  const nextWeekday = parseNextWeekday(trimmed, referenceDate, options.timezone);
+  if (nextWeekday) {
+    return toResolvedDate(nextWeekday, options.timezone);
+  }
+
+  const referenceUtc = DateTime.fromJSDate(referenceDate, { zone: 'utc' });
+  const referenceLocal = referenceUtc.setZone(options.timezone);
+  const offsetMinutes = referenceLocal.offset;
+
+  const results = chrono.parse(
+    trimmed,
+    { instant: referenceDate, timezone: offsetMinutes },
+    { forwardDate }
+  );
+
+  if (results.length === 0 || !results[0].start) {
+    return null;
+  }
+
+  const parsed = results[0].start;
+  let localDateTime: DateTime | null = null;
+
+  if (parsed.isCertain('timezoneOffset')) {
+    localDateTime = DateTime.fromJSDate(parsed.date(), { zone: 'utc' }).setZone(options.timezone);
+  } else {
+    const year = parsed.get('year');
+    const month = parsed.get('month');
+    const day = parsed.get('day');
+    const hour = parsed.get('hour');
+    const minute = parsed.get('minute') ?? 0;
+    const second = parsed.get('second') ?? 0;
+
+    if (
+      year != null &&
+      month != null &&
+      day != null &&
+      hour != null
+    ) {
+      const candidate = DateTime.fromObject(
+        { year, month, day, hour, minute, second },
+        { zone: options.timezone }
+      );
+
+      if (!candidate.isValid) {
+        return null;
+      }
+
+      if (
+        candidate.year !== year ||
+        candidate.month !== month ||
+        candidate.day !== day ||
+        candidate.hour !== hour ||
+        candidate.minute !== minute
+      ) {
+        return null;
+      }
+
+      localDateTime = candidate;
+    } else {
+      localDateTime = DateTime.fromJSDate(parsed.date(), { zone: 'utc' }).setZone(options.timezone);
+    }
+  }
+
+  if (!localDateTime || !localDateTime.isValid) {
+    return null;
+  }
+
+  const utcSeconds = localDateTime.toUTC().toSeconds();
+  if (forwardDate && utcSeconds <= referenceUtc.toSeconds()) {
+    return null;
+  }
+
+  return toResolvedDate(localDateTime, options.timezone);
+}
+
+/**
+ * Parse natural language date ranges like "this week",
+ * "from 3pm to 5pm", "between Monday and Friday".
+ */
+export function resolveDateRange(
+  input: string,
+  options: ResolveDateOptions
+): ResolvedDateRange | null {
+  if (!input || typeof input !== 'string') {
+    return null;
+  }
+
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  requireValidTimezone(options.timezone);
+
+  const referenceDate = getReferenceDate(options);
+  const referenceLocal = DateTime.fromJSDate(referenceDate, { zone: 'utc' }).setZone(options.timezone);
+  const normalized = trimmed.toLowerCase();
+
+  if (normalized === 'today' || normalized === 'tomorrow') {
+    const base = normalized === 'tomorrow' ? referenceLocal.plus({ days: 1 }) : referenceLocal;
+    const start = base.startOf('day');
+    const end = base.endOf('day');
+    return {
+      start: toResolvedDate(start, options.timezone),
+      end: toResolvedDate(end, options.timezone),
+      granularity: 'day',
+    };
+  }
+
+  if (normalized === 'this week') {
+    const start = referenceLocal.startOf('week');
+    const end = referenceLocal.endOf('week');
+    return {
+      start: toResolvedDate(start, options.timezone),
+      end: toResolvedDate(end, options.timezone),
+      granularity: 'week',
+    };
+  }
+
+  if (normalized === 'this month') {
+    const start = referenceLocal.startOf('month');
+    const end = referenceLocal.endOf('month');
+    return {
+      start: toResolvedDate(start, options.timezone),
+      end: toResolvedDate(end, options.timezone),
+      granularity: 'month',
+    };
+  }
+
+  const fromMatch = trimmed.match(/\bfrom\s+(.+)\s+to\s+(.+)/i);
+  const betweenMatch = trimmed.match(/\bbetween\s+(.+)\s+and\s+(.+)/i);
+  const rangeMatch = fromMatch || betweenMatch;
+
+  if (rangeMatch) {
+    const startInput = rangeMatch[1]?.trim() || '';
+    const endInput = rangeMatch[2]?.trim() || '';
+    const start = resolveDate(startInput, {
+      ...options,
+      referenceDate,
+    });
+    if (!start) {
+      return null;
+    }
+    const end = resolveDate(endInput, {
+      ...options,
+      referenceDate: new Date(start.timestamp * 1000),
+    });
+    if (!end || end.timestamp <= start.timestamp) {
+      return null;
+    }
+
+    return {
+      start,
+      end,
+      granularity: 'custom',
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Validate IANA timezone string.
+ */
+export function isValidTimezone(timezone: string): boolean {
+  return DateTime.now().setZone(timezone).isValid;
+}
+
+/**
+ * Get timezone offset in minutes for a given date and timezone.
+ * Handles DST correctly.
+ */
+export function getTimezoneOffsetMinutes(date: Date, timezone: string): number {
+  const dt = DateTime.fromJSDate(date, { zone: 'utc' }).setZone(timezone);
+  if (!dt.isValid) {
+    throw new Error(`Invalid timezone: "${timezone}"`);
+  }
+  return dt.offset;
+}
+
+/**
+ * Format a date in the user's timezone.
+ */
+export function formatInTimezone(
+  date: Date,
+  timezone: string,
+  style: 'short' | 'long' = 'short'
+): string {
+  const dt = DateTime.fromJSDate(date, { zone: 'utc' }).setZone(timezone);
+  if (!dt.isValid) {
+    return date.toISOString();
+  }
+  const formatStyle = style === 'long' ? DateTime.DATETIME_FULL : DateTime.DATETIME_SHORT;
+  return dt.toLocaleString(formatStyle);
+}

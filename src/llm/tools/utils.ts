@@ -5,6 +5,7 @@
 import type { ToolContext } from '../types.js';
 import { AuthRequiredError } from '../../services/google/calendar.js';
 import { generateAuthUrl } from '../../routes/auth.js';
+import { isValidTimezone as isValidIanaTimezone } from '../../services/date/resolver.js';
 
 /**
  * Require phone number from context, throw if missing.
@@ -59,10 +60,5 @@ export function endOfDay(date: Date): Date {
  * Validate an IANA timezone string.
  */
 export function isValidTimezone(tz: string): boolean {
-  try {
-    Intl.DateTimeFormat(undefined, { timeZone: tz });
-    return true;
-  } catch {
-    return false;
-  }
+  return isValidIanaTimezone(tz);
 }

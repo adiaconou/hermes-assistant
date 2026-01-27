@@ -3,24 +3,29 @@
  */
 
 import type { ToolDefinition } from '../types.js';
-import { requirePhoneNumber, handleAuthError, endOfDay, isValidTimezone } from './utils.js';
+import { requirePhoneNumber, handleAuthError } from './utils.js';
 import { listEvents, createEvent, updateEvent, deleteEvent, getEvent } from '../../services/google/calendar.js';
-import * as chrono from 'chrono-node';
+import { DateTime } from 'luxon';
+import {
+  resolveDate,
+  resolveDateRange,
+  isValidTimezone,
+} from '../../services/date/resolver.js';
 
 export const getCalendarEvents: ToolDefinition = {
   tool: {
     name: 'get_calendar_events',
-    description: "Get events from the user's Google Calendar. IMPORTANT: Use the current date/time from User Context to determine 'today', 'tomorrow', etc. Include the user's timezone offset in all dates.",
+    description: "Get events from the user's Google Calendar. Dates can be natural language like 'today', 'tomorrow', 'this week', or 'next Monday'.",
     input_schema: {
       type: 'object' as const,
       properties: {
         start_date: {
           type: 'string',
-          description: 'Start of time range. MUST be ISO 8601 with timezone offset (e.g. "2026-01-20T00:00:00-08:00" for PST, "2026-01-20T00:00:00-05:00" for EST). Use the timezone from User Context.',
+          description: 'Start of time range (e.g. "today", "next Monday", "2026-01-20 9am").',
         },
         end_date: {
           type: 'string',
-          description: 'End of time range. MUST include timezone offset. Defaults to end of start_date day if not provided.',
+          description: 'End of time range (optional). If not provided, use end of the start_date day or the period range.',
         },
       },
       required: ['start_date'],
@@ -35,8 +40,55 @@ export const getCalendarEvents: ToolDefinition = {
     };
 
     try {
-      const startDate = new Date(start_date);
-      const endDate = end_date ? new Date(end_date) : endOfDay(startDate);
+      const timezone = context.userConfig?.timezone;
+      if (!timezone) {
+        return { success: false, error: 'Timezone not set. Ask the user for their timezone first.' };
+      }
+      if (!isValidTimezone(timezone)) {
+        return { success: false, error: `Invalid timezone: "${timezone}".` };
+      }
+
+      const range = end_date
+        ? null
+        : resolveDateRange(start_date, { timezone, referenceDate: new Date(), forwardDate: true });
+
+      let startDate: Date | null = null;
+      let endDate: Date | null = null;
+
+      if (range) {
+        startDate = new Date(range.start.timestamp * 1000);
+        endDate = new Date(range.end.timestamp * 1000);
+      } else {
+        const startResult = resolveDate(start_date, { timezone, referenceDate: new Date(), forwardDate: true });
+        if (!startResult) {
+          return { success: false, error: `Could not parse start date: "${start_date}"` };
+        }
+
+        if (end_date) {
+          const endResult = resolveDate(end_date, {
+            timezone,
+            referenceDate: new Date(startResult.timestamp * 1000),
+            forwardDate: true,
+          });
+          if (!endResult) {
+            return { success: false, error: `Could not parse end date: "${end_date}"` };
+          }
+          startDate = new Date(startResult.timestamp * 1000);
+          endDate = new Date(endResult.timestamp * 1000);
+        } else {
+          const startLocal = DateTime.fromSeconds(startResult.timestamp, { zone: timezone });
+          startDate = new Date(startResult.timestamp * 1000);
+          endDate = startLocal.endOf('day').toUTC().toJSDate();
+        }
+      }
+
+      if (!startDate || !endDate) {
+        return { success: false, error: 'Could not resolve date range.' };
+      }
+
+      if (endDate.getTime() <= startDate.getTime()) {
+        return { success: false, error: 'End date must be after start date.' };
+      }
 
       console.log(JSON.stringify({
         level: 'info',
@@ -70,7 +122,7 @@ export const getCalendarEvents: ToolDefinition = {
 export const createCalendarEvent: ToolDefinition = {
   tool: {
     name: 'create_calendar_event',
-    description: "Create a new event on the user's Google Calendar. IMPORTANT: Use the user's timezone from User Context.",
+    description: "Create a new event on the user's Google Calendar. Dates can be natural language like 'tomorrow at 3pm'.",
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -80,11 +132,15 @@ export const createCalendarEvent: ToolDefinition = {
         },
         start_time: {
           type: 'string',
-          description: 'Start time. MUST be ISO 8601 with timezone offset (e.g. "2026-01-20T15:30:00-08:00" for 3:30 PM PST).',
+          description: 'When the event starts (e.g., "tomorrow at 3pm", "next Monday at 10am")',
         },
         end_time: {
           type: 'string',
-          description: 'End time with timezone offset. Defaults to 1 hour after start if not provided.',
+          description: 'When the event ends (e.g., "tomorrow at 4pm")',
+        },
+        duration_minutes: {
+          type: 'number',
+          description: 'Optional duration in minutes if end_time is not provided',
         },
         location: {
           type: 'string',
@@ -97,17 +153,52 @@ export const createCalendarEvent: ToolDefinition = {
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
 
-    const { title, start_time, end_time, location } = input as {
+    const { title, start_time, end_time, duration_minutes, location } = input as {
       title: string;
       start_time: string;
       end_time?: string;
+      duration_minutes?: number;
       location?: string;
     };
 
     try {
-      const start = new Date(start_time);
-      // Default to 1 hour if no end time
-      const end = end_time ? new Date(end_time) : new Date(start.getTime() + 3600000);
+      const timezone = context.userConfig?.timezone;
+      if (!timezone) {
+        return { success: false, error: 'Timezone not set. Ask the user for their timezone first.' };
+      }
+      if (!isValidTimezone(timezone)) {
+        return { success: false, error: `Invalid timezone: "${timezone}".` };
+      }
+
+      const startResult = resolveDate(start_time, { timezone, referenceDate: new Date(), forwardDate: true });
+      if (!startResult) {
+        return { success: false, error: `Could not parse start time: "${start_time}"` };
+      }
+
+      const endResult = end_time
+        ? resolveDate(end_time, {
+          timezone,
+          referenceDate: new Date(startResult.timestamp * 1000),
+          forwardDate: true,
+        })
+        : null;
+
+      if (!endResult && !duration_minutes) {
+        return { success: false, error: 'Provide end_time or duration_minutes.' };
+      }
+
+      if (duration_minutes !== undefined && duration_minutes <= 0) {
+        return { success: false, error: 'duration_minutes must be greater than 0.' };
+      }
+
+      const start = new Date(startResult.timestamp * 1000);
+      const end = endResult
+        ? new Date(endResult.timestamp * 1000)
+        : new Date(start.getTime() + duration_minutes! * 60000);
+
+      if (end.getTime() <= start.getTime()) {
+        return { success: false, error: 'End time must be after start time.' };
+      }
 
       console.log(JSON.stringify({
         level: 'info',
@@ -301,15 +392,16 @@ export const deleteCalendarEvent: ToolDefinition = {
 export const resolveDate: ToolDefinition = {
   tool: {
     name: 'resolve_date',
-    description: `ALWAYS use this tool to convert relative dates to absolute ISO 8601 dates before calling calendar tools.
+    description: `Resolve natural language dates to ISO 8601 strings (with timezone offset).
 
 Examples of when to use this:
 - "sunday" → returns the actual date of next Sunday
 - "tomorrow at 3pm" → returns tomorrow's date with 15:00 time
 - "next tuesday" → returns the correct date
 - "in 2 hours" → returns current time + 2 hours
+- "this week" → returns a start and end range
 
-Call this BEFORE create_calendar_event or get_calendar_events when the user gives a relative date/time. Use the returned ISO string directly in calendar tool calls.`,
+Use this for debugging/verification. Calendar tools can accept natural language directly.`,
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -331,7 +423,6 @@ Call this BEFORE create_calendar_event or get_calendar_events when the user give
       timezone: string;
     };
 
-    // Validate timezone
     if (!isValidTimezone(timezone)) {
       return {
         success: false,
@@ -340,76 +431,37 @@ Call this BEFORE create_calendar_event or get_calendar_events when the user give
     }
 
     try {
-      // Get current time to use as reference
-      const now = new Date();
+      const range = resolveDateRange(dateInput, { timezone, referenceDate: new Date(), forwardDate: true });
+      if (range) {
+        return {
+          success: true,
+          start: range.start.iso,
+          end: range.end.iso,
+          granularity: range.granularity,
+        };
+      }
 
-      // Parse the natural language date with chrono
-      // Use forwardDate: true to prefer future dates
-      const results = chrono.parse(dateInput, now, { forwardDate: true });
-
-      if (results.length === 0) {
+      const resolved = resolveDate(dateInput, { timezone, referenceDate: new Date(), forwardDate: true });
+      if (!resolved) {
         return {
           success: false,
           error: `Could not parse date/time from: "${dateInput}"`,
         };
       }
 
-      const parsed = results[0];
-      const startDate = parsed.start.date();
-      const endDate = parsed.end?.date() || null;
-
-      // Format as ISO 8601 with timezone offset
-      const formatWithOffset = (date: Date, tz: string): string => {
-        const formatter = new Intl.DateTimeFormat('en-US', {
-          timeZone: tz,
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: false,
-        });
-
-        const parts = formatter.formatToParts(date);
-        const getPart = (type: string) => parts.find(p => p.type === type)?.value || '';
-
-        const year = getPart('year');
-        const month = getPart('month');
-        const day = getPart('day');
-        const hour = getPart('hour');
-        const minute = getPart('minute');
-        const second = getPart('second');
-
-        // Calculate offset
-        const utcDate = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }));
-        const tzDate = new Date(date.toLocaleString('en-US', { timeZone: tz }));
-        const offsetMs = tzDate.getTime() - utcDate.getTime();
-        const offsetMins = Math.round(offsetMs / 60000);
-        const offsetHours = Math.floor(Math.abs(offsetMins) / 60);
-        const offsetRemMins = Math.abs(offsetMins) % 60;
-        const offsetSign = offsetMins >= 0 ? '+' : '-';
-        const offsetStr = `${offsetSign}${String(offsetHours).padStart(2, '0')}:${String(offsetRemMins).padStart(2, '0')}`;
-
-        return `${year}-${month}-${day}T${hour}:${minute}:${second}${offsetStr}`;
-      };
-
       const result: Record<string, unknown> = {
         success: true,
-        start: formatWithOffset(startDate, timezone),
-        parsed_text: parsed.text,
+        start: resolved.iso,
+        timestamp: resolved.timestamp,
+        formatted: resolved.formatted,
       };
-
-      if (endDate) {
-        result.end = formatWithOffset(endDate, timezone);
-      }
 
       console.log(JSON.stringify({
         level: 'info',
         message: 'Date resolved',
         input: dateInput,
         timezone,
-        result: result.start,
+        result: resolved.iso,
         timestamp: new Date().toISOString(),
       }));
 
