@@ -166,7 +166,7 @@ describe('Calendar Service', () => {
       const newStart = new Date('2025-01-20T14:00:00Z');
       const newEnd = new Date('2025-01-20T15:00:00Z');
 
-      await updateEvent(testPhone, 'event1', { start: newStart, end: newEnd });
+      await updateEvent(testPhone, 'event1', { startTime: newStart, endTime: newEnd });
 
       const patched = getLastPatchedEvent();
       expect(patched?.requestBody.start?.dateTime).toBe(newStart.toISOString());

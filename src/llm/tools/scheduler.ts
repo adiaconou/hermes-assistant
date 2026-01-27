@@ -13,6 +13,7 @@ import {
   updateJob,
   deleteJob,
   parseScheduleToCron,
+  parseReminderTime,
   parseSchedule,
   cronToHuman,
   getSchedulerDb,
@@ -300,8 +301,9 @@ export const updateScheduledJob: ToolDefinition = {
         updates.enabled = enabled;
       }
 
-      // Recalculate next_run_at when re-enabling a job (unless schedule is also being updated)
-      if (enabled === true && schedule === undefined) {
+      // Recalculate next_run_at when re-enabling a recurring job (unless schedule is also being updated)
+      // For one-time reminders, re-enabling keeps the existing nextRunAt
+      if (enabled === true && schedule === undefined && job.isRecurring) {
         const cron = new Cron(job.cronExpression, { timezone: job.timezone });
         const nextRun = cron.nextRun();
         if (nextRun) {
@@ -310,20 +312,32 @@ export const updateScheduledJob: ToolDefinition = {
       }
 
       if (schedule !== undefined) {
-        const cronExpression = parseScheduleToCron(schedule);
-        if (!cronExpression) {
-          return {
-            success: false,
-            error: `Could not parse schedule: "${schedule}"`,
-          };
-        }
-        updates.cronExpression = cronExpression;
+        if (job.isRecurring) {
+          // Recurring job - parse to cron expression
+          const cronExpression = parseScheduleToCron(schedule);
+          if (!cronExpression) {
+            return {
+              success: false,
+              error: `Could not parse schedule: "${schedule}"`,
+            };
+          }
+          updates.cronExpression = cronExpression;
 
-        // Recalculate next run time
-        const cron = new Cron(cronExpression, { timezone: job.timezone });
-        const nextRun = cron.nextRun();
-        if (nextRun) {
-          updates.nextRunAt = Math.floor(nextRun.getTime() / 1000);
+          const cron = new Cron(cronExpression, { timezone: job.timezone });
+          const nextRun = cron.nextRun();
+          if (nextRun) {
+            updates.nextRunAt = Math.floor(nextRun.getTime() / 1000);
+          }
+        } else {
+          // One-time reminder - parse to timestamp
+          const timestamp = parseReminderTime(schedule, job.timezone);
+          if (!timestamp) {
+            return {
+              success: false,
+              error: `Could not parse time: "${schedule}"`,
+            };
+          }
+          updates.nextRunAt = timestamp;
         }
       }
 

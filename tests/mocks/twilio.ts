@@ -83,11 +83,19 @@ class MockTwilioClient {
 }
 
 /**
- * Mock Twilio factory function.
+ * Mock Twilio factory function with validateRequest attached.
  */
-function MockTwilio(_accountSid?: string, _authToken?: string): MockTwilioClient {
-  return new MockTwilioClient();
+interface MockTwilioFunction {
+  (_accountSid?: string, _authToken?: string): MockTwilioClient;
+  validateRequest: typeof validateRequest;
 }
+
+const MockTwilio: MockTwilioFunction = Object.assign(
+  function (_accountSid?: string, _authToken?: string): MockTwilioClient {
+    return new MockTwilioClient();
+  },
+  { validateRequest }
+);
 
 // Export as default (matches how Twilio is imported)
 export default MockTwilio;
