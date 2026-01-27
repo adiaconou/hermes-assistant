@@ -117,7 +117,7 @@ export function parseSchedule(input: string, timezone: string): ParsedSchedule |
  * Examples: "tomorrow at 9am", "in 2 hours", "next Tuesday at 3pm"
  *
  * @param input - Natural language time description
- * @param timezone - IANA timezone (currently used for reference, chrono handles most timezone logic)
+ * @param timezone - IANA timezone (e.g., "America/Los_Angeles") for interpreting the time
  * @returns Unix timestamp in seconds, or null if unparseable
  */
 export function parseReminderTime(input: string, timezone: string): number | null {
@@ -125,24 +125,151 @@ export function parseReminderTime(input: string, timezone: string): number | nul
     return null;
   }
 
-  // Create reference date (chrono uses this as "now")
-  const refDate = new Date();
+  const refInstant = new Date();
+  const refTzOffset = getTimezoneOffsetMinutes(refInstant, timezone);
+  if (refTzOffset === null) {
+    return null;
+  }
 
-  // Use chrono to parse the natural language time
-  const results = chrono.parse(input, refDate, { forwardDate: true });
+  // Use chrono to parse with reference timezone offset so relative dates are correct
+  const results = chrono.parse(
+    input,
+    { instant: refInstant, timezone: refTzOffset },
+    { forwardDate: true }
+  );
 
   if (results.length > 0 && results[0].start) {
-    // Get the parsed date from chrono
-    const parsedDate = results[0].start.date();
-    const timestamp = Math.floor(parsedDate.getTime() / 1000);
+    const parsed = results[0].start;
+    const year = parsed.get('year');
+    const month = parsed.get('month');
+    const day = parsed.get('day');
+    const hour = parsed.get('hour');
+    const minute = parsed.get('minute') ?? 0;
+    const second = parsed.get('second') ?? 0;
+
+    let timestamp: number | null = null;
+
+    if (parsed.isCertain('timezoneOffset')) {
+      const parsedDate = parsed.date();
+      timestamp = Math.floor(parsedDate.getTime() / 1000);
+    } else if (year != null && month != null && day != null && hour != null) {
+      timestamp = zonedTimeToUtcTimestamp(
+        { year, month, day, hour, minute, second },
+        timezone
+      );
+    } else {
+      const parsedDate = parsed.date();
+      timestamp = Math.floor(parsedDate.getTime() / 1000);
+    }
 
     // Only return if it's in the future
-    if (timestamp > Math.floor(Date.now() / 1000)) {
+    if (timestamp !== null && timestamp > Math.floor(Date.now() / 1000)) {
       return timestamp;
     }
   }
 
   return null;
+}
+
+/**
+ * Get timezone offset in minutes for a given instant and IANA timezone.
+ * Positive offsets mean local time is ahead of UTC.
+ */
+function getTimezoneOffsetMinutes(date: Date, timezone: string): number | null {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+      hourCycle: 'h23',
+    });
+
+    const parts = formatter.formatToParts(date);
+    const getPart = (type: string): number => {
+      const part = parts.find((p) => p.type === type);
+      return part ? parseInt(part.value, 10) : 0;
+    };
+
+    const localYear = getPart('year');
+    const localMonth = getPart('month');
+    const localDay = getPart('day');
+    const localHour = getPart('hour');
+    const localMinute = getPart('minute');
+    const localSecond = getPart('second');
+
+    const localAsUtc = Date.UTC(localYear, localMonth - 1, localDay, localHour, localMinute, localSecond);
+    return Math.round((localAsUtc - date.getTime()) / 60000);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Convert local components in a specific timezone to a UTC Unix timestamp.
+ * Returns null if the local time is invalid in that zone (e.g., DST gap).
+ */
+function zonedTimeToUtcTimestamp(
+  local: { year: number; month: number; day: number; hour: number; minute: number; second: number },
+  timezone: string
+): number | null {
+  const baseUtc = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, local.second);
+  let utc = baseUtc;
+
+  for (let i = 0; i < 3; i += 1) {
+    const offsetMinutes = getTimezoneOffsetMinutes(new Date(utc), timezone);
+    if (offsetMinutes === null) {
+      return null;
+    }
+    const adjustedUtc = Date.UTC(
+      local.year,
+      local.month - 1,
+      local.day,
+      local.hour,
+      local.minute,
+      local.second
+    ) - offsetMinutes * 60000;
+
+    if (adjustedUtc === utc) {
+      break;
+    }
+    utc = adjustedUtc;
+  }
+
+  // Validate that the computed UTC maps back to the same local components
+  const verifier = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    hourCycle: 'h23',
+  });
+
+  const parts = verifier.formatToParts(new Date(utc));
+  const getPart = (type: string): number => {
+    const part = parts.find((p) => p.type === type);
+    return part ? parseInt(part.value, 10) : 0;
+  };
+
+  if (
+    getPart('year') !== local.year ||
+    getPart('month') !== local.month ||
+    getPart('day') !== local.day ||
+    getPart('hour') !== local.hour ||
+    getPart('minute') !== local.minute
+  ) {
+    return null;
+  }
+
+  return Math.floor(utc / 1000);
 }
 
 /**

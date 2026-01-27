@@ -68,7 +68,13 @@ Use this for SMS/text reminders. For calendar events, use create_calendar_event 
     // Get user timezone
     const userConfigStore = getUserConfigStore();
     const userConfig = await userConfigStore.get(phoneNumber);
-    const timezone = userConfig?.timezone ?? 'UTC';
+    const timezone = userConfig?.timezone;
+    if (!timezone) {
+      return {
+        success: false,
+        error: 'Timezone not set. Ask the user for their timezone before scheduling reminders.',
+      };
+    }
 
     // Parse schedule (auto-detects recurring vs one-time)
     const parsed = parseSchedule(schedule, timezone);

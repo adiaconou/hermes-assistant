@@ -2,7 +2,7 @@
  * Unit tests for schedule parser (NL to cron conversion and one-time reminders).
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   parseScheduleToCron,
   parseSchedule,
@@ -208,5 +208,43 @@ describe('parseReminderTime', () => {
 
   it('returns null for unparseable input', () => {
     expect(parseReminderTime('banana', timezone)).toBeNull();
+  });
+
+  describe('timezone handling', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('interprets "tomorrow" using the user timezone, not server timezone', () => {
+      // 2026-01-27 07:30Z is 2026-01-26 23:30 in America/Los_Angeles (PST)
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-01-27T07:30:00Z'));
+
+      const result = parseReminderTime('tomorrow at 6:45am', 'America/Los_Angeles');
+      const expectedUtc = Date.UTC(2026, 0, 27, 14, 45, 0) / 1000; // 6:45am PST = 14:45Z
+
+      expect(result).toBe(expectedUtc);
+    });
+
+    it('returns null for invalid local time during DST spring forward', () => {
+      // In 2026, DST starts on Mar 8 in America/Los_Angeles; 2:30am does not exist.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-03-07T20:00:00Z'));
+
+      const result = parseReminderTime('Mar 8 2026 at 2:30am', 'America/Los_Angeles');
+      expect(result).toBeNull();
+    });
+
+    it('accepts ambiguous local time during DST fall back', () => {
+      // 1:30am occurs twice on Nov 2, 2025 in America/Los_Angeles.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2025-11-01T12:00:00Z'));
+
+      const result = parseReminderTime('Nov 2 2025 at 1:30am', 'America/Los_Angeles');
+      const firstOccurrence = Date.UTC(2025, 10, 2, 8, 30, 0) / 1000; // PDT (UTC-7)
+      const secondOccurrence = Date.UTC(2025, 10, 2, 9, 30, 0) / 1000; // PST (UTC-8)
+
+      expect([firstOccurrence, secondOccurrence]).toContain(result);
+    });
   });
 });
