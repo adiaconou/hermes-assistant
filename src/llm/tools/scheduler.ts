@@ -245,7 +245,10 @@ export const listScheduledJobs: ToolDefinition = {
 export const updateScheduledJob: ToolDefinition = {
   tool: {
     name: 'update_scheduled_job',
-    description: 'Update an existing scheduled job. Can change the prompt, schedule, or pause/resume the job.',
+    description: `Update an existing scheduled job. Can change the prompt, schedule, or pause/resume the job.
+
+IMPORTANT: Updates preserve the job type - one-time reminders stay one-time, recurring jobs stay recurring.
+When updating the schedule of a one-time reminder, parse the input as a specific date/time (e.g., "Saturday at 4pm" means THIS Saturday, not every Saturday).`,
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -343,6 +346,25 @@ export const updateScheduledJob: ToolDefinition = {
 
       const updatedJob = updateJob(db, job_id, updates);
 
+      // Get the final nextRunAt for formatting
+      const finalNextRunAt = (updates.nextRunAt as number) ?? job.nextRunAt;
+      const nextRunDate = finalNextRunAt ? new Date(finalNextRunAt * 1000) : null;
+      const nextRunFormatted = nextRunDate
+        ? nextRunDate.toLocaleString('en-US', {
+            timeZone: job.timezone,
+            weekday: 'long',
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+          })
+        : null;
+
+      // Get schedule description
+      const scheduleDescription = job.isRecurring
+        ? cronToHuman(updatedJob?.cronExpression ?? job.cronExpression)
+        : 'one-time reminder';
+
       console.log(JSON.stringify({
         level: 'info',
         message: 'Scheduled job updated',
@@ -354,6 +376,9 @@ export const updateScheduledJob: ToolDefinition = {
       return {
         success: true,
         job_id,
+        type: job.isRecurring ? 'recurring' : 'one-time',
+        schedule_description: scheduleDescription,
+        next_run: nextRunFormatted,
         updated_fields: Object.keys(updates),
         enabled: updatedJob?.enabled,
       };
