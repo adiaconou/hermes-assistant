@@ -1,5 +1,6 @@
 [build]
 builder = "nixpacks"
+installCommand = "npm install --omit=optional"
 buildCommand = "npm run build"
 
 [deploy]
