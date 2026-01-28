@@ -21,7 +21,7 @@ import {
   buildTimeContext,
   buildMemoryXml,
   buildUserContext,
-} from './prompts.js';
+} from './prompts/index.js';
 import { TOOLS, READ_ONLY_TOOLS, executeTool, type ToolContext } from './tools/index.js';
 
 // Re-export types
