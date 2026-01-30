@@ -4,7 +4,7 @@
 
 import type { ToolDefinition } from './types.js';
 import { requirePhoneNumber, handleAuthError } from './utils.js';
-import { listEmails, readEmail as readEmailService } from '../services/google/gmail.js';
+import { listEmails, getEmail as getEmailService } from '../services/google/gmail.js';
 
 export const getEmails: ToolDefinition = {
   tool: {
@@ -32,9 +32,11 @@ export const getEmails: ToolDefinition = {
     };
 
     try {
+      // Build query string based on options
+      const query = include_spam ? undefined : 'is:inbox';
       const emails = await listEmails(phoneNumber, {
         maxResults: Math.min(Math.max(max_results ?? 10, 1), 50),
-        includeSpamTrash: include_spam ?? false,
+        query,
       });
       return { success: true, emails };
     } catch (error) {
@@ -69,7 +71,7 @@ export const readEmail: ToolDefinition = {
     const { id } = input as { id: string };
 
     try {
-      const email = await readEmailService(phoneNumber, id);
+      const email = await getEmailService(phoneNumber, id);
       return { success: true, email };
     } catch (error) {
       const authResult = handleAuthError(error, phoneNumber, context.channel);

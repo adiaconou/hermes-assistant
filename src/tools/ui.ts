@@ -26,7 +26,12 @@ export const generateUi: ToolDefinition = {
   },
   handler: async (input) => {
     const { spec, title } = input as { spec: string; title?: string };
-    const result = await generatePage(spec, title);
+    // The spec should contain the full page content (html, css, js)
+    // For now, treat spec as the HTML content
+    const result = await generatePage({
+      title: title ?? 'Generated Page',
+      html: spec,
+    });
     return { success: true, ...result };
   },
 };

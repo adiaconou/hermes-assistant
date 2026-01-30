@@ -37,7 +37,12 @@ export const extractMemory: ToolDefinition = {
     }
 
     const store = getMemoryStore();
-    const saved = await store.addFact(phoneNumber, fact.trim(), category);
+    const saved = await store.addFact({
+      phoneNumber,
+      fact: fact.trim(),
+      category,
+      extractedAt: Date.now(),
+    });
 
     return { success: true, fact: saved };
   },
@@ -65,7 +70,9 @@ export const listMemories: ToolDefinition = {
     const { limit = 20 } = input as { limit?: number };
 
     const store = getMemoryStore();
-    const facts = await store.getFacts(phoneNumber, { limit: Math.min(Math.max(limit ?? 20, 1), 100) });
+    const allFacts = await store.getFacts(phoneNumber);
+    // Apply limit client-side since the interface doesn't support it
+    const facts = allFacts.slice(0, Math.min(Math.max(limit ?? 20, 1), 100));
 
     return { success: true, facts };
   },
@@ -93,7 +100,11 @@ export const updateMemory: ToolDefinition = {
     const { id, fact, category } = input as { id: string; fact: string; category?: string };
 
     const store = getMemoryStore();
-    const updated = await store.updateFact(phoneNumber, id, fact.trim(), category);
+    await store.updateFact(id, { fact: fact.trim(), category });
+
+    // Return the updated fact (fetch it back)
+    const allFacts = await store.getFacts(phoneNumber);
+    const updated = allFacts.find(f => f.id === id);
 
     return { success: true, fact: updated };
   },
@@ -119,7 +130,7 @@ export const removeMemory: ToolDefinition = {
     const { id } = input as { id: string };
 
     const store = getMemoryStore();
-    await store.deleteFact(phoneNumber, id);
+    await store.deleteFact(id);
 
     return { success: true, deleted: id };
   },
