@@ -6,27 +6,51 @@ This file provides guidance for AI agents working with this codebase. It is the 
 
 This is an SMS-based personal assistant that communicates via Twilio and is powered by Anthropic's Claude LLM with MCP (Model Context Protocol) tool integrations. The assistant accesses Google services (Gmail, Calendar) and runs as a persistent service deployable to Railway or other cloud platforms.
 
-## Development Commands
+## Quick Reference
 
 ```bash
-# Development (with hot reload + ngrok tunnel)
-npm run dev
+# Development
+npm run dev              # Hot reload + ngrok tunnel
+npm run dev:server       # Server only
 
-# Development (server only)
-npm run dev:server
+# Build & Run
+npm run build            # Compile TypeScript
+npm start                # Run production build
 
-# Build TypeScript
-npm run build
-
-# Run production build
-npm start
-
-# Run tests
-npm test
-
-# Lint
-npm run lint
+# Quality
+npm test                 # Run tests
+npm run lint             # Lint code
 ```
+
+## TypeScript Configuration
+
+- ES modules (`"type": "module"` in package.json)
+- Module resolution: `NodeNext`
+- Target: ES2022
+- Strict mode enabled
+- Output: `dist/` directory
+
+## Deployment
+
+**Target platform:** Railway
+
+**Option 1 - GitHub integration:**
+- Connect GitHub repo to Railway (auto-deploy on push)
+
+**Option 2 - CLI:**
+```bash
+railway init && railway up
+```
+
+Configuration is in `railway.toml`.
+
+## Claude Code Tool Usage
+
+When using Claude Code specifically:
+- **Use TodoWrite** for multi-step tasks to track progress
+- **Prefer Edit over Write** for modifying existing files
+- **Use Task tool with Explore agent** for codebase searches and questions
+- **Use Task tool with Plan agent** for designing implementation approaches
 
 ## Architecture
 
@@ -88,11 +112,13 @@ Environment variables are defined in `.env.example`. Key variables:
 
 ## Coding Guidelines
 
-### Simplicity & YAGNI
-- **Only implement what's needed for the current phase** - Don't build Phase 2 features while working on Phase 1
+### Design Principles
+- **Avoid over-engineering** - Keep solutions simple and focused on immediate requirements
+- **Only implement what's needed** - Don't build Phase 2 features while working on Phase 1
 - **No premature abstractions** - Three instances of similar code is better than one wrong abstraction
 - **Prefer explicit over clever** - Code should be immediately understandable
 - **Refactor later, not sooner** - Working simple code beats elegant complex code
+- **Don't design for hypothetical future requirements**
 
 ### Code Quality
 - **Document why, not what** - Comments should explain decisions and context
@@ -117,9 +143,11 @@ Environment variables are defined in `.env.example`. Key variables:
 - **Encrypt tokens at rest** - When storage is added, encrypt OAuth tokens
 - **Validate external input** - Never trust data from Twilio webhooks or user SMS
 
-### Testing Strategy
-- **Integration tests for webhooks** - Test the full request → response flow
-- **Unit tests for business logic** - Test pure functions in isolation
+### Testing Requirements
+- **Always add unit tests** for main paths and critical edge cases
+- **Always add integration tests** for key workflows
+- **Run tests before completing changes**: `npm test`
+- **Fix any failing tests** before considering a task complete
 - **Don't test external services** - Mock Twilio, Anthropic, Google APIs
 - **Test error paths** - Verify behavior when external services fail
 
@@ -241,8 +269,7 @@ Work is not done until pushed.
 
 ## Documentation
 
-- `AGENTS.md` - This file (canonical agent instructions)
-- `CLAUDE.md` - Claude Code specific notes
-- `docs/requirements.md` - Full product requirements (all phases)
-- `docs/phase-1-requirements.md` - Phase 1 MVP specification
+- `AGENTS.md` - This file (canonical agent instructions, including Claude Code usage)
+- `ARCHITECTURE.md` - System design, request flow, timezone handling
 - `README.md` - Quick start and project overview
+- `docs/` - Feature specs and implementation plans

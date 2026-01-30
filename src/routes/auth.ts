@@ -15,9 +15,8 @@ import crypto from 'crypto';
 import config from '../config.js';
 import { getCredentialStore } from '../services/credentials/index.js';
 import { sendSms, sendWhatsApp } from '../twilio.js';
-import { generateResponse } from '../llm/index.js';
-import { getHistory, addMessage } from '../conversation.js';
-import { getUserConfigStore } from '../services/user-config/index.js';
+// Legacy generateResponse removed; auth flow response generation will be added later if needed.
+import { addMessage } from '../conversation.js';
 
 const router = Router();
 
@@ -162,29 +161,9 @@ export function generateAuthUrl(phoneNumber: string, channel: MessageChannel = '
 async function continueAfterAuth(decryptedState: DecryptedState): Promise<void> {
   const { phone, channel } = decryptedState;
 
-  // Get conversation history and user config
-  const history = await getHistory(phone);
-  const configStore = getUserConfigStore();
-  const userConfig = await configStore.get(phone);
-
-  // Create a system message to prompt continuation
-  const continuationMessage = '[Authentication successful - continue with the previous request]';
-
-  // Generate response - the LLM will see the previous context and continue
-  // Note: We add to history AFTER generating, not before
-  const response = await generateResponse(
-    continuationMessage,
-    history,
-    phone,
-    userConfig,
-    { channel }
-  );
-
-  // Store messages in history after response generation
-  await addMessage(phone, 'user', continuationMessage);
+  // Notify user to continue; orchestration will pick up on next inbound message
+  const response = 'All set! You can ask about your calendar or email now.';
   await addMessage(phone, 'assistant', response);
-
-  // Send via appropriate channel (channel is now explicit, not inferred)
   if (channel === 'whatsapp') {
     await sendWhatsApp(phone, response);
   } else {

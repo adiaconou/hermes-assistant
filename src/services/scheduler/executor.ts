@@ -7,7 +7,8 @@
 
 import { Cron } from 'croner';
 import type Database from 'better-sqlite3';
-import { generateResponse, READ_ONLY_TOOLS } from '../../llm/index.js';
+import { executeWithTools } from '../../executor/tool-executor.js';
+import { READ_ONLY_TOOLS } from '../../tools/index.js';
 import { getUserConfigStore } from '../user-config/index.js';
 import { sendSms, sendWhatsApp } from '../../twilio.js';
 import { updateJob, deleteJob } from './sqlite.js';
@@ -61,17 +62,27 @@ export async function executeJob(
 
     const systemPrompt = `**Current time: ${timeContext}**\n\n${JOB_SYSTEM_PROMPT}`;
 
-    // Call LLM with job prompt and restricted tools
-    const response = await generateResponse(
+    // Call LLM with job prompt and restricted tools via shared executor
+    const execResult = await executeWithTools(
+      systemPrompt,
       job.prompt,
-      [], // No conversation history
-      job.phoneNumber,
-      userConfig,
+      READ_ONLY_TOOLS.map(t => t.name),
       {
-        systemPrompt,
-        tools: READ_ONLY_TOOLS,
-      }
+        phoneNumber: job.phoneNumber,
+        channel: job.channel,
+        userConfig,
+        previousStepResults: {},
+      },
+      { initialMessages: [{ role: 'user', content: job.prompt }] }
     );
+
+    const response = execResult.success
+      ? typeof execResult.output === 'string'
+        ? execResult.output
+        : typeof execResult.output === 'object' && execResult.output && typeof (execResult.output as Record<string, unknown>).message === 'string'
+          ? String((execResult.output as Record<string, unknown>).message)
+          : 'Done.'
+      : `I hit an error running your scheduled task: ${execResult.error ?? 'unknown error'}`;
 
     // Send the response via appropriate channel (stored in job)
     if (job.channel === 'whatsapp') {

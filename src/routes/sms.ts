@@ -11,10 +11,11 @@
  * response. Heavy work (UI generation, complex queries) runs asynchronously.
  */
 import { Router, Request, Response } from 'express';
-import { generateResponse, classifyMessage } from '../llm/index.js';
+import { classifyMessage } from '../services/anthropic/index.js';
 import { getHistory, addMessage } from '../conversation.js';
 import { sendSms, sendWhatsApp, validateTwilioSignature } from '../twilio.js';
 import { getUserConfigStore, type UserConfig } from '../services/user-config/index.js';
+import { handleWithOrchestrator } from '../orchestrator/index.js';
 import config from '../config.js';
 
 /**
@@ -25,10 +26,11 @@ async function sendResponse(
   channel: MessageChannel,
   message: string
 ): Promise<void> {
+  const safeMessage = enforceSmsLength(message, channel);
   if (channel === 'whatsapp') {
-    await sendWhatsApp(sender, message);
+    await sendWhatsApp(sender, safeMessage);
   } else {
-    await sendSms(sender, message);
+    await sendSms(sender, safeMessage);
   }
 }
 
@@ -94,6 +96,8 @@ export function enforceSmsLength(message: string, channel: MessageChannel): stri
 /**
  * Process heavy async work (UI generation, complex responses).
  * Called when classification determines async work is needed.
+ *
+ * Uses the orchestrator for async work (legacy generateResponse removed).
  */
 async function processAsyncWork(
   sender: string,
@@ -108,14 +112,12 @@ async function processAsyncWork(
       level: 'info',
       message: 'Starting async work',
       channel,
+      useOrchestrator: true,
       timestamp: new Date().toISOString(),
     }));
 
-    // Fetch history inside the function
-    const history = await getHistory(sender);
-
-    // Use the full generateResponse with tool loop
-    const responseText = await generateResponse(message, history, sender, userConfig, { channel });
+    // Always use orchestrator handler
+    const responseText = await handleWithOrchestrator(message, sender, channel, userConfig);
 
     console.log(JSON.stringify({
       level: 'info',
@@ -271,7 +273,7 @@ router.post('/webhook/sms', async (req: Request, res: Response) => {
       `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(fallbackMessage)}</Message></Response>`
     );
 
-    // Try to process with full LLM since classification failed
+    // Try to process with full pipeline even after classification failure
     const configStore = getUserConfigStore();
     configStore.get(sender).then((userConfig) => {
       processAsyncWork(sender, message, channel, userConfig).catch((asyncError) => {
