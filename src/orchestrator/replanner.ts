@@ -186,7 +186,7 @@ export async function replan(
 
   // Call LLM for revised plan
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-opus-4-5-20251101',
     max_tokens: 1024,
     temperature: 0,
     system: prompt,

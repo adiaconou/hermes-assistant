@@ -115,7 +115,7 @@ Explain what succeeded and what didn't.
 
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-opus-4-5-20251101',
       max_tokens: 512,
       system: prompt + systemAddition,
       messages: [
