@@ -9,6 +9,7 @@ import type { TextBlock } from '@anthropic-ai/sdk/resources/messages';
 
 import { getClient } from '../services/anthropic/client.js';
 import type { ExecutionPlan, PlanContext, StepResult } from './types.js';
+import type { TraceLogger } from '../utils/trace-logger.js';
 
 /**
  * Composition prompt template.
@@ -34,7 +35,7 @@ that summarizes what was done.
 
 <rules>
 1. Be conversational and friendly
-2. Keep the response concise (suitable for SMS)
+2. Response MUST be under 1000 characters - summarize if needed
 3. Don't mention internal steps or technical details
 4. If there were partial failures, acknowledge what succeeded and what didn't
 5. If there's a URL or link in the results, include it prominently
@@ -58,8 +59,8 @@ function formatStepResults(stepResults: Record<string, StepResult>): string {
       const status = result.success ? 'SUCCESS' : 'FAILED';
       const output = result.output
         ? typeof result.output === 'string'
-          ? result.output.substring(0, 500)
-          : JSON.stringify(result.output).substring(0, 500)
+          ? result.output
+          : JSON.stringify(result.output)
         : '(no output)';
       const error = result.error ? `\n    Error: ${result.error}` : '';
 
@@ -75,12 +76,14 @@ function formatStepResults(stepResults: Record<string, StepResult>): string {
  * @param context Plan context with all information
  * @param plan The executed plan
  * @param failureReason Optional reason for failure
+ * @param logger Trace logger for debugging
  * @returns User-friendly response string
  */
 export async function synthesizeResponse(
   context: PlanContext,
   plan: ExecutionPlan,
-  failureReason?: 'timeout' | 'step_failed'
+  failureReason?: 'timeout' | 'step_failed',
+  logger?: TraceLogger
 ): Promise<string> {
   const anthropic = getClient();
 
@@ -114,6 +117,15 @@ Explain what succeeded and what didn't.
   }
 
   try {
+    // Log LLM request
+    logger?.llmRequest('composition', {
+      model: 'claude-opus-4-5-20251101',
+      maxTokens: 512,
+      systemPrompt: prompt + systemAddition,
+      messages: [{ role: 'user', content: 'Compose the final response.' }],
+    });
+
+    const llmStartTime = Date.now();
     const response = await anthropic.messages.create({
       model: 'claude-opus-4-5-20251101',
       max_tokens: 512,
@@ -123,11 +135,24 @@ Explain what succeeded and what didn't.
       ],
     });
 
+    // Log LLM response
+    logger?.llmResponse('composition', {
+      stopReason: response.stop_reason ?? 'unknown',
+      content: response.content,
+      usage: response.usage ? {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+      } : undefined,
+    }, Date.now() - llmStartTime);
+
     const textBlock = response.content.find(
       (block): block is TextBlock => block.type === 'text'
     );
 
-    return textBlock?.text || 'I completed your request.';
+    const finalResponse = textBlock?.text || 'I completed your request.';
+    logger?.log('INFO', 'Response composed', { Length: finalResponse.length });
+
+    return finalResponse;
   } catch (error) {
     console.error(JSON.stringify({
       level: 'error',
