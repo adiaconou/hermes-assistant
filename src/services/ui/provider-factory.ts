@@ -8,7 +8,7 @@
 import type { PageStorage, UrlShortener } from './providers/types.js';
 import { LocalFileStorage } from './providers/local-storage.js';
 import { MemoryShortener } from './providers/memory-shortener.js';
-import config from '../config.js';
+import config from '../../config.js';
 
 // Singleton instances
 let storageInstance: PageStorage | null = null;

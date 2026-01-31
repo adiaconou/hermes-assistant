@@ -2,7 +2,7 @@
  * Main system prompt for the assistant.
  */
 
-import { getSizeLimits } from '../../../ui/index.js';
+import { getSizeLimits } from '../../ui/index.js';
 
 const sizeLimits = getSizeLimits();
 

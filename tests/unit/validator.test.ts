@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { validateOutput, getSizeLimits } from '../../src/ui/validator.js';
+import { validateOutput, getSizeLimits } from '../../src/services/ui/validator.js';
 
 describe('validateOutput', () => {
   describe('size limits', () => {

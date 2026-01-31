@@ -8,7 +8,7 @@
  */
 
 import { Router, type Request, type Response } from 'express';
-import { getStorage, getShortener, CSP_POLICY } from '../ui/index.js';
+import { getStorage, getShortener, CSP_POLICY } from '../services/ui/index.js';
 
 const router = Router();
 

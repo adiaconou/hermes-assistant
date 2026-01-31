@@ -3,34 +3,32 @@
  */
 
 import type { ToolDefinition } from './types.js';
-import { generatePage } from '../ui/index.js';
+import { generatePage } from '../services/ui/index.js';
 
 export const generateUi: ToolDefinition = {
   tool: {
     name: 'generate_ui',
-    description: 'Generate an interactive HTML/CSS/JS page. Returns a shortUrl for the hosted page.',
+    description: 'Host an HTML page and return its URL. You must provide complete HTML code including <style> and <script> tags.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        spec: {
+        html: {
           type: 'string',
-          description: 'Detailed page requirements (HTML/CSS/JS should be fully specified in the response)',
+          description: 'Complete HTML code for the page body, including <style> and <script> tags. This is NOT a description - it must be actual HTML/CSS/JS code.',
         },
         title: {
           type: 'string',
-          description: 'Title for the generated page (optional)',
+          description: 'Title for the page (shown in browser tab)',
         },
       },
-      required: ['spec'],
+      required: ['html'],
     },
   },
   handler: async (input) => {
-    const { spec, title } = input as { spec: string; title?: string };
-    // The spec should contain the full page content (html, css, js)
-    // For now, treat spec as the HTML content
+    const { html, title } = input as { html: string; title?: string };
     const result = await generatePage({
       title: title ?? 'Generated Page',
-      html: spec,
+      html,
     });
     return { success: true, ...result };
   },

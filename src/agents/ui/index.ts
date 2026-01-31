@@ -12,6 +12,8 @@
 
 import type { AgentCapability, StepResult, AgentExecutionContext } from '../../executor/types.js';
 import { executeWithTools } from '../../executor/tool-executor.js';
+import { buildTimeContext } from '../../services/anthropic/prompts/context.js';
+import { UI_AGENT_PROMPT } from './prompts.js';
 
 /**
  * UI tools that this agent can use.
@@ -37,41 +39,6 @@ export const capability: AgentCapability = {
 };
 
 /**
- * System prompt for the UI agent.
- */
-const UI_AGENT_PROMPT = `You are a UI generation assistant.
-
-Your job is to create interactive web pages for the user:
-- Lists: Todo lists, shopping lists, checklists
-- Forms: Input forms, surveys, RSVP pages
-- Tools: Calculators, timers, converters
-- Visualizations: Charts, planners, trackers
-
-Guidelines:
-1. Keep it mobile-friendly (touch targets, readable fonts)
-2. Use simple, clean design (no external dependencies)
-3. Pages run in a sandbox with NO network access
-4. Use localStorage via hermesLoadState()/hermesSaveState() for persistence
-5. Keep code concise - the page is delivered via SMS link
-
-CRITICAL CONSTRAINTS:
-- No fetch(), XMLHttpRequest, or WebSocket
-- No external fonts, images, or CDN scripts
-- All styling must be inline or in <style> tag
-- All scripts must be inline in <script> tag
-
-Persistence API:
-- window.hermesLoadState(): Returns previously saved state or null
-- window.hermesSaveState(data): Saves any JSON-serializable data
-
-Example patterns:
-- Interactive checklist with localStorage persistence
-- Calculator with real-time results
-- Form that validates and displays confirmation
-
-{userContext}`;
-
-/**
  * Execute the UI agent.
  *
  * @param task The UI task to perform
@@ -82,11 +49,17 @@ export async function executor(
   task: string,
   context: AgentExecutionContext
 ): Promise<StepResult> {
+  // Build system prompt with context
+  const timeContext = context.userConfig
+    ? `Current time: ${buildTimeContext(context.userConfig)}`
+    : '';
+
   const userContext = context.userConfig?.name
     ? `User: ${context.userConfig.name}`
     : '';
 
   const systemPrompt = UI_AGENT_PROMPT
+    .replace('{timeContext}', timeContext)
     .replace('{userContext}', userContext);
 
   return executeWithTools(

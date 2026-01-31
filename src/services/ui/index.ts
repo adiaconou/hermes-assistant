@@ -9,7 +9,7 @@
  */
 
 import { randomUUID } from 'crypto';
-import config from '../config.js';
+import config from '../../config.js';
 import { wrapWithSecurityShell, type GeneratedContent } from './generator.js';
 import { validateOutput } from './validator.js';
 import { getStorage, getShortener } from './provider-factory.js';

@@ -144,12 +144,27 @@ Environment variables are defined in `.env.example`. Key variables:
 - **Validate external input** - Never trust data from Twilio webhooks or user SMS
 
 ### Testing Requirements
-- **Always add unit tests** for main paths and critical edge cases
-- **Always add integration tests** for key workflows
-- **Run tests before completing changes**: `npm test`
-- **Fix any failing tests** before considering a task complete
-- **Don't test external services** - Mock Twilio, Anthropic, Google APIs
-- **Test error paths** - Verify behavior when external services fail
+
+**MANDATORY:** Every code change must include appropriate tests and all tests must pass.
+
+#### What to Test
+- **Unit tests for major code paths** - Test the main functionality and key branches
+- **Unit tests for major error modes** - Test error handling, edge cases, and failure scenarios
+- **Integration tests for key workflows** - Test end-to-end behavior of important features
+- **Mock external services** - Never call real Twilio, Anthropic, or Google APIs in tests
+
+#### Testing Workflow
+1. **Write tests alongside code changes** - New features and bug fixes require new tests
+2. **Run tests after every change**: `npm test`
+3. **All tests must pass** - Never consider work complete with failing tests
+4. **If tests fail, keep working** - Debug and fix until all tests pass
+5. **Don't skip or disable tests** - Fix the code or the test, never skip
+
+#### Test Quality
+- Tests should be readable and document expected behavior
+- Each test should verify one specific behavior
+- Use descriptive test names that explain what's being tested
+- Prefer explicit assertions over clever test abstractions
 
 ### Logging
 - **Structured logging** - Use JSON format for production logs
@@ -167,9 +182,18 @@ Environment variables are defined in `.env.example`. Key variables:
 
 ## Development Workflow
 
+### After Making Code Changes
+
+**CRITICAL:** All code changes require tests and verification.
+
+1. **Write/update tests** - Add unit and integration tests for new code paths and error modes
+2. **Run all tests**: `npm test`
+3. **If tests fail** - Debug, fix, and re-run until all pass. Do not proceed with failing tests.
+4. **Repeat** - Continue iterating until all tests pass
+
 ### Before Committing
 
-1. **Run tests**: `npm test`
+1. **Verify all tests pass**: `npm test` (run again to confirm)
 2. **Run linter**: `npm run lint`
 3. **Build to verify**: `npm run build`
 4. **Update docs**: If you changed behavior, update relevant docs
@@ -179,7 +203,7 @@ Environment variables are defined in `.env.example`. Key variables:
 **IMPORTANT:** Never pollute production with test data!
 
 ```bash
-# Run tests in isolation
+# Run all tests
 npm test
 
 # For manual testing with dev server
@@ -195,15 +219,19 @@ npm run dev
 1. Create handler in `src/routes/` or appropriate feature directory
 2. Register route in `src/index.ts`
 3. Add types if needed
-4. Add tests
-5. Document if public API
+4. **Write unit tests** for handler logic (success and error cases)
+5. **Write integration tests** for the endpoint
+6. **Run `npm test`** and fix any failures
+7. Document if public API
 
 #### Adding Storage Features (Phase 2+)
 
 1. Update schema/types
 2. Add migration if using SQLite
 3. Implement storage logic
-4. Add tests
+4. **Write unit tests** for storage operations
+5. **Write integration tests** for data flows
+6. **Run `npm test`** and fix any failures
 
 ---
 
