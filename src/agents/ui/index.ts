@@ -27,7 +27,7 @@ const UI_TOOLS = [
  */
 export const capability: AgentCapability = {
   name: 'ui-agent',
-  description: 'Generates interactive web pages. Use for lists, forms, calculators, or any content that benefits from visual/interactive presentation.',
+  description: `Generates interactive web pages. Use for lists, forms, calculators, or any content that benefits from visual/interactive presentation. IMPORTANT: This agent CANNOT fetch external data (no network access). To display live data (weather, calendar events, etc.), first fetch the data with another agent, then pass it to ui-agent to render.`,
   tools: UI_TOOLS,
   examples: [
     'Create a shopping list I can check off',
@@ -35,6 +35,7 @@ export const capability: AgentCapability = {
     'Build a form for my event RSVP',
     'Generate a weekly planner',
     'Create a timer for my workout',
+    'Display calendar events in an interactive view (requires calendar data from previous step)',
   ],
 };
 
