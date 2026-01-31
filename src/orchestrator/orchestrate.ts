@@ -26,6 +26,7 @@ import { createPlan } from './planner.js';
 import { executeStep, shouldReplan } from './executor.js';
 import { replan, canReplan } from './replanner.js';
 import { synthesizeResponse } from './response-composer.js';
+import type { TraceLogger } from '../utils/trace-logger.js';
 
 /**
  * Log a plan-level event.
@@ -76,6 +77,7 @@ function logStepEvent(
  * @param conversationHistory Full conversation history (will be windowed)
  * @param userFacts User's stored facts/preferences
  * @param userConfig User configuration (name, timezone)
+ * @param logger Trace logger for debugging
  * @returns OrchestratorResult with response and execution details
  */
 export async function orchestrate(
@@ -84,7 +86,8 @@ export async function orchestrate(
   userFacts: UserFact[],
   userConfig: UserConfig | null,
   phoneNumber: string,
-  channel: 'sms' | 'whatsapp'
+  channel: 'sms' | 'whatsapp',
+  logger: TraceLogger
 ): Promise<OrchestratorResult> {
   const startTime = Date.now();
   const registry = createAgentRegistry();
@@ -113,15 +116,21 @@ export async function orchestrate(
 
   try {
     // Phase 1: Create the initial plan
-    let plan = await createPlan(context, registry);
+    logger.log('INFO', 'Creating execution plan');
+    let plan = await createPlan(context, registry, logger);
     logPlanEvent('plan_created', plan);
+    logger.planEvent('created', {
+      'Plan ID': plan.id,
+      Goal: plan.goal,
+      Steps: plan.steps.length,
+    });
 
     // Handle empty plan (no steps needed)
     if (plan.steps.length === 0) {
       logPlanEvent('plan_empty', plan);
       return {
         success: true,
-        response: await synthesizeResponse(context, plan),
+        response: await synthesizeResponse(context, plan, undefined, logger),
         stepResults: {},
         plan,
       };
@@ -135,11 +144,12 @@ export async function orchestrate(
       const elapsed = Date.now() - startTime;
       if (elapsed > ORCHESTRATOR_LIMITS.maxExecutionTimeMs) {
         logPlanEvent('plan_timeout', plan, { elapsedMs: elapsed });
+        logger.planEvent('timeout', { 'Elapsed ms': elapsed });
         plan.status = 'failed';
 
         return {
           success: false,
-          response: await synthesizeResponse(context, plan, 'timeout'),
+          response: await synthesizeResponse(context, plan, 'timeout', logger),
           stepResults: context.stepResults,
           error: `Execution timeout after ${Math.round(elapsed / 1000)}s`,
           plan,
@@ -159,8 +169,12 @@ export async function orchestrate(
       logStepEvent('step_started', plan, step.id, step.agent, {
         retryCount: step.retryCount,
       });
+      logger.stepEvent('start', step.id, step.agent, {
+        Task: step.task,
+        'Retry count': step.retryCount,
+      });
 
-      const result = await executeStep(step, context, registry);
+      const result = await executeStep(step, context, registry, logger);
 
       if (result.success) {
         // Success - move to next step
@@ -172,6 +186,11 @@ export async function orchestrate(
           hasOutput: !!result.output,
           toolCallCount: result.toolCalls?.length || 0,
         });
+        logger.stepEvent('complete', step.id, step.agent, {
+          Success: true,
+          'Tool calls': result.toolCalls?.length || 0,
+          'Duration ms': result.tokenUsage ? undefined : undefined, // Duration tracked elsewhere
+        });
 
         // Check if agent signaled replanning
         const needsReplan = shouldReplan(result, currentStepIndex, plan.steps.length);
@@ -180,9 +199,16 @@ export async function orchestrate(
             reason: 'agent_requested_replan',
             failedStepId: step.id,
           });
-          plan = await replan(plan, context, registry);
+          logger.planEvent('replanning', {
+            Reason: 'agent_requested_replan',
+            'Failed step': step.id,
+          });
+          plan = await replan(plan, context, registry, logger);
           logPlanEvent('plan_replanned', plan, {
             newStepCount: plan.steps.length,
+          });
+          logger.planEvent('replanned', {
+            'New step count': plan.steps.length,
           });
           currentStepIndex = plan.steps.findIndex(s => s.status === 'pending');
           if (currentStepIndex < 0) {
@@ -204,11 +230,19 @@ export async function orchestrate(
           error: result.error,
           retryCount: step.retryCount,
         });
+        logger.stepEvent('failed', step.id, step.agent, {
+          Error: result.error,
+          'Retry count': step.retryCount,
+        });
 
         if (step.retryCount < step.maxRetries) {
           // Retry the same step
           logStepEvent('step_retrying', plan, step.id, step.agent, {
             retryCount: step.retryCount,
+          });
+          logger.stepEvent('retry', step.id, step.agent, {
+            'Attempt': step.retryCount + 1,
+            'Max retries': step.maxRetries,
           });
           continue;
         }
@@ -219,13 +253,20 @@ export async function orchestrate(
             reason: result.error,
             failedStepId: step.id,
           });
+          logger.planEvent('replanning', {
+            Reason: result.error,
+            'Failed step': step.id,
+          });
 
           step.status = 'failed';
           step.result = result;
-          plan = await replan(plan, context, registry);
+          plan = await replan(plan, context, registry, logger);
 
           logPlanEvent('plan_replanned', plan, {
             newStepCount: plan.steps.length,
+          });
+          logger.planEvent('replanned', {
+            'New step count': plan.steps.length,
           });
 
           // Find the first pending step to continue from
@@ -246,10 +287,14 @@ export async function orchestrate(
           reason: 'max_replans_exceeded',
           failedStepId: step.id,
         });
+        logger.planEvent('failed', {
+          Reason: 'max_replans_exceeded',
+          'Failed step': step.id,
+        });
 
         return {
           success: false,
-          response: await synthesizeResponse(context, plan, 'step_failed'),
+          response: await synthesizeResponse(context, plan, 'step_failed', logger),
           stepResults: context.stepResults,
           error: result.error || 'Step failed after max retries',
           plan,
@@ -266,10 +311,15 @@ export async function orchestrate(
       totalDurationMs: totalDuration,
       completedSteps: plan.steps.filter(s => s.status === 'completed').length,
     });
+    logger.planEvent('completed', {
+      'Total duration ms': totalDuration,
+      'Completed steps': plan.steps.filter(s => s.status === 'completed').length,
+    });
 
+    logger.log('INFO', 'Composing final response');
     return {
       success: true,
-      response: await synthesizeResponse(context, plan),
+      response: await synthesizeResponse(context, plan, undefined, logger),
       stepResults: context.stepResults,
       plan,
     };

@@ -111,15 +111,40 @@ export async function executeWithTools(
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
 
+  const logger = context.logger;
+
   try {
+    // Log initial LLM request
+    logger?.llmRequest('agent: initial', {
+      model: 'claude-opus-4-5-20251101',
+      maxTokens: MAX_TOKENS,
+      systemPrompt,
+      messages: messages.map(m => ({
+        role: m.role,
+        content: typeof m.content === 'string' ? m.content : '[complex content]',
+      })),
+      tools: tools.map(t => ({ name: t.name })),
+    });
+
     // Initial API call
+    let llmStartTime = Date.now();
     let response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-opus-4-5-20251101',
       max_tokens: MAX_TOKENS,
       system: systemPrompt,
       tools,
       messages,
     });
+
+    // Log initial LLM response
+    logger?.llmResponse('agent: initial', {
+      stopReason: response.stop_reason ?? 'unknown',
+      content: response.content,
+      usage: response.usage ? {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+      } : undefined,
+    }, Date.now() - llmStartTime);
 
     // Track usage
     totalInputTokens += response.usage?.input_tokens ?? 0;
@@ -162,16 +187,30 @@ export async function executeWithTools(
       // Execute all tools in parallel
       const toolResults: ToolResultBlockParam[] = await Promise.all(
         toolUseBlocks.map(async (toolUse) => {
-          const result = await executeTool(
-            toolUse.name,
-            toolUse.input as Record<string, unknown>,
-            toolContext
-          );
-          return {
-            type: 'tool_result' as const,
-            tool_use_id: toolUse.id,
-            content: result,
-          };
+          logger?.toolExecution(toolUse.name, toolUse.input);
+          const toolStartTime = Date.now();
+
+          try {
+            const result = await executeTool(
+              toolUse.name,
+              toolUse.input as Record<string, unknown>,
+              toolContext
+            );
+            logger?.toolResult(toolUse.name, result, Date.now() - toolStartTime, true);
+            return {
+              type: 'tool_result' as const,
+              tool_use_id: toolUse.id,
+              content: result,
+            };
+          } catch (toolError) {
+            const errorMsg = toolError instanceof Error ? toolError.message : String(toolError);
+            logger?.toolResult(toolUse.name, errorMsg, Date.now() - toolStartTime, false);
+            return {
+              type: 'tool_result' as const,
+              tool_use_id: toolUse.id,
+              content: `Error: ${errorMsg}`,
+            };
+          }
         })
       );
 
@@ -179,14 +218,34 @@ export async function executeWithTools(
       messages.push({ role: 'assistant', content: response.content });
       messages.push({ role: 'user', content: toolResults });
 
+      // Log continuation LLM request
+      logger?.llmRequest(`agent: iteration ${loopCount}`, {
+        model: 'claude-opus-4-5-20251101',
+        maxTokens: MAX_TOKENS,
+        systemPrompt: '(same as initial)',
+        messages: [{ role: 'user', content: '(continuing with tool results)' }],
+        tools: tools.map(t => ({ name: t.name })),
+      });
+
       // Continue conversation
+      llmStartTime = Date.now();
       response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-opus-4-5-20251101',
         max_tokens: MAX_TOKENS,
         system: systemPrompt,
         tools,
         messages,
       });
+
+      // Log continuation LLM response
+      logger?.llmResponse(`agent: iteration ${loopCount}`, {
+        stopReason: response.stop_reason ?? 'unknown',
+        content: response.content,
+        usage: response.usage ? {
+          inputTokens: response.usage.input_tokens,
+          outputTokens: response.usage.output_tokens,
+        } : undefined,
+      }, Date.now() - llmStartTime);
 
       // Track usage
       totalInputTokens += response.usage?.input_tokens ?? 0;

@@ -26,6 +26,7 @@ import type {
 import { ORCHESTRATOR_LIMITS } from './types.js';
 import { formatAgentsForPrompt } from '../executor/registry.js';
 import { formatHistoryForPrompt } from './conversation-window.js';
+import type { TraceLogger } from '../utils/trace-logger.js';
 
 /**
  * Planning prompt template.
@@ -135,11 +136,13 @@ function parsePlanResponse(
  *
  * @param context Plan context with user message, history, memory, config
  * @param registry Agent registry for available agents
+ * @param logger Trace logger for debugging
  * @returns ExecutionPlan ready for execution
  */
 export async function createPlan(
   context: PlanContext,
-  registry: AgentRegistry
+  registry: AgentRegistry,
+  logger?: TraceLogger
 ): Promise<ExecutionPlan> {
   const anthropic = getClient();
   const startTime = Date.now();
@@ -178,7 +181,17 @@ export async function createPlan(
     timestamp: new Date().toISOString(),
   }));
 
+  // Log LLM request
+  logger?.llmRequest('planning', {
+    model: 'claude-opus-4-5-20251101',
+    maxTokens: 1024,
+    temperature: 0,
+    systemPrompt: prompt,
+    messages: [{ role: 'user', content: context.userMessage }],
+  });
+
   // Call LLM to create plan
+  const llmStartTime = Date.now();
   const response = await anthropic.messages.create({
     model: 'claude-opus-4-5-20251101',
     max_tokens: 1024,
@@ -188,6 +201,17 @@ export async function createPlan(
       { role: 'user', content: context.userMessage },
     ],
   });
+  const llmDuration = Date.now() - llmStartTime;
+
+  // Log LLM response
+  logger?.llmResponse('planning', {
+    stopReason: response.stop_reason ?? 'unknown',
+    content: response.content,
+    usage: response.usage ? {
+      inputTokens: response.usage.input_tokens,
+      outputTokens: response.usage.output_tokens,
+    } : undefined,
+  }, llmDuration);
 
   // Extract text response
   const textBlock = response.content.find(

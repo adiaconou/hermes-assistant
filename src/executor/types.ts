@@ -7,6 +7,7 @@
 
 import type { ToolUseBlock } from '@anthropic-ai/sdk/resources/messages';
 import type { UserConfig } from '../services/user-config/types.js';
+import type { TraceLogger } from '../utils/trace-logger.js';
 
 // ============================================================================
 // Step Result Types
@@ -94,6 +95,9 @@ export interface AgentExecutionContext {
 
   /** Results from previous steps (for context passing) */
   previousStepResults: Record<string, StepResult>;
+
+  /** Trace logger for debugging (optional, only present in development) */
+  logger?: TraceLogger;
 }
 
 /**

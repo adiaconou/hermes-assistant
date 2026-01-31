@@ -22,6 +22,7 @@ import type {
 } from './types.js';
 import { ORCHESTRATOR_LIMITS } from './types.js';
 import { formatAgentsForPrompt } from '../executor/registry.js';
+import type { TraceLogger } from '../utils/trace-logger.js';
 
 /**
  * Replanning prompt template.
@@ -152,12 +153,14 @@ export function canReplan(plan: ExecutionPlan): boolean {
  * @param priorPlan The plan that needs revision
  * @param context Current plan context with errors
  * @param registry Agent registry for available agents
+ * @param logger Trace logger for debugging
  * @returns Revised ExecutionPlan
  */
 export async function replan(
   priorPlan: ExecutionPlan,
   context: PlanContext,
-  registry: AgentRegistry
+  registry: AgentRegistry,
+  logger?: TraceLogger
 ): Promise<ExecutionPlan> {
   const anthropic = getClient();
   const startTime = Date.now();
@@ -184,7 +187,17 @@ export async function replan(
     .replace('{errors}', errorsText)
     .replace('{maxSteps}', String(ORCHESTRATOR_LIMITS.maxTotalSteps));
 
+  // Log LLM request
+  logger?.llmRequest('replan', {
+    model: 'claude-opus-4-5-20251101',
+    maxTokens: 1024,
+    temperature: 0,
+    systemPrompt: prompt,
+    messages: [{ role: 'user', content: 'Create a revised plan to handle the failures.' }],
+  });
+
   // Call LLM for revised plan
+  const llmStartTime = Date.now();
   const response = await anthropic.messages.create({
     model: 'claude-opus-4-5-20251101',
     max_tokens: 1024,
@@ -194,6 +207,16 @@ export async function replan(
       { role: 'user', content: 'Create a revised plan to handle the failures.' },
     ],
   });
+
+  // Log LLM response
+  logger?.llmResponse('replan', {
+    stopReason: response.stop_reason ?? 'unknown',
+    content: response.content,
+    usage: response.usage ? {
+      inputTokens: response.usage.input_tokens,
+      outputTokens: response.usage.output_tokens,
+    } : undefined,
+  }, Date.now() - llmStartTime);
 
   // Extract text response
   const textBlock = response.content.find(

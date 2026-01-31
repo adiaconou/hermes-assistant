@@ -20,6 +20,7 @@ import type {
 import { ORCHESTRATOR_LIMITS } from './types.js';
 import type { StepResult, AgentExecutionContext } from '../executor/types.js';
 import { routeToAgent } from '../executor/router.js';
+import type { TraceLogger } from '../utils/trace-logger.js';
 
 /** Per-step timeout from design constraints (C-5) */
 const STEP_TIMEOUT_MS = ORCHESTRATOR_LIMITS.stepTimeoutMs;
@@ -57,12 +58,14 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
  * @param step The step to execute
  * @param context Plan context with previous results
  * @param registry Agent registry for looking up agent config
+ * @param logger Trace logger for debugging
  * @returns StepResult with success/output/error
  */
 export async function executeStep(
   step: PlanStep,
   context: PlanContext,
-  registry: AgentRegistry
+  registry: AgentRegistry,
+  logger?: TraceLogger
 ): Promise<StepResult> {
   const startTime = Date.now();
 
@@ -99,6 +102,7 @@ export async function executeStep(
     channel: context.channel,
     userConfig: context.userConfig,
     previousStepResults: context.stepResults,
+    logger,
   };
 
   try {
