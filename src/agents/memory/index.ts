@@ -4,9 +4,27 @@
  * Specialized agent for memory operations. This agent handles
  * extracting and managing user facts/preferences.
  *
+ * ## Design Decision: No Proactive Extraction
+ *
+ * Agents do NOT proactively extract facts during conversations. The memory-agent
+ * is only invoked when users explicitly request memory operations:
+ * - "Remember that I like coffee"
+ * - "What do you know about me?"
+ * - "Forget my allergy information"
+ *
+ * Background fact extraction is handled separately by the async memory processor
+ * (see src/services/memory/processor.ts), which runs periodically to extract
+ * facts from conversation history.
+ *
+ * This design ensures:
+ * - Users have control over what gets remembered
+ * - Conversation agents stay focused on their primary tasks
+ * - No unnecessary memory operations during normal conversations
+ *
  * Capabilities:
- * - Extract facts from conversation
+ * - Extract facts from conversation (when explicitly requested)
  * - View stored facts
+ * - Update existing facts
  * - Delete facts
  */
 

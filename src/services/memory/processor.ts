@@ -3,6 +3,8 @@
  *
  * Periodically processes conversation messages to extract
  * user facts for the memory system.
+ *
+ * @see ./prompts.ts for the extraction prompt and design decisions
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -10,6 +12,7 @@ import config from '../../config.js';
 import { getConversationStore, type ConversationMessage } from '../conversation/index.js';
 import { getMemoryStore, type UserFact } from './index.js';
 import { createIntervalPoller, type Poller } from '../scheduler/poller.js';
+import { buildExtractionPrompt } from './prompts.js';
 
 const client = new Anthropic({ apiKey: config.anthropicApiKey });
 
@@ -28,45 +31,6 @@ export interface ProcessingResult {
 interface ExtractedFact {
   fact: string;
   category?: string;
-}
-
-/**
- * Build the extraction prompt for the LLM.
- */
-function buildExtractionPrompt(
-  existingFacts: UserFact[],
-  messages: ConversationMessage[]
-): string {
-  const existingFactsXml = existingFacts.length > 0
-    ? existingFacts.map((f) => f.fact).join('\n')
-    : '(No existing facts)';
-
-  const messagesXml = messages
-    .map((m) => `[${m.role}]: ${m.content}`)
-    .join('\n');
-
-  return `You are analyzing conversation messages to extract persistent facts about the user.
-
-<existing_facts>
-${existingFactsXml}
-</existing_facts>
-
-<recent_messages>
-${messagesXml}
-</recent_messages>
-
-Extract NEW facts from the messages that:
-- Represent persistent information about the user (preferences, relationships, health, work, etc.)
-- Are NOT already captured in <existing_facts>
-- Are NOT temporary ("I'm busy today") or questions
-- Are stated by the user (role: user), not the assistant
-
-Return a JSON array of facts. Each fact should be an atomic sentence in third person (e.g., "Likes coffee", "Has a dog named Max").
-[{"fact": "...", "category": "preferences|health|relationships|work|interests|other"}]
-
-Return empty array [] if no new facts to extract.
-
-IMPORTANT: Return ONLY the JSON array, no other text.`;
 }
 
 /**
