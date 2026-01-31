@@ -10,6 +10,7 @@ import {
   createTextResponse,
   clearMockState,
   getCreateCalls,
+  mockCreate,
 } from '../../mocks/anthropic.js';
 
 // Import after mock is loaded
@@ -259,9 +260,8 @@ describe('synthesizeResponse', () => {
 
   describe('error handling', () => {
     it('should return fallback on API error with failure reason', async () => {
-      // Make the mock throw
-      setMockResponses([]);
-      // The mock will throw when no responses are available
+      // Make the mock throw an error
+      mockCreate.mockRejectedValueOnce(new Error('API rate limit exceeded'));
 
       const context = createBaseContext();
       const plan = createBasePlan();
@@ -272,7 +272,8 @@ describe('synthesizeResponse', () => {
     });
 
     it('should extract shortUrl from results on API error', async () => {
-      setMockResponses([]); // Will cause error
+      // Make the mock throw an error
+      mockCreate.mockRejectedValueOnce(new Error('Network error'));
 
       const context = createBaseContext({
         stepResults: {
@@ -287,7 +288,8 @@ describe('synthesizeResponse', () => {
     });
 
     it('should extract message from results on API error', async () => {
-      setMockResponses([]); // Will cause error
+      // Make the mock throw an error
+      mockCreate.mockRejectedValueOnce(new Error('Service unavailable'));
 
       const context = createBaseContext({
         stepResults: {
@@ -302,7 +304,8 @@ describe('synthesizeResponse', () => {
     });
 
     it('should return generic fallback when no useful output', async () => {
-      setMockResponses([]); // Will cause error
+      // Make the mock throw an error
+      mockCreate.mockRejectedValueOnce(new Error('Unknown error'));
 
       const context = createBaseContext({
         stepResults: {

@@ -93,10 +93,19 @@ describe('POST /webhook/sms', () => {
     });
 
     it('should send async follow-up via WhatsApp API with correct prefix', async () => {
-      // First call: classification says async work needed
-      // Second call: full response generation
+      // The orchestrator architecture makes multiple LLM calls
       setMockResponses([
+        // Classification
         createTextResponse('{"needsAsyncWork": true, "immediateResponse": "Working on it!"}'),
+        // Planner
+        createTextResponse(JSON.stringify({
+          analysis: 'User wants something complex',
+          goal: 'Handle complex request',
+          steps: [{ id: 'step_1', agent: 'general-agent', task: 'Process request' }],
+        })),
+        // Executor
+        createTextResponse('Processed the request.'),
+        // Response Composer
         createTextResponse('Here is your WhatsApp response.'),
       ]);
 
@@ -123,11 +132,24 @@ describe('POST /webhook/sms', () => {
 
   describe('async work flow', () => {
     it('should return immediate ack in TwiML and send full response via API', async () => {
-      // First call: classification says async work needed
-      // Second call: full response generation
+      // The new orchestrator architecture makes multiple LLM calls:
+      // 1. Classification: determines needsAsyncWork
+      // 2. Planner: creates execution plan (expects JSON)
+      // 3. Executor: runs agent steps
+      // 4. Response Composer: synthesizes final response
       setMockResponses([
+        // Classification response
         createTextResponse('{"needsAsyncWork": true, "immediateResponse": "Let me work on that!"}'),
-        createTextResponse('Here is your detailed response with all the information you requested.'),
+        // Planner response (JSON with plan)
+        createTextResponse(JSON.stringify({
+          analysis: 'User wants to create a grocery list',
+          goal: 'Create grocery list',
+          steps: [{ id: 'step_1', agent: 'general-agent', task: 'Create the list' }],
+        })),
+        // Executor response (general-agent execution)
+        createTextResponse('I created your grocery list with common items.'),
+        // Response Composer (synthesizes final message)
+        createTextResponse('Here is your detailed response with the grocery list!'),
       ]);
 
       const payload = createSmsPayload('Create a grocery list', '+15559999999');
@@ -152,7 +174,7 @@ describe('POST /webhook/sms', () => {
       const sentMessages = getSentMessages();
 
       // Only the async follow-up goes via Twilio API
-      expect(sentMessages[0].body).toContain('detailed response');
+      expect(sentMessages[0].body).toContain('grocery list');
       expect(sentMessages[0].to).toBe('+15559999999');
     });
   });
