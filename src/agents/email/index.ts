@@ -2,24 +2,26 @@
  * Email Agent
  *
  * Specialized agent for email operations. This agent handles
- * reading and searching emails from Gmail.
+ * reading and searching emails from Gmail with thorough exploration.
  *
  * Capabilities:
- * - Search emails
- * - Read email content
- * - List unread emails
+ * - Search emails with Gmail search syntax
+ * - Read full email content
+ * - Iteratively explore to find specific information
  */
 
 import type { AgentCapability, StepResult, AgentExecutionContext } from '../../executor/types.js';
 import { executeWithTools } from '../../executor/tool-executor.js';
 import { buildTimeContext } from '../../services/anthropic/prompts/context.js';
+import { EMAIL_AGENT_PROMPT } from './prompt.js';
 
 /**
  * Email tools that this agent can use.
  */
 const EMAIL_TOOLS = [
   'get_emails',
-  'get_email_content',
+  'read_email',
+  'get_email_thread',
 ];
 
 /**
@@ -27,7 +29,7 @@ const EMAIL_TOOLS = [
  */
 export const capability: AgentCapability = {
   name: 'email-agent',
-  description: 'Reads and searches Gmail. Use for checking, finding, or reading emails.',
+  description: 'Searches and reads Gmail. Use for finding specific information, checking emails, or reading email content. Can search by sender, subject, date, and keywords.',
   tools: EMAIL_TOOLS,
   examples: [
     'Do I have any unread emails?',
@@ -35,29 +37,10 @@ export const capability: AgentCapability = {
     'Find emails about the project',
     'What emails did I get today?',
     'Read the email from my boss',
+    'Find my hotel confirmation for my trip to Arizona',
+    'Search for flight bookings from last year',
   ],
 };
-
-/**
- * System prompt for the email agent.
- */
-const EMAIL_AGENT_PROMPT = `You are an email assistant.
-
-Your job is to help with email-related tasks:
-- Searching emails: Find emails by sender, subject, content, or status
-- Reading emails: Get full content of specific emails
-- Summarizing: Provide concise summaries of email content
-
-Guidelines:
-1. Use Gmail search syntax for queries (from:, subject:, is:unread, etc.)
-2. Present email results clearly with sender, subject, and preview
-3. When reading an email, summarize key points concisely
-4. Respect privacy - don't share sensitive content unnecessarily
-5. Mention important details like attachments or urgent flags
-
-{timeContext}
-
-{userContext}`;
 
 /**
  * Execute the email agent.

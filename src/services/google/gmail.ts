@@ -280,3 +280,60 @@ function extractBodyText(payload: gmail_v1.Schema$MessagePart | undefined): stri
 
   return '';
 }
+
+/**
+ * Thread with all messages in the conversation.
+ */
+export interface EmailThread {
+  id: string;
+  messages: EmailDetail[];
+}
+
+/**
+ * Get all messages in an email thread.
+ *
+ * @param phoneNumber - User's phone number
+ * @param threadId - Thread ID from get_emails
+ * @returns Thread with all messages
+ * @throws AuthRequiredError if not authenticated
+ */
+export async function getThread(
+  phoneNumber: string,
+  threadId: string
+): Promise<EmailThread | null> {
+  const gmail = await getGmailClient(phoneNumber);
+
+  try {
+    const response = await gmail.users.threads.get({
+      userId: 'me',
+      id: threadId,
+      format: 'full',
+    });
+
+    if (!response.data || !response.data.messages) return null;
+
+    const messages: EmailDetail[] = response.data.messages.map((msg) => {
+      const headers = msg.payload?.headers || [];
+      const getHeader = (name: string) =>
+        headers.find((h) => h.name === name)?.value || '';
+
+      return {
+        id: msg.id!,
+        threadId: msg.threadId!,
+        from: getHeader('From'),
+        subject: getHeader('Subject'),
+        snippet: msg.snippet || '',
+        date: getHeader('Date'),
+        isUnread: msg.labelIds?.includes('UNREAD') || false,
+        body: extractBodyText(msg.payload),
+      };
+    });
+
+    return {
+      id: response.data.id!,
+      messages,
+    };
+  } catch (error) {
+    return handleGmailApiError(error, phoneNumber);
+  }
+}

@@ -17,7 +17,7 @@ import {
 } from '../../src/services/credentials/index.js';
 
 // Import after mocks are set up
-import { listEmails, getEmail } from '../../src/services/google/gmail.js';
+import { listEmails, getEmail, getThread } from '../../src/services/google/gmail.js';
 import { AuthRequiredError } from '../../src/services/google/calendar.js';
 
 describe('Gmail Service', () => {
@@ -256,6 +256,80 @@ describe('Gmail Service', () => {
     it('throws AuthRequiredError when no credentials', async () => {
       await expect(
         getEmail(testPhone, 'email1')
+      ).rejects.toThrow(AuthRequiredError);
+    });
+  });
+
+  describe('getThread', () => {
+    it('returns all messages in a thread', async () => {
+      const store = getCredentialStore();
+      await store.set(testPhone, 'google', validCredential);
+
+      const bodyText1 = 'First message in thread.';
+      const bodyText2 = 'Reply to first message.';
+      const bodyBase64_1 = Buffer.from(bodyText1).toString('base64');
+      const bodyBase64_2 = Buffer.from(bodyText2).toString('base64');
+
+      const mockEmails: MockEmail[] = [
+        {
+          id: 'email1',
+          threadId: 'thread1',
+          labelIds: ['INBOX'],
+          snippet: 'First message...',
+          payload: {
+            headers: [
+              { name: 'From', value: 'John <john@example.com>' },
+              { name: 'Subject', value: 'Original subject' },
+              { name: 'Date', value: 'Mon, 20 Jan 2025 10:00:00 -0800' },
+            ],
+            mimeType: 'text/plain',
+            body: { data: bodyBase64_1 },
+          },
+        },
+        {
+          id: 'email2',
+          threadId: 'thread1',
+          labelIds: ['INBOX'],
+          snippet: 'Reply to first...',
+          payload: {
+            headers: [
+              { name: 'From', value: 'Jane <jane@example.com>' },
+              { name: 'Subject', value: 'Re: Original subject' },
+              { name: 'Date', value: 'Mon, 20 Jan 2025 11:00:00 -0800' },
+            ],
+            mimeType: 'text/plain',
+            body: { data: bodyBase64_2 },
+          },
+        },
+      ];
+      setMockEmails(mockEmails);
+
+      const thread = await getThread(testPhone, 'thread1');
+
+      expect(thread).not.toBeNull();
+      expect(thread!.id).toBe('thread1');
+      expect(thread!.messages).toHaveLength(2);
+      expect(thread!.messages[0].from).toBe('John <john@example.com>');
+      expect(thread!.messages[0].body).toBe(bodyText1);
+      expect(thread!.messages[1].from).toBe('Jane <jane@example.com>');
+      expect(thread!.messages[1].body).toBe(bodyText2);
+
+      const counts = getGmailCallCounts();
+      expect(counts.threadGet).toBe(1);
+    });
+
+    it('returns null for non-existent thread', async () => {
+      const store = getCredentialStore();
+      await store.set(testPhone, 'google', validCredential);
+
+      setMockEmails([]);
+
+      await expect(getThread(testPhone, 'nonexistent')).rejects.toThrow('Thread not found');
+    });
+
+    it('throws AuthRequiredError when no credentials', async () => {
+      await expect(
+        getThread(testPhone, 'thread1')
       ).rejects.toThrow(AuthRequiredError);
     });
   });

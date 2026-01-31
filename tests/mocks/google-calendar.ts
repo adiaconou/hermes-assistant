@@ -53,6 +53,7 @@ let shouldFailRefresh = false;
 let mockEmails: MockEmail[] = [];
 let gmailListCallCount = 0;
 let gmailGetCallCount = 0;
+let gmailThreadGetCallCount = 0;
 let shouldFailWithInsufficientScopes = false;
 
 /**
@@ -72,8 +73,8 @@ export function setMockEmails(emails: MockEmail[]): void {
 /**
  * Get Gmail call counts for assertions.
  */
-export function getGmailCallCounts(): { list: number; get: number } {
-  return { list: gmailListCallCount, get: gmailGetCallCount };
+export function getGmailCallCounts(): { list: number; get: number; threadGet: number } {
+  return { list: gmailListCallCount, get: gmailGetCallCount, threadGet: gmailThreadGetCallCount };
 }
 
 /**
@@ -136,6 +137,7 @@ export function clearMockState(): void {
   mockEmails = [];
   gmailListCallCount = 0;
   gmailGetCallCount = 0;
+  gmailThreadGetCallCount = 0;
   shouldFailWithInsufficientScopes = false;
 }
 
@@ -229,12 +231,34 @@ const mockMessagesGet = vi.fn(async (params: { id: string; format?: string }) =>
   };
 });
 
+// Mock gmail.users.threads.get
+const mockThreadsGet = vi.fn(async (params: { id: string; format?: string }) => {
+  gmailThreadGetCallCount++;
+  if (shouldFailWithInsufficientScopes) {
+    throw new Error('Request had insufficient authentication scopes.');
+  }
+  // Find all emails with matching threadId
+  const threadEmails = mockEmails.filter(e => e.threadId === params.id);
+  if (threadEmails.length === 0) {
+    throw new Error('Thread not found');
+  }
+  return {
+    data: {
+      id: params.id,
+      messages: threadEmails,
+    },
+  };
+});
+
 // Mock gmail object
 const mockGmail = {
   users: {
     messages: {
       list: mockMessagesList,
       get: mockMessagesGet,
+    },
+    threads: {
+      get: mockThreadsGet,
     },
   },
 };
@@ -288,6 +312,7 @@ export {
   // Gmail mocks
   mockMessagesList,
   mockMessagesGet,
+  mockThreadsGet,
   // OAuth mocks
   mockSetCredentials,
   mockRefreshAccessToken,

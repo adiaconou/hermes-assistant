@@ -7,7 +7,7 @@ import type { ToolDefinition, ToolHandler, ToolContext } from './types.js';
 
 import { generateUi } from './ui.js';
 import { getCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, resolveDateTool } from './calendar.js';
-import { getEmails, readEmail } from './email.js';
+import { getEmails, readEmail, getEmailThread } from './email.js';
 import { extractMemory, listMemories, updateMemory, removeMemory } from './memory.js';
 import { setUserConfig, deleteUserData } from './user-config.js';
 import { createScheduledJob, listScheduledJobs, updateScheduledJob, deleteScheduledJob } from './scheduler.js';
@@ -27,6 +27,7 @@ const allTools: ToolDefinition[] = [
   // Email
   getEmails,
   readEmail,
+  getEmailThread,
   // Memory
   extractMemory,
   listMemories,
@@ -63,6 +64,7 @@ export const READ_ONLY_TOOLS: Tool[] = [
   resolveDateTool.tool,
   getEmails.tool,
   readEmail.tool,
+  getEmailThread.tool,
 ];
 
 /**
