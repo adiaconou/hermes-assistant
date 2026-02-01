@@ -59,6 +59,7 @@ describe('UI agent', () => {
       phoneNumber: '+1234567890',
       channel: 'sms',
       userConfig: null,
+      userFacts: [],
       previousStepResults: {},
     };
 

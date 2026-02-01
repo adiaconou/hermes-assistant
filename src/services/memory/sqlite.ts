@@ -70,6 +70,30 @@ export class SqliteMemoryStore implements MemoryStore {
     }));
   }
 
+  async getAllFacts(): Promise<UserFact[]> {
+    const rows = this.db
+      .prepare(
+        `SELECT id, phone_number, fact, category, extracted_at
+         FROM user_facts
+         ORDER BY extracted_at DESC`
+      )
+      .all() as Array<{
+      id: string;
+      phone_number: string;
+      fact: string;
+      category: string | null;
+      extracted_at: number;
+    }>;
+
+    return rows.map((row) => ({
+      id: row.id,
+      phoneNumber: row.phone_number,
+      fact: row.fact,
+      category: row.category ?? undefined,
+      extractedAt: row.extracted_at,
+    }));
+  }
+
   async addFact(fact: Omit<UserFact, 'id'>): Promise<UserFact> {
     const id = randomUUID();
 

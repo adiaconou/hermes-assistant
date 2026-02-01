@@ -4,18 +4,28 @@
 
 import type { Tool } from '@anthropic-ai/sdk/resources/messages';
 import type { UserConfig } from '../../user-config/index.js';
-import { buildTimeContext } from './context.js';
+import type { UserFact } from '../../memory/types.js';
+import { buildTimeContext, buildUserMemoryXml } from './context.js';
 
 /**
  * Build the classification prompt with tool awareness.
  */
-export function buildClassificationPrompt(tools: Tool[], userConfig: UserConfig | null): string {
+export function buildClassificationPrompt(
+  tools: Tool[],
+  userConfig: UserConfig | null,
+  userFacts: UserFact[] = []
+): string {
   const toolSummary = tools.map(t => `- ${t.name}: ${(t.description || '').split('\n')[0]}`).join('\n');
   const timeContext = buildTimeContext(userConfig);
+  const memoryXml = buildUserMemoryXml(userFacts, { maxFacts: 10, maxChars: 600 });
+  const memorySection = memoryXml ? `\n${memoryXml}\n` : '';
 
   return `**${timeContext}**
+${memorySection}
 
 You are a quick-response classifier for an SMS assistant. Analyze the user's message and decide how to respond.
+
+Use any relevant facts from <user_memory> to personalize or avoid incorrect immediate responses.
 
 You have access to these tools (which require async processing):
 ${toolSummary}

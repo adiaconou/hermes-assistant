@@ -15,6 +15,7 @@ import { classifyMessage } from '../services/anthropic/index.js';
 import { getHistory, addMessage } from '../conversation.js';
 import { sendSms, sendWhatsApp, validateTwilioSignature } from '../twilio.js';
 import { getUserConfigStore, type UserConfig } from '../services/user-config/index.js';
+import { getMemoryStore } from '../services/memory/index.js';
 import { handleWithOrchestrator } from '../orchestrator/index.js';
 import config from '../config.js';
 
@@ -170,7 +171,7 @@ async function processAsyncWork(
  * Classifies message synchronously and returns TwiML with immediate response.
  * Spawns async work if classification indicates it's needed.
  */
-router.post('/webhook/sms', async (req: Request, res: Response) => {
+export async function handleSmsWebhook(req: Request, res: Response): Promise<void> {
   const startTime = Date.now();
 
   // Validate Twilio signature before processing
@@ -205,13 +206,17 @@ router.post('/webhook/sms', async (req: Request, res: Response) => {
   );
 
   try {
-    // Get conversation history and user config
-    const history = await getHistory(sender);
+    // Get conversation history, user config, and memory facts
     const configStore = getUserConfigStore();
-    const userConfig = await configStore.get(sender);
+    const memoryStore = getMemoryStore();
+    const [history, userConfig, userFacts] = await Promise.all([
+      getHistory(sender),
+      configStore.get(sender),
+      memoryStore.getFacts(sender),
+    ]);
 
     // Classify message synchronously - this should be fast
-    const classification = await classifyMessage(message, history, userConfig);
+    const classification = await classifyMessage(message, history, userConfig, userFacts);
 
     console.log(JSON.stringify({
       level: 'info',
@@ -286,6 +291,8 @@ router.post('/webhook/sms', async (req: Request, res: Response) => {
       });
     });
   }
-});
+}
+
+router.post('/webhook/sms', handleSmsWebhook);
 
 export default router;

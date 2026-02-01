@@ -44,6 +44,7 @@ describe('executeWithTools', () => {
     phoneNumber: '+1234567890',
     channel: 'sms',
     userConfig: { name: 'Test User', timezone: 'America/New_York' },
+    userFacts: [],
     previousStepResults: {},
   };
 
@@ -287,6 +288,35 @@ describe('executeWithTools', () => {
       const calls = getCreateCalls();
       const userMessage = calls[0].messages[0] as { content: string };
       expect(userMessage.content).toContain('(No previous step results)');
+    });
+
+    it('should append user memory when facts are present', async () => {
+      const contextWithFacts: AgentExecutionContext = {
+        ...baseContext,
+        userFacts: [
+          {
+            id: 'fact_1',
+            phoneNumber: baseContext.phoneNumber,
+            fact: 'Likes black coffee',
+            extractedAt: Date.now(),
+          },
+        ],
+      };
+
+      setMockResponses([
+        createTextResponse('Done'),
+      ]);
+
+      await executeWithTools(
+        'System prompt',
+        'Task',
+        ['*'],
+        contextWithFacts
+      );
+
+      const calls = getCreateCalls();
+      expect(calls[0].system).toContain('<user_memory>');
+      expect(calls[0].system).toContain('Likes black coffee');
     });
 
     it('should accept custom initial messages', async () => {

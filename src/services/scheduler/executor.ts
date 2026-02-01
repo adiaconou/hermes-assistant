@@ -10,6 +10,7 @@ import type Database from 'better-sqlite3';
 import { executeWithTools } from '../../executor/tool-executor.js';
 import { READ_ONLY_TOOLS } from '../../tools/index.js';
 import { getUserConfigStore } from '../user-config/index.js';
+import { getMemoryStore } from '../memory/index.js';
 import { sendSms, sendWhatsApp } from '../../twilio.js';
 import { updateJob, deleteJob } from './sqlite.js';
 import type { ScheduledJob, ExecutionResult } from './types.js';
@@ -43,6 +44,8 @@ export async function executeJob(
     // Load user config for context
     const userConfigStore = getUserConfigStore();
     const userConfig = await userConfigStore.get(job.phoneNumber);
+    const memoryStore = getMemoryStore();
+    const userFacts = await memoryStore.getFacts(job.phoneNumber);
 
     // Build time context for the prompt
     const now = new Date();
@@ -71,6 +74,7 @@ export async function executeJob(
         phoneNumber: job.phoneNumber,
         channel: job.channel,
         userConfig,
+        userFacts,
         previousStepResults: {},
       },
       { initialMessages: [{ role: 'user', content: job.prompt }] }

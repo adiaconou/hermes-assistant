@@ -5,8 +5,9 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import request from 'supertest';
-import { createTestApp } from '../helpers/app.js';
+import { createMockReqRes } from '../helpers/mock-http.js';
+import { handleSmsWebhook } from '../../src/routes/sms.js';
+import { healthHandler } from '../../src/routes/health.js';
 import { createSmsPayload, createWhatsAppPayload, toFormData } from '../fixtures/webhook-payloads.js';
 import {
   setMockResponses,
@@ -17,7 +18,6 @@ import { getSentMessages, clearSentMessages } from '../mocks/twilio.js';
 import { getExpectedTwilioSignature } from 'twilio/lib/webhooks/webhooks.js';
 
 describe('POST /webhook/sms', () => {
-  const app = createTestApp();
   const webhookUrl = 'http://localhost:3000/webhook/sms';
   const authToken = process.env.TWILIO_AUTH_TOKEN || 'test-auth-token';
 
@@ -39,15 +39,18 @@ describe('POST /webhook/sms', () => {
 
       const payload = createSmsPayload('Hi');
 
-      const response = await request(app)
-        .post('/webhook/sms')
-        .type('form')
-        .set('X-Twilio-Signature', signPayload(payload))
-        .send(payload);
+      const { req, res } = createMockReqRes({
+        method: 'POST',
+        url: '/webhook/sms',
+        headers: { 'x-twilio-signature': signPayload(payload) },
+        body: payload,
+      });
 
-      expect(response.status).toBe(200);
-      expect(response.type).toBe('text/xml');
-      expect(response.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Message>Hello!</Message></Response>');
+      await handleSmsWebhook(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toContain('text/xml');
+      expect(res.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Message>Hello!</Message></Response>');
     });
 
     it('should not send via Twilio API when no async work needed', async () => {
@@ -58,11 +61,14 @@ describe('POST /webhook/sms', () => {
 
       const payload = createSmsPayload('Hello!', '+15551234567');
 
-      await request(app)
-        .post('/webhook/sms')
-        .type('form')
-        .set('X-Twilio-Signature', signPayload(payload))
-        .send(payload);
+      const { req, res } = createMockReqRes({
+        method: 'POST',
+        url: '/webhook/sms',
+        headers: { 'x-twilio-signature': signPayload(payload) },
+        body: payload,
+      });
+
+      await handleSmsWebhook(req, res);
 
       // Give time for any potential async processing
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -81,15 +87,18 @@ describe('POST /webhook/sms', () => {
 
       const payload = createWhatsAppPayload('Hi from WhatsApp', '+15551234567');
 
-      const response = await request(app)
-        .post('/webhook/sms')
-        .type('form')
-        .set('X-Twilio-Signature', signPayload(payload))
-        .send(payload);
+      const { req, res } = createMockReqRes({
+        method: 'POST',
+        url: '/webhook/sms',
+        headers: { 'x-twilio-signature': signPayload(payload) },
+        body: payload,
+      });
 
-      expect(response.status).toBe(200);
-      expect(response.type).toBe('text/xml');
-      expect(response.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Message>Hello via WhatsApp!</Message></Response>');
+      await handleSmsWebhook(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toContain('text/xml');
+      expect(res.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Message>Hello via WhatsApp!</Message></Response>');
     });
 
     it('should send async follow-up via WhatsApp API with correct prefix', async () => {
@@ -111,11 +120,14 @@ describe('POST /webhook/sms', () => {
 
       const payload = createWhatsAppPayload('Create something complex', '+15551234567');
 
-      await request(app)
-        .post('/webhook/sms')
-        .type('form')
-        .set('X-Twilio-Signature', signPayload(payload))
-        .send(payload);
+      const { req, res } = createMockReqRes({
+        method: 'POST',
+        url: '/webhook/sms',
+        headers: { 'x-twilio-signature': signPayload(payload) },
+        body: payload,
+      });
+
+      await handleSmsWebhook(req, res);
 
       // Wait for async response
       await vi.waitFor(() => {
@@ -154,16 +166,19 @@ describe('POST /webhook/sms', () => {
 
       const payload = createSmsPayload('Create a grocery list', '+15559999999');
 
-      const response = await request(app)
-        .post('/webhook/sms')
-        .type('form')
-        .set('X-Twilio-Signature', signPayload(payload))
-        .send(payload);
+      const { req, res } = createMockReqRes({
+        method: 'POST',
+        url: '/webhook/sms',
+        headers: { 'x-twilio-signature': signPayload(payload) },
+        body: payload,
+      });
+
+      await handleSmsWebhook(req, res);
 
       // Immediate ack should be in TwiML response
-      expect(response.status).toBe(200);
-      expect(response.type).toBe('text/xml');
-      expect(response.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Message>Let me work on that!</Message></Response>');
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toContain('text/xml');
+      expect(res.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Message>Let me work on that!</Message></Response>');
 
       // Wait for async follow-up message
       await vi.waitFor(() => {
@@ -187,17 +202,20 @@ describe('POST /webhook/sms', () => {
 
       const payload = createSmsPayload('');
 
-      const response = await request(app)
-        .post('/webhook/sms')
-        .type('form')
-        .set('X-Twilio-Signature', signPayload(payload))
-        .send(payload);
+      const { req, res } = createMockReqRes({
+        method: 'POST',
+        url: '/webhook/sms',
+        headers: { 'x-twilio-signature': signPayload(payload) },
+        body: payload,
+      });
+
+      await handleSmsWebhook(req, res);
 
       // Should return valid TwiML with response message
-      expect(response.status).toBe(200);
-      expect(response.type).toBe('text/xml');
-      expect(response.text).toContain('<Message>');
-      expect(response.text).toContain('empty message');
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toContain('text/xml');
+      expect(res.text).toContain('<Message>');
+      expect(res.text).toContain('empty message');
     });
 
     it('should handle missing From field gracefully', async () => {
@@ -205,28 +223,34 @@ describe('POST /webhook/sms', () => {
         createTextResponse('{"needsAsyncWork": false, "immediateResponse": "Hello!"}'),
       ]);
 
-      const response = await request(app)
-        .post('/webhook/sms')
-        .type('form')
-        .set('X-Twilio-Signature', signPayload({ Body: 'Test message' }))
-        .send({ Body: 'Test message' });
+      const payload = { Body: 'Test message' };
+      const { req, res } = createMockReqRes({
+        method: 'POST',
+        url: '/webhook/sms',
+        headers: { 'x-twilio-signature': signPayload(payload) },
+        body: payload,
+      });
+
+      await handleSmsWebhook(req, res);
 
       // Should return valid TwiML with message even with missing fields
-      expect(response.status).toBe(200);
-      expect(response.type).toBe('text/xml');
-      expect(response.text).toContain('<Message>Hello!</Message>');
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toContain('text/xml');
+      expect(res.text).toContain('<Message>Hello!</Message>');
     });
   });
 });
 
 describe('GET /health', () => {
-  const app = createTestApp();
-
   it('should return health status', async () => {
-    const response = await request(app).get('/health');
+    const { req, res } = createMockReqRes({ method: 'GET', url: '/health' });
 
-    expect(response.status).toBe(200);
-    expect(response.body.status).toBe('ok');
-    expect(response.body.timestamp).toBeDefined();
+    healthHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toBeDefined();
+    const body = res.body as { status?: string; timestamp?: string };
+    expect(body.status).toBe('ok');
+    expect(body.timestamp).toBeDefined();
   });
 });

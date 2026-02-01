@@ -9,6 +9,7 @@
 import type { TextBlock, MessageParam } from '@anthropic-ai/sdk/resources/messages';
 import type { Message } from '../../conversation.js';
 import type { UserConfig } from '../user-config/index.js';
+import type { UserFact } from '../memory/types.js';
 
 import { getClient } from './client.js';
 import { buildClassificationPrompt } from './prompts/index.js';
@@ -27,7 +28,8 @@ export type { ClassificationResult } from './types.js';
 export async function classifyMessage(
   userMessage: string,
   conversationHistory: Message[],
-  userConfig?: UserConfig | null
+  userConfig?: UserConfig | null,
+  userFacts: UserFact[] = []
 ) : Promise<{ needsAsyncWork: boolean; immediateResponse: string }> {
   const anthropic = getClient();
 
@@ -41,7 +43,7 @@ export async function classifyMessage(
   const response = await anthropic.messages.create({
     model: 'claude-opus-4-5-20251101',
     max_tokens: 512,
-    system: buildClassificationPrompt(TOOLS, userConfig ?? null),
+    system: buildClassificationPrompt(TOOLS, userConfig ?? null, userFacts),
     messages,
   });
 

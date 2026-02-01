@@ -9,6 +9,8 @@ import express from 'express';
 import smsRouter from '../../src/routes/sms.js';
 import pagesRouter from '../../src/routes/pages.js';
 import authRouter from '../../src/routes/auth.js';
+import adminRouter from '../../src/admin/index.js';
+import { healthHandler } from '../../src/routes/health.js';
 
 /**
  * Create a test Express app with all routes configured.
@@ -20,12 +22,7 @@ export function createTestApp(): express.Application {
   app.use(express.urlencoded({ extended: false }));
 
   // Health check endpoint
-  app.get('/health', (_req, res) => {
-    res.json({
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-    });
-  });
+  app.get('/health', healthHandler);
 
   // SMS routes
   app.use(smsRouter);
@@ -35,6 +32,9 @@ export function createTestApp(): express.Application {
 
   // Generated UI pages route
   app.use(pagesRouter);
+
+  // Admin routes
+  app.use(adminRouter);
 
   return app;
 }

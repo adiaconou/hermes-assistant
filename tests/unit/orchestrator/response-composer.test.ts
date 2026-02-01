@@ -148,6 +148,32 @@ describe('synthesizeResponse', () => {
     });
   });
 
+  describe('with user memory', () => {
+    it('should include user memory facts in the system prompt', async () => {
+      setMockResponses([
+        createTextResponse('Here you go.'),
+      ]);
+
+      const context = createBaseContext({
+        userFacts: [
+          {
+            id: 'fact_1',
+            phoneNumber: '+1234567890',
+            fact: 'Likes black coffee',
+            extractedAt: Date.now(),
+          },
+        ],
+      });
+      const plan = createBasePlan();
+
+      await synthesizeResponse(context, plan);
+
+      const calls = getCreateCalls();
+      expect(calls[0].system).toContain('<user_memory>');
+      expect(calls[0].system).toContain('Likes black coffee');
+    });
+  });
+
   describe('failure handling', () => {
     it('should include timeout context when timeout failure', async () => {
       setMockResponses([

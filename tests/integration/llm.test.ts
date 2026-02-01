@@ -68,6 +68,28 @@ describe('classifyMessage', () => {
     expect(calls[0].messages.length).toBe(3);
   });
 
+  it('should include user memory in the classification prompt', async () => {
+    setMockResponses([
+      createTextResponse('{"needsAsyncWork": false, "immediateResponse": "Hi!"}'),
+    ]);
+
+    const userFacts = [
+      {
+        id: 'fact_1',
+        phoneNumber: '+15551234567',
+        fact: 'Likes sushi',
+        extractedAt: Date.now(),
+      },
+    ];
+
+    await classifyMessage('Hi', [], null, userFacts);
+
+    const calls = getCreateCalls();
+    expect(calls.length).toBe(1);
+    expect(calls[0].system).toContain('<user_memory>');
+    expect(calls[0].system).toContain('Likes sushi');
+  });
+
   it('should default to async work on parse error', async () => {
     setMockResponses([
       createTextResponse('This is not valid JSON'),

@@ -20,6 +20,7 @@ import type {
 } from '@anthropic-ai/sdk/resources/messages';
 
 import { getClient } from '../services/anthropic/client.js';
+import { buildUserMemoryXml } from '../services/anthropic/prompts/context.js';
 import { TOOLS, executeTool } from '../tools/index.js';
 import type { ToolContext } from '../tools/types.js';
 import type { StepResult, AgentExecutionContext } from './types.js';
@@ -87,6 +88,10 @@ export async function executeWithTools(
 ): Promise<StepResult> {
   const anthropic = getClient();
   const tools = resolveTools(toolNames);
+  const memoryXml = buildUserMemoryXml(context.userFacts, { maxFacts: 20, maxChars: 1500 });
+  const systemPromptWithMemory = memoryXml
+    ? `${systemPrompt}\n\n${memoryXml}`
+    : systemPrompt;
 
   // Build tool context for handlers
   const toolContext: ToolContext = {
@@ -118,7 +123,7 @@ export async function executeWithTools(
     logger?.llmRequest('agent: initial', {
       model: 'claude-opus-4-5-20251101',
       maxTokens: MAX_TOKENS,
-      systemPrompt,
+      systemPrompt: systemPromptWithMemory,
       messages: messages.map(m => ({
         role: m.role,
         content: typeof m.content === 'string' ? m.content : '[complex content]',
@@ -131,7 +136,7 @@ export async function executeWithTools(
     let response = await anthropic.messages.create({
       model: 'claude-opus-4-5-20251101',
       max_tokens: MAX_TOKENS,
-      system: systemPrompt,
+      system: systemPromptWithMemory,
       tools,
       messages,
     });
@@ -232,7 +237,7 @@ export async function executeWithTools(
       response = await anthropic.messages.create({
         model: 'claude-opus-4-5-20251101',
         max_tokens: MAX_TOKENS,
-        system: systemPrompt,
+        system: systemPromptWithMemory,
         tools,
         messages,
       });

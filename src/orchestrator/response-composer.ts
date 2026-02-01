@@ -8,6 +8,7 @@
 import type { TextBlock } from '@anthropic-ai/sdk/resources/messages';
 
 import { getClient } from '../services/anthropic/client.js';
+import { buildUserMemoryXml } from '../services/anthropic/prompts/context.js';
 import type { ExecutionPlan, PlanContext, StepResult } from './types.js';
 import type { TraceLogger } from '../utils/trace-logger.js';
 
@@ -47,6 +48,8 @@ Write ONLY the final response message (no JSON, no explanation).`;
 /**
  * Format step results for the composition prompt.
  */
+const MAX_RESULT_OUTPUT_CHARS = 500;
+
 function formatStepResults(stepResults: Record<string, StepResult>): string {
   const entries = Object.entries(stepResults);
 
@@ -57,11 +60,14 @@ function formatStepResults(stepResults: Record<string, StepResult>): string {
   return entries
     .map(([stepId, result]) => {
       const status = result.success ? 'SUCCESS' : 'FAILED';
-      const output = result.output
+      const rawOutput = result.output
         ? typeof result.output === 'string'
           ? result.output
           : JSON.stringify(result.output)
         : '(no output)';
+      const output = rawOutput.length > MAX_RESULT_OUTPUT_CHARS
+        ? `${rawOutput.slice(0, MAX_RESULT_OUTPUT_CHARS)}...(truncated)`
+        : rawOutput;
       const error = result.error ? `\n    Error: ${result.error}` : '';
 
       return `  - [${stepId}] ${status}
@@ -109,6 +115,10 @@ Explain what succeeded and what didn't.
     .replace('{goal}', plan.goal)
     .replace('{results}', resultsText)
     .replace('{errorContext}', errorContext);
+  const memoryXml = buildUserMemoryXml(context.userFacts, { maxFacts: 20, maxChars: 1500 });
+  const promptWithMemory = memoryXml
+    ? `${prompt}\n\n${memoryXml}`
+    : prompt;
 
   // Add user name context if available
   let systemAddition = '';
@@ -121,7 +131,7 @@ Explain what succeeded and what didn't.
     logger?.llmRequest('composition', {
       model: 'claude-opus-4-5-20251101',
       maxTokens: 512,
-      systemPrompt: prompt + systemAddition,
+      systemPrompt: promptWithMemory + systemAddition,
       messages: [{ role: 'user', content: 'Compose the final response.' }],
     });
 
@@ -129,7 +139,7 @@ Explain what succeeded and what didn't.
     const response = await anthropic.messages.create({
       model: 'claude-opus-4-5-20251101',
       max_tokens: 512,
-      system: prompt + systemAddition,
+      system: promptWithMemory + systemAddition,
       messages: [
         { role: 'user', content: 'Compose the final response.' },
       ],

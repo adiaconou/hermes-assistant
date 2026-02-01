@@ -39,6 +39,12 @@ export interface MemoryStore {
   getFacts(phoneNumber: string): Promise<UserFact[]>;
 
   /**
+   * Get all facts across all users, ordered by extraction time (newest first).
+   * Used by admin tools.
+   */
+  getAllFacts(): Promise<UserFact[]>;
+
+  /**
    * Add a new fact for a user.
    * @returns The created fact with generated ID
    */

@@ -16,6 +16,8 @@ import config from './config.js';
 import smsRouter from './routes/sms.js';
 import pagesRouter from './routes/pages.js';
 import authRouter from './routes/auth.js';
+import adminRouter from './admin/index.js';
+import { healthHandler } from './routes/health.js';
 import { initScheduler, stopScheduler } from './services/scheduler/index.js';
 import { closeConversationStore } from './services/conversation/index.js';
 import { startMemoryProcessor, stopMemoryProcessor } from './services/memory/processor.js';
@@ -26,12 +28,7 @@ const app = express();
 app.use(express.urlencoded({ extended: false }));
 
 // Health check endpoint
-app.get('/health', (_req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-  });
-});
+app.get('/health', healthHandler);
 
 // SMS routes
 app.use(smsRouter);
@@ -41,6 +38,9 @@ app.use(authRouter);
 
 // Generated UI pages route
 app.use(pagesRouter);
+
+// Admin routes (memory management, etc.)
+app.use(adminRouter);
 
 // Initialize database for scheduler
 const dbPath = config.credentials.sqlitePath;

@@ -5,8 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import request from 'supertest';
-import { createTestApp } from '../helpers/app.js';
+import { createMockReqRes } from '../helpers/mock-http.js';
 import {
   setMockEvents,
   clearMockState as clearCalendarMocks,
@@ -16,7 +15,7 @@ import {
   getCredentialStore,
   resetCredentialStore
 } from '../../src/services/credentials/index.js';
-import { generateAuthUrl } from '../../src/routes/auth.js';
+import { generateAuthUrl, handleGoogleAuth } from '../../src/routes/auth.js';
 
 describe('Calendar Integration', () => {
   const testPhone = '+1234567890';
@@ -41,28 +40,35 @@ describe('Calendar Integration', () => {
     });
 
     it('rejects expired state parameter', async () => {
-      const app = await createTestApp();
-
       // Create a fake expired state (can't easily test real expiry without waiting)
       // Instead, test with invalid state
-      const response = await request(app)
-        .get('/auth/google?state=invalid-state')
-        .expect(400);
+      const { req, res } = createMockReqRes({
+        method: 'GET',
+        url: '/auth/google',
+        query: { state: 'invalid-state' },
+      });
 
-      expect(response.text).toContain('Invalid or expired');
+      handleGoogleAuth(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.text).toContain('Invalid or expired');
     });
 
     it('redirects to Google when state is valid', async () => {
-      const app = await createTestApp();
       const authUrl = generateAuthUrl(testPhone);
       const state = authUrl.split('state=')[1];
 
-      const response = await request(app)
-        .get(`/auth/google?state=${state}`)
-        .expect(302);
+      const { req, res } = createMockReqRes({
+        method: 'GET',
+        url: '/auth/google',
+        query: { state },
+      });
 
-      expect(response.headers.location).toContain('accounts.google.com');
-      expect(response.headers.location).toContain('oauth2');
+      handleGoogleAuth(req, res);
+
+      expect(res.statusCode).toBe(302);
+      expect(res.headers.location).toContain('accounts.google.com');
+      expect(res.headers.location).toContain('oauth2');
     });
   });
 

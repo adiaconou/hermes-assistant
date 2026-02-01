@@ -7,7 +7,7 @@
  * Only active when NODE_ENV === 'development'.
  */
 
-import { existsSync, mkdirSync, appendFileSync } from 'fs';
+import { existsSync, mkdirSync, appendFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import config from '../config.js';
 
@@ -403,6 +403,30 @@ ${'='.repeat(80)}
 export function createTraceLogger(phoneNumber: string): TraceLogger {
   const requestId = Math.random().toString(36).slice(2, 10);
   return new TraceLogger(requestId, phoneNumber);
+}
+
+/**
+ * Write debug log to a file, overwriting any existing content.
+ * Used for single-file debug logs like memory processor output.
+ *
+ * Only writes in development mode.
+ */
+export function writeDebugLog(filename: string, content: string): void {
+  if (config.nodeEnv !== 'development') return;
+
+  const logDir = process.env.TRACE_LOG_DIR || './logs';
+
+  try {
+    if (!existsSync(logDir)) {
+      mkdirSync(logDir, { recursive: true });
+    }
+
+    const filePath = join(logDir, filename);
+    writeFileSync(filePath, content, 'utf-8');
+  } catch (error) {
+    // Silently fail - don't break the app for logging issues
+    console.error('writeDebugLog failed:', error);
+  }
 }
 
 /**

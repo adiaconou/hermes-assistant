@@ -101,6 +101,7 @@ export async function executeStep(
     phoneNumber: context.phoneNumber,
     channel: context.channel,
     userConfig: context.userConfig,
+    userFacts: context.userFacts,
     previousStepResults: context.stepResults,
     logger,
   };

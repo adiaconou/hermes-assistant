@@ -7,6 +7,7 @@
 
 import type { ToolUseBlock } from '@anthropic-ai/sdk/resources/messages';
 import type { UserConfig } from '../services/user-config/types.js';
+import type { UserFact } from '../services/memory/types.js';
 import type { TraceLogger } from '../utils/trace-logger.js';
 
 // ============================================================================
@@ -92,6 +93,9 @@ export interface AgentExecutionContext {
 
   /** User configuration (name, timezone) */
   userConfig: UserConfig | null;
+
+  /** User's stored facts/preferences */
+  userFacts: UserFact[];
 
   /** Results from previous steps (for context passing) */
   previousStepResults: Record<string, StepResult>;

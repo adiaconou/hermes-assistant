@@ -9,7 +9,7 @@
  * 5. We store tokens, send confirmation SMS
  */
 
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { google } from 'googleapis';
 import crypto from 'crypto';
 import config from '../config.js';
@@ -184,7 +184,7 @@ async function continueAfterAuth(decryptedState: DecryptedState): Promise<void> 
  * GET /auth/google
  * Initiates OAuth flow - redirects to Google consent screen.
  */
-router.get('/auth/google', (req, res) => {
+export function handleGoogleAuth(req: Request, res: Response): void {
   const state = req.query.state as string | undefined;
 
   if (!state) {
@@ -208,7 +208,9 @@ router.get('/auth/google', (req, res) => {
   });
 
   res.redirect(authUrl);
-});
+}
+
+router.get('/auth/google', handleGoogleAuth);
 
 /**
  * GET /auth/google/callback

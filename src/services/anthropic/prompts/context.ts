@@ -3,6 +3,7 @@
  */
 
 import type { UserConfig } from '../../user-config/index.js';
+import type { UserFact } from '../../memory/types.js';
 import { getMemoryStore } from '../../memory/index.js';
 
 /**
@@ -28,6 +29,57 @@ export function buildTimeContext(userConfig: UserConfig | null): string {
   } else {
     return `Current time: ${now.toISOString()} (UTC - user timezone unknown)`;
   }
+}
+
+/**
+ * Build a <facts> XML block from stored user facts.
+ */
+export function buildFactsXml(
+  facts: UserFact[],
+  options?: { maxFacts?: number; maxChars?: number }
+): string {
+  const maxFacts = options?.maxFacts ?? Number.POSITIVE_INFINITY;
+  const maxChars = options?.maxChars ?? Number.POSITIVE_INFINITY;
+
+  const normalizedFacts = facts
+    .map((fact) => fact.fact.trim().replace(/\s+/g, ' '))
+    .filter((fact) => fact.length > 0);
+
+  const selected: string[] = [];
+  let totalChars = 0;
+
+  for (const fact of normalizedFacts) {
+    if (selected.length >= maxFacts) break;
+
+    const addition = (selected.length > 0 ? '. ' : '') + fact;
+    if (totalChars + addition.length + 1 > maxChars) break;
+
+    selected.push(fact);
+    totalChars += addition.length;
+  }
+
+  if (selected.length === 0) {
+    return '';
+  }
+
+  const factsText = `${selected.join('. ')}.`;
+
+  return `  <facts>\n    ${factsText}\n  </facts>`;
+}
+
+/**
+ * Build a <user_memory> XML block from user facts.
+ */
+export function buildUserMemoryXml(
+  facts: UserFact[],
+  options?: { maxFacts?: number; maxChars?: number }
+): string {
+  const factsXml = buildFactsXml(facts, options);
+  if (!factsXml) {
+    return '';
+  }
+
+  return `<user_memory>\n${factsXml}\n</user_memory>`;
 }
 
 /**
@@ -67,13 +119,12 @@ export async function buildMemoryXml(phoneNumber: string): Promise<string> {
     timestamp: new Date().toISOString(),
   }));
 
-  // Join facts into plain text
-  const factsText = facts.map(f => f.fact).join('. ') + '.';
+  const factsXml = buildFactsXml(facts);
+  if (!factsXml) {
+    return '';
+  }
 
-  const xml = `
-  <facts>
-    ${factsText}
-  </facts>`;
+  const xml = `\n${factsXml}`;
 
   console.log(JSON.stringify({
     level: 'info',
