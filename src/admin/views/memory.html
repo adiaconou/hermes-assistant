@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Memory Manager</title>
+  <style>
+    :root {
+      --bg-primary: #ffffff;
+      --bg-secondary: #f5f5f5;
+      --bg-card: #ffffff;
+      --text-primary: #1a1a1a;
+      --text-secondary: #666666;
+      --text-muted: #999999;
+      --border-color: #e0e0e0;
+      --accent-color: #3b82f6;
+      --danger-color: #ef4444;
+      --danger-hover: #dc2626;
+      --category-bg: #e0e7ff;
+      --category-text: #3730a3;
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    [data-theme="dark"] {
+      --bg-primary: #1a1a1a;
+      --bg-secondary: #2d2d2d;
+      --bg-card: #252525;
+      --text-primary: #f0f0f0;
+      --text-secondary: #a0a0a0;
+      --text-muted: #707070;
+      --border-color: #404040;
+      --accent-color: #60a5fa;
+      --danger-color: #f87171;
+      --danger-hover: #ef4444;
+      --category-bg: #312e81;
+      --category-text: #c7d2fe;
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.6;
+      transition: background-color 0.2s, color 0.2s;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 0;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+    }
+
+    .theme-toggle {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 1.2rem;
+      transition: background-color 0.2s;
+    }
+
+    .theme-toggle:hover {
+      background: var(--border-color);
+    }
+
+    .summary {
+      background: var(--bg-secondary);
+      padding: 16px 20px;
+      border-radius: 8px;
+      margin-bottom: 24px;
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    .summary-item {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .summary-label {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+
+    .summary-value {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+
+    .user-group {
+      margin-bottom: 24px;
+    }
+
+    .user-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: var(--bg-secondary);
+      border-radius: 8px;
+      cursor: pointer;
+      user-select: none;
+      transition: background-color 0.2s;
+    }
+
+    .user-header:hover {
+      background: var(--border-color);
+    }
+
+    .user-header .arrow {
+      transition: transform 0.2s;
+    }
+
+    .user-header.collapsed .arrow {
+      transform: rotate(-90deg);
+    }
+
+    .user-phone {
+      font-weight: 600;
+      font-family: monospace;
+      font-size: 1rem;
+    }
+
+    .user-count {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+    }
+
+    .memories-list {
+      padding: 12px 0 0 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .memories-list.hidden {
+      display: none;
+    }
+
+    .memory-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: var(--shadow);
+    }
+
+    .memory-fact {
+      font-size: 1rem;
+      margin-bottom: 12px;
+      line-height: 1.5;
+    }
+
+    .memory-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+
+    .memory-category {
+      background: var(--category-bg);
+      color: var(--category-text);
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+
+    .memory-id {
+      font-family: monospace;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+    }
+
+    .memory-actions {
+      margin-left: auto;
+    }
+
+    .btn-delete {
+      background: transparent;
+      border: 1px solid var(--danger-color);
+      color: var(--danger-color);
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: all 0.2s;
+    }
+
+    .btn-delete:hover {
+      background: var(--danger-color);
+      color: white;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-secondary);
+    }
+
+    .error {
+      text-align: center;
+      padding: 40px;
+      color: var(--danger-color);
+    }
+
+    .empty {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-secondary);
+    }
+
+    .empty-icon {
+      font-size: 3rem;
+      margin-bottom: 16px;
+    }
+
+    @media (max-width: 600px) {
+      .container {
+        padding: 12px;
+      }
+
+      header {
+        padding: 12px 0;
+      }
+
+      h1 {
+        font-size: 1.25rem;
+      }
+
+      .summary {
+        padding: 12px 16px;
+        gap: 16px;
+      }
+
+      .memory-meta {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+      }
+
+      .memory-actions {
+        margin-left: 0;
+        margin-top: 8px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Memory Manager</h1>
+      <button class="theme-toggle" id="themeToggle" title="Toggle theme">
+        <span class="theme-icon"></span>
+      </button>
+    </header>
+
+    <div id="content">
+      <div class="loading">Loading memories...</div>
+    </div>
+  </div>
+
+  <script>
+    // Theme management
+    const themeToggle = document.getElementById('themeToggle');
+    const themeIcon = themeToggle.querySelector('.theme-icon');
+
+    function getPreferredTheme() {
+      const saved = localStorage.getItem('theme');
+      if (saved) return saved;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+
+    function setTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem('theme', theme);
+      themeIcon.textContent = theme === 'dark' ? '☀️' : '🌙';
+    }
+
+    setTheme(getPreferredTheme());
+
+    themeToggle.addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme');
+      setTheme(current === 'dark' ? 'light' : 'dark');
+    });
+
+    // Memory management
+    const content = document.getElementById('content');
+
+    async function loadMemories() {
+      try {
+        const response = await fetch('/admin/api/memories');
+        if (!response.ok) throw new Error('Failed to load memories');
+        const data = await response.json();
+        renderMemories(data.memories);
+      } catch (error) {
+        content.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+      }
+    }
+
+    function renderMemories(memories) {
+      if (!memories || memories.length === 0) {
+        content.innerHTML = `
+          <div class="empty">
+            <div class="empty-icon">📭</div>
+            <p>No memories stored yet.</p>
+          </div>
+        `;
+        return;
+      }
+
+      // Group by phone number
+      const grouped = memories.reduce((acc, mem) => {
+        const phone = mem.phoneNumber;
+        if (!acc[phone]) acc[phone] = [];
+        acc[phone].push(mem);
+        return acc;
+      }, {});
+
+      const userCount = Object.keys(grouped).length;
+      const totalCount = memories.length;
+
+      let html = `
+        <div class="summary">
+          <div class="summary-item">
+            <span class="summary-label">Total Memories</span>
+            <span class="summary-value">${totalCount}</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">Users</span>
+            <span class="summary-value">${userCount}</span>
+          </div>
+        </div>
+      `;
+
+      for (const [phone, userMemories] of Object.entries(grouped)) {
+        html += `
+          <div class="user-group">
+            <div class="user-header" onclick="toggleGroup(this)">
+              <span class="arrow">▼</span>
+              <span class="user-phone">${escapeHtml(phone)}</span>
+              <span class="user-count">(${userMemories.length} ${userMemories.length === 1 ? 'memory' : 'memories'})</span>
+            </div>
+            <div class="memories-list">
+              ${userMemories.map(mem => renderMemoryCard(mem)).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      content.innerHTML = html;
+    }
+
+    function renderMemoryCard(memory) {
+      const date = new Date(memory.extractedAt).toLocaleString();
+      const categoryHtml = memory.category
+        ? `<span class="memory-category">${escapeHtml(memory.category)}</span>`
+        : '';
+
+      return `
+        <div class="memory-card" id="memory-${memory.id}">
+          <div class="memory-fact">${escapeHtml(memory.fact)}</div>
+          <div class="memory-meta">
+            ${categoryHtml}
+            <span class="memory-date">${date}</span>
+            <span class="memory-id">ID: ${memory.id.substring(0, 8)}...</span>
+            <div class="memory-actions">
+              <button class="btn-delete" onclick="deleteMemory('${memory.id}')">Delete</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function toggleGroup(header) {
+      header.classList.toggle('collapsed');
+      const list = header.nextElementSibling;
+      list.classList.toggle('hidden');
+    }
+
+    async function deleteMemory(id) {
+      if (!confirm('Are you sure you want to delete this memory?')) return;
+
+      try {
+        const response = await fetch(`/admin/api/memories/${id}`, { method: 'DELETE' });
+        if (response.status === 204 || response.ok) {
+          // Remove from DOM
+          const card = document.getElementById(`memory-${id}`);
+          if (card) {
+            const list = card.parentElement;
+            card.remove();
+
+            // Update count in header
+            const group = list.parentElement;
+            const header = group.querySelector('.user-header');
+            const remaining = list.querySelectorAll('.memory-card').length;
+
+            if (remaining === 0) {
+              group.remove();
+            } else {
+              const countSpan = header.querySelector('.user-count');
+              countSpan.textContent = `(${remaining} ${remaining === 1 ? 'memory' : 'memories'})`;
+            }
+
+            // Update summary
+            loadMemories();
+          }
+        } else if (response.status === 404) {
+          alert('Memory not found. It may have already been deleted.');
+          loadMemories();
+        } else {
+          throw new Error('Failed to delete memory');
+        }
+      } catch (error) {
+        alert('Error deleting memory: ' + error.message);
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Initial load
+    loadMemories();
+  </script>
+</body>
+</html>
