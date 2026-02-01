@@ -22,6 +22,18 @@ export interface UserFact {
   /** Optional category: preferences, health, relationships, work, interests, etc. */
   category?: string;
 
+  /** Confidence score from 0.0-1.0 representing evidence strength */
+  confidence: number;
+
+  /** Whether this fact was explicitly stated or inferred */
+  sourceType: 'explicit' | 'inferred';
+
+  /** Optional evidence snippet supporting the fact */
+  evidence?: string;
+
+  /** Unix timestamp (milliseconds) when this fact was last reinforced */
+  lastReinforcedAt?: number;
+
   /** Unix timestamp (milliseconds) when this fact was extracted */
   extractedAt: number;
 
@@ -61,4 +73,10 @@ export interface MemoryStore {
    * Delete a fact by ID.
    */
   deleteFact(id: string): Promise<void>;
+
+  /**
+   * Delete stale low-confidence observations.
+   * Returns number of rows deleted.
+   */
+  deleteStaleObservations(): Promise<number>;
 }

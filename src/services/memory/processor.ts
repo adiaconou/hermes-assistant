@@ -31,6 +31,7 @@ import { getMemoryStore, type UserFact } from './index.js';
 import { createIntervalPoller, type Poller } from '../scheduler/poller.js';
 import { buildExtractionPrompt } from './prompts.js';
 import { writeDebugLog } from '../../utils/trace-logger.js';
+import { clampConfidence } from './ranking.js';
 
 const client = new Anthropic({ apiKey: config.anthropicApiKey });
 
@@ -49,18 +50,41 @@ export interface ProcessingResult {
 interface ExtractedFact {
   fact: string;
   category?: string;
+  confidence?: number;
+  sourceType?: 'explicit' | 'inferred';
+  evidence?: string;
 }
+
+interface ParsedFactsResult {
+  facts: ExtractedFact[];
+  raw: string;
+}
+
+class ParseError extends Error {
+  readonly kind = 'parse_fail';
+}
+
+class LlmError extends Error {
+  readonly kind = 'llm_error';
+}
+
+const RETRY_BACKOFF_MS = config.nodeEnv === 'test' ? 0 : 30000;
+const EVIDENCE_MAX_CHARS = 120;
+const ASSISTANT_SUMMARY_CUE = /\b(found|i found|your (calendar|email)|i see|based on your (email|calendar)|according to|shows|statement|invoice|receipt|meeting)\b/i;
 
 /** Debug data captured during user message processing */
 interface UserProcessingDebug {
   phoneNumber: string;
   messages: ConversationMessage[];
+  messagesSkipped: number;
+  assistantIncluded: number;
   existingFactsCount: number;
   prompt: string;
   llmResponse: string;
   extractedFacts: ExtractedFact[];
   storedFacts: ExtractedFact[];
   duplicatesSkipped: number;
+  reinforcedFacts: number;
   error?: string;
 }
 
@@ -73,29 +97,146 @@ interface UserProcessingDebug {
  * Claude may include explanation text before/after the JSON, so we
  * extract just the array portion using regex.
  */
-function parseExtractedFacts(response: string): ExtractedFact[] {
-  try {
-    // Try to extract JSON from the response
-    const jsonMatch = response.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) {
-      return [];
+function findJsonEnd(text: string, start: number, openChar: '{' | '[', closeChar: '}' | ']'): number {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < text.length; i++) {
+    const char = text[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (char === '"') {
+        inString = false;
+      }
+      continue;
     }
 
-    const parsed = JSON.parse(jsonMatch[0]);
-    if (!Array.isArray(parsed)) {
-      return [];
+    if (char === '"') {
+      inString = true;
+      continue;
     }
 
-    return parsed.filter(
-      (item): item is ExtractedFact =>
-        typeof item === 'object' &&
-        item !== null &&
-        typeof item.fact === 'string' &&
-        item.fact.trim().length > 0
-    );
-  } catch {
-    return [];
+    if (char === openChar) {
+      depth += 1;
+    } else if (char === closeChar) {
+      depth -= 1;
+      if (depth === 0) {
+        return i;
+      }
+    }
   }
+
+  return -1;
+}
+
+function extractJsonPayload(response: string): unknown | null {
+  const trimmed = response.trim();
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      // fall through to scanning
+    }
+  }
+
+  for (let i = 0; i < response.length; i++) {
+    const char = response[i];
+    if (char !== '{' && char !== '[') continue;
+    const openChar = char;
+    const closeChar = char === '{' ? '}' : ']';
+    const end = findJsonEnd(response, i, openChar, closeChar);
+    if (end === -1) continue;
+    const candidate = response.slice(i, end + 1);
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // keep scanning for another candidate
+    }
+  }
+
+  return null;
+}
+
+function normalizeEvidence(evidence: string | undefined): string | undefined {
+  if (!evidence) return undefined;
+  const trimmed = evidence.trim().replace(/\s+/g, ' ');
+  if (!trimmed) return undefined;
+  if (trimmed.length <= EVIDENCE_MAX_CHARS) return trimmed;
+  return trimmed.slice(trimmed.length - EVIDENCE_MAX_CHARS);
+}
+
+function normalizeExtractedFact(item: unknown): ExtractedFact | null {
+  if (typeof item !== 'object' || item === null) {
+    return null;
+  }
+
+  const record = item as Record<string, unknown>;
+  const factText = typeof record.fact === 'string' ? record.fact.trim() : '';
+  if (!factText) {
+    return null;
+  }
+
+  const category =
+    typeof record.category === 'string' && record.category.trim().length > 0
+      ? record.category.trim()
+      : undefined;
+
+  const confidenceRaw = typeof record.confidence === 'number'
+    ? record.confidence
+    : 0.5;
+  const confidence = clampConfidence(confidenceRaw);
+
+  const sourceTypeRaw = typeof record.source_type === 'string'
+    ? record.source_type
+    : typeof record.sourceType === 'string'
+      ? record.sourceType
+      : undefined;
+  const sourceType = sourceTypeRaw === 'explicit' || sourceTypeRaw === 'inferred'
+    ? sourceTypeRaw
+    : 'inferred';
+
+  const evidenceRaw = typeof record.evidence === 'string' ? record.evidence : undefined;
+  const evidence = normalizeEvidence(evidenceRaw);
+
+  return {
+    fact: factText,
+    category,
+    confidence,
+    sourceType,
+    evidence,
+  };
+}
+
+function parseExtractedFacts(response: string): ParsedFactsResult {
+  const payload = extractJsonPayload(response);
+  if (!payload) {
+    throw new ParseError('Failed to parse JSON from LLM response');
+  }
+
+  const factArray = Array.isArray(payload)
+    ? payload
+    : typeof payload === 'object' && payload !== null && Array.isArray((payload as { facts?: unknown }).facts)
+      ? (payload as { facts: unknown[] }).facts
+      : null;
+
+  if (!factArray) {
+    throw new ParseError('LLM response missing facts array');
+  }
+
+  const normalized = factArray
+    .map(normalizeExtractedFact)
+    .filter((fact): fact is ExtractedFact => fact !== null);
+
+  return { facts: normalized, raw: response };
 }
 
 /**
@@ -128,9 +269,30 @@ function formatDuration(ms: number): string {
  * (it sees existing facts in the prompt), but we double-check here
  * in case it misses one. Phase 2 will add semantic similarity.
  */
-function isDuplicate(newFact: string, existingFacts: UserFact[]): boolean {
+function findSimilarFact(newFact: string, existingFacts: UserFact[]): UserFact | null {
   const normalized = newFact.toLowerCase().trim();
-  return existingFacts.some((f) => f.fact.toLowerCase().trim() === normalized);
+  return existingFacts.find((f) => f.fact.toLowerCase().trim() === normalized) ?? null;
+}
+
+function isAssistantSummary(message: string): boolean {
+  return ASSISTANT_SUMMARY_CUE.test(message);
+}
+
+function buildReinforcedEvidence(existing: string | undefined, incoming: string | undefined, timestampIso: string): string | undefined {
+  if (!incoming) {
+    return existing;
+  }
+  const appended = existing
+    ? `${existing} | ${timestampIso}: ${incoming}`
+    : `${timestampIso}: ${incoming}`;
+  if (appended.length <= EVIDENCE_MAX_CHARS) {
+    return appended;
+  }
+  return appended.slice(appended.length - EVIDENCE_MAX_CHARS);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -151,67 +313,182 @@ function isDuplicate(newFact: string, existingFacts: UserFact[]): boolean {
 async function processUserMessages(
   phoneNumber: string,
   messages: ConversationMessage[]
-): Promise<{ factsExtracted: number; debug: UserProcessingDebug }> {
+): Promise<{
+  factsExtracted: number;
+  reinforcedFacts: number;
+  assistantIncluded: number;
+  parseFailures: number;
+  llmErrors: number;
+  debug: UserProcessingDebug;
+}> {
   const memoryStore = getMemoryStore();
   const existingFacts = await memoryStore.getFacts(phoneNumber);
+  const existingFactsCount = existingFacts.length;
+
+  const includeAssistant = config.memoryProcessor.includeAssistant;
+  const filteredMessages = messages.filter((message) => {
+    if (message.role === 'user') return true;
+    if (!includeAssistant) return false;
+    return isAssistantSummary(message.content);
+  });
+  const assistantIncluded = filteredMessages.filter((m) => m.role === 'assistant').length;
+  const messagesSkipped = messages.length - filteredMessages.length;
+
+  if (filteredMessages.length === 0) {
+    return {
+      factsExtracted: 0,
+      reinforcedFacts: 0,
+      assistantIncluded,
+      parseFailures: 0,
+      llmErrors: 0,
+      debug: {
+        phoneNumber,
+        messages: [],
+        messagesSkipped,
+        assistantIncluded,
+        existingFactsCount,
+        prompt: '',
+        llmResponse: '',
+        extractedFacts: [],
+        storedFacts: [],
+        duplicatesSkipped: 0,
+        reinforcedFacts: 0,
+      },
+    };
+  }
 
   // Build and send extraction request
-  const prompt = buildExtractionPrompt(existingFacts, messages);
+  const prompt = buildExtractionPrompt(existingFacts, filteredMessages);
 
-  const response = await client.messages.create({
-    model: 'claude-opus-4-5-20251101',
-    max_tokens: 1024,
-    messages: [{ role: 'user', content: prompt }],
-  });
+  let responseText = '';
+  let extractedFacts: ExtractedFact[] = [];
+  let parseFailures = 0;
+  let llmErrors = 0;
 
-  // Extract text from response
-  const responseText = response.content
-    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-    .map((block) => block.text)
-    .join('');
+  for (let attempt = 0; attempt <= 1; attempt++) {
+    try {
+      const response = await client.messages.create({
+        model: config.memoryProcessor.modelId,
+        max_tokens: 1024,
+        messages: [{ role: 'user', content: prompt }],
+      });
 
-  // Parse extracted facts
-  const extractedFacts = parseExtractedFacts(responseText);
+      responseText = response.content
+        .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+        .map((block) => block.text)
+        .join('');
+
+      extractedFacts = parseExtractedFacts(responseText).facts;
+      break;
+    } catch (error) {
+      if (error instanceof ParseError) {
+        parseFailures++;
+      } else {
+        llmErrors++;
+      }
+
+      if (attempt >= 1) {
+        if (error instanceof ParseError) {
+          throw error;
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        throw new LlmError(message);
+      }
+
+      if (RETRY_BACKOFF_MS > 0) {
+        await sleep(RETRY_BACKOFF_MS);
+      }
+    }
+  }
+
   const storedFacts: ExtractedFact[] = [];
   let duplicatesSkipped = 0;
+  let reinforcedFacts = 0;
+  const seenInBatch = new Set<string>();
 
   // Store non-duplicate facts
   const now = Date.now();
   for (const extracted of extractedFacts) {
-    if (!isDuplicate(extracted.fact, existingFacts)) {
-      await memoryStore.addFact({
-        phoneNumber,
-        fact: extracted.fact,
-        category: extracted.category,
-        extractedAt: now,
-      });
-      storedFacts.push(extracted);
-
-      // Track this fact locally so if Claude returns duplicates in the same
-      // response (e.g., "Likes coffee" twice), we catch it on the second one
-      existingFacts.push({
-        id: '',
-        phoneNumber,
-        fact: extracted.fact,
-        category: extracted.category,
-        extractedAt: now,
-      });
-    } else {
+    const normalizedKey = extracted.fact.toLowerCase().trim();
+    if (seenInBatch.has(normalizedKey)) {
       duplicatesSkipped++;
+      continue;
     }
+    seenInBatch.add(normalizedKey);
+
+    const existing = findSimilarFact(extracted.fact, existingFacts);
+    if (existing) {
+      const reinforcedAt = now;
+      const updatedConfidence = clampConfidence(existing.confidence + 0.1);
+      const updatedEvidence = buildReinforcedEvidence(
+        existing.evidence,
+        extracted.evidence,
+        formatIso(reinforcedAt)
+      );
+
+      await memoryStore.updateFact(existing.id, {
+        confidence: updatedConfidence,
+        lastReinforcedAt: reinforcedAt,
+        evidence: updatedEvidence,
+      });
+
+      existing.confidence = updatedConfidence;
+      existing.lastReinforcedAt = reinforcedAt;
+      if (updatedEvidence) {
+        existing.evidence = updatedEvidence;
+      }
+
+      duplicatesSkipped++;
+      reinforcedFacts++;
+      continue;
+    }
+
+    const confidence = clampConfidence(extracted.confidence ?? 0.5);
+    const sourceType = extracted.sourceType ?? 'inferred';
+
+    await memoryStore.addFact({
+      phoneNumber,
+      fact: extracted.fact,
+      category: extracted.category,
+      confidence,
+      sourceType,
+      evidence: extracted.evidence,
+      lastReinforcedAt: now,
+      extractedAt: now,
+    });
+    storedFacts.push(extracted);
+
+    existingFacts.push({
+      id: '',
+      phoneNumber,
+      fact: extracted.fact,
+      category: extracted.category,
+      confidence,
+      sourceType,
+      evidence: extracted.evidence,
+      lastReinforcedAt: now,
+      extractedAt: now,
+    });
   }
 
   return {
     factsExtracted: storedFacts.length,
+    reinforcedFacts,
+    assistantIncluded,
+    parseFailures,
+    llmErrors,
     debug: {
       phoneNumber,
-      messages,
-      existingFactsCount: existingFacts.length - storedFacts.length, // Count before adding new ones
+      messages: filteredMessages,
+      messagesSkipped,
+      assistantIncluded,
+      existingFactsCount,
       prompt,
       llmResponse: responseText,
       extractedFacts,
       storedFacts,
       duplicatesSkipped,
+      reinforcedFacts,
     },
   };
 }
@@ -300,7 +577,11 @@ function formatDebugLog(data: DebugLogData): string {
     }
 
     lines.push(`  Existing facts: ${userResult.existingFactsCount}`);
-    lines.push(`  Messages processed: ${userResult.messages.length}`);
+    lines.push(`  Messages analyzed: ${userResult.messages.length}`);
+    lines.push(`  Messages skipped: ${userResult.messagesSkipped}`);
+    if (userResult.assistantIncluded > 0) {
+      lines.push(`  Assistant summaries included: ${userResult.assistantIncluded}`);
+    }
     lines.push('');
 
     // Prompt (truncated for readability)
@@ -326,6 +607,9 @@ function formatDebugLog(data: DebugLogData): string {
     lines.push(`  Facts extracted: ${userResult.extractedFacts.length}`);
     lines.push(`  Facts stored: ${userResult.storedFacts.length}`);
     lines.push(`  Duplicates skipped: ${userResult.duplicatesSkipped}`);
+    if (userResult.reinforcedFacts > 0) {
+      lines.push(`  Facts reinforced: ${userResult.reinforcedFacts}`);
+    }
     lines.push('');
 
     if (userResult.storedFacts.length > 0) {
@@ -385,12 +669,25 @@ function formatDebugLog(data: DebugLogData): string {
  */
 export async function processUnprocessedMessages(): Promise<ProcessingResult> {
   const conversationStore = getConversationStore();
+  const memoryStore = getMemoryStore();
   const batchSize = config.memoryProcessor.batchSize;
+  const metrics = {
+    success: 0,
+    parse_fail: 0,
+    llm_error: 0,
+    reinforced: 0,
+    assistant_included: 0,
+    stale_deleted: 0,
+    poison: 0,
+  };
 
-  // Get unprocessed user messages in FIFO order with per-user cap
+  metrics.stale_deleted = await memoryStore.deleteStaleObservations();
+
+  // Get unprocessed messages in FIFO order with per-user cap
   const messages = await conversationStore.getUnprocessedMessages({
     limit: batchSize,
     perUserLimit: config.memoryProcessor.perUserBatchSize,
+    includeAssistant: config.memoryProcessor.includeAssistant,
   });
 
   if (messages.length === 0) {
@@ -404,6 +701,8 @@ export async function processUnprocessedMessages(): Promise<ProcessingResult> {
   console.log(JSON.stringify({
     event: 'memory_processor_start',
     messageCount: messages.length,
+    includeAssistant: config.memoryProcessor.includeAssistant,
+    staleDeleted: metrics.stale_deleted,
     timestamp: new Date().toISOString(),
   }));
 
@@ -430,13 +729,25 @@ export async function processUnprocessedMessages(): Promise<ProcessingResult> {
     const messageIds = userMessages.map((m) => m.id);
 
     try {
-      const { factsExtracted, debug } = await processUserMessages(phoneNumber, userMessages);
+      const {
+        factsExtracted,
+        reinforcedFacts,
+        assistantIncluded,
+        parseFailures,
+        llmErrors,
+        debug,
+      } = await processUserMessages(phoneNumber, userMessages);
 
       // Mark messages as processed
       await conversationStore.markAsProcessed(messageIds);
 
       result.messagesProcessed += userMessages.length;
       result.factsExtracted += factsExtracted;
+      metrics.success += 1;
+      metrics.reinforced += reinforcedFacts;
+      metrics.assistant_included += assistantIncluded;
+      metrics.parse_fail += parseFailures;
+      metrics.llm_error += llmErrors;
       userDebugData.push(debug);
 
       console.log(JSON.stringify({
@@ -448,6 +759,16 @@ export async function processUnprocessedMessages(): Promise<ProcessingResult> {
       }));
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
+      const isParseError = error instanceof ParseError;
+      const isLlmError = error instanceof LlmError;
+
+      if (isParseError) {
+        metrics.parse_fail += 1;
+        metrics.poison += 1;
+      } else if (isLlmError) {
+        metrics.llm_error += 1;
+        metrics.poison += 1;
+      }
 
       console.error(JSON.stringify({
         event: 'memory_processor_user_error',
@@ -465,13 +786,16 @@ export async function processUnprocessedMessages(): Promise<ProcessingResult> {
       // Add error to debug data
       userDebugData.push({
         phoneNumber,
-        messages: userMessages,
+        messages: [],
+        messagesSkipped: userMessages.length,
+        assistantIncluded: 0,
         existingFactsCount: 0,
         prompt: '',
         llmResponse: '',
         extractedFacts: [],
         storedFacts: [],
         duplicatesSkipped: 0,
+        reinforcedFacts: 0,
         error: errorMessage,
       });
 
@@ -486,22 +810,25 @@ export async function processUnprocessedMessages(): Promise<ProcessingResult> {
     messagesProcessed: result.messagesProcessed,
     factsExtracted: result.factsExtracted,
     errorCount: result.errors.length,
+    metrics,
     timestamp: new Date().toISOString(),
   }));
 
   // Write debug log file (overwrites previous)
-  writeDebugLog('memory-processor.log', formatDebugLog({
-    timestamp: new Date().toISOString(),
-    config: {
-      batchSize: config.memoryProcessor.batchSize,
-      perUserBatchSize: config.memoryProcessor.perUserBatchSize,
-      intervalMs: config.memoryProcessor.intervalMs,
-    },
-    messagesRetrieved: messages,
-    userResults: userDebugData,
-    summary: result,
-    durationMs,
-  }));
+  if (config.nodeEnv === 'development' && config.memoryProcessor.logVerbose) {
+    writeDebugLog('memory-processor.log', formatDebugLog({
+      timestamp: new Date().toISOString(),
+      config: {
+        batchSize: config.memoryProcessor.batchSize,
+        perUserBatchSize: config.memoryProcessor.perUserBatchSize,
+        intervalMs: config.memoryProcessor.intervalMs,
+      },
+      messagesRetrieved: messages,
+      userResults: userDebugData,
+      summary: result,
+      durationMs,
+    }));
+  }
 
   return result;
 }

@@ -7,6 +7,7 @@ import {
   setMockResponses,
   createTextResponse,
   clearMockState,
+  getCreateCalls,
 } from '../mocks/anthropic.js';
 
 // Mock the stores before importing processor
@@ -44,11 +45,12 @@ vi.mock('../../src/services/conversation/index.js', () => {
         messages.push(msg);
         return msg;
       },
-      getUnprocessedMessages: async (options?: { limit?: number; perUserLimit?: number }) => {
+      getUnprocessedMessages: async (options?: { limit?: number; perUserLimit?: number; includeAssistant?: boolean }) => {
         const limit = options?.limit ?? 100;
         const perUserLimit = options?.perUserLimit ?? 25;
+        const includeAssistant = options?.includeAssistant ?? false;
         const unprocessed = messages.filter(
-          (m) => m.role === 'user' && !processedIds.has(m.id)
+          (m) => (includeAssistant || m.role === 'user') && !processedIds.has(m.id)
         );
 
         // Apply per-user limit with FIFO
@@ -105,6 +107,10 @@ vi.mock('../../src/services/memory/index.js', () => {
     phoneNumber: string;
     fact: string;
     category?: string;
+    confidence: number;
+    sourceType: 'explicit' | 'inferred';
+    evidence?: string;
+    lastReinforcedAt?: number;
     extractedAt: number;
   }> = [];
   let factIdCounter = 0;
@@ -118,6 +124,10 @@ vi.mock('../../src/services/memory/index.js', () => {
         phoneNumber: string;
         fact: string;
         category?: string;
+        confidence: number;
+        sourceType: 'explicit' | 'inferred';
+        evidence?: string;
+        lastReinforcedAt?: number;
         extractedAt: number;
       }) => {
         const stored = {
@@ -127,6 +137,32 @@ vi.mock('../../src/services/memory/index.js', () => {
         facts.push(stored);
         return stored;
       },
+      updateFact: async (
+        id: string,
+        updates: Partial<{
+          fact: string;
+          category?: string;
+          confidence: number;
+          sourceType: 'explicit' | 'inferred';
+          evidence?: string;
+          lastReinforcedAt?: number;
+          extractedAt: number;
+        }>
+      ) => {
+        const index = facts.findIndex((f) => f.id === id);
+        if (index === -1) return;
+        facts[index] = { ...facts[index], ...updates };
+      },
+      deleteStaleObservations: async () => {
+        const cutoff = Date.now() - 180 * 24 * 60 * 60 * 1000;
+        const before = facts.length;
+        for (let i = facts.length - 1; i >= 0; i--) {
+          if (facts[i].confidence < 0.6 && facts[i].extractedAt < cutoff) {
+            facts.splice(i, 1);
+          }
+        }
+        return before - facts.length;
+      },
     }),
     // Expose for test setup
     _testHelpers: {
@@ -135,12 +171,25 @@ vi.mock('../../src/services/memory/index.js', () => {
         factIdCounter = 0;
       },
       getFacts: () => [...facts],
-      addTestFact: (phoneNumber: string, factText: string) => {
+      addTestFact: (
+        phoneNumber: string,
+        factText: string,
+        overrides?: Partial<{
+          confidence: number;
+          sourceType: 'explicit' | 'inferred';
+          extractedAt: number;
+          evidence?: string;
+          lastReinforcedAt?: number;
+        }>
+      ) => {
         const fact = {
           id: `fact_${++factIdCounter}`,
           phoneNumber,
           fact: factText,
+          confidence: 0.6,
+          sourceType: 'explicit' as const,
           extractedAt: Date.now(),
+          ...overrides,
         };
         facts.push(fact);
         return fact;
@@ -151,12 +200,16 @@ vi.mock('../../src/services/memory/index.js', () => {
 
 vi.mock('../../src/config.js', () => ({
   default: {
+    nodeEnv: 'test',
     anthropicApiKey: 'test-key',
     memoryProcessor: {
       enabled: true,
       intervalMs: 1000,
       batchSize: 100,
       perUserBatchSize: 25,
+      modelId: 'test-model',
+      includeAssistant: false,
+      logVerbose: false,
     },
   },
 }));
@@ -165,12 +218,15 @@ vi.mock('../../src/config.js', () => ({
 import { processUnprocessedMessages } from '../../src/services/memory/processor.js';
 import { getConversationStore, _testHelpers as convHelpers } from '../../src/services/conversation/index.js';
 import { _testHelpers as memHelpers } from '../../src/services/memory/index.js';
+import config from '../../src/config.js';
 
 describe('Memory Processor', () => {
   beforeEach(() => {
     clearMockState();
     convHelpers.reset();
     memHelpers.reset();
+    config.memoryProcessor.includeAssistant = false;
+    config.memoryProcessor.logVerbose = false;
   });
 
   describe('processUnprocessedMessages', () => {
@@ -188,7 +244,9 @@ describe('Memory Processor', () => {
 
       // Mock LLM response with extracted fact
       setMockResponses([
-        createTextResponse('[{"fact": "Loves coffee", "category": "preferences"}]'),
+        createTextResponse(
+          '{"facts":[{"fact":"Loves coffee","category":"preferences","confidence":0.7,"source_type":"explicit","evidence":"User said I love coffee"}]}'
+        ),
       ]);
 
       const result = await processUnprocessedMessages();
@@ -202,6 +260,8 @@ describe('Memory Processor', () => {
       expect(facts).toHaveLength(1);
       expect(facts[0].fact).toBe('Loves coffee');
       expect(facts[0].category).toBe('preferences');
+      expect(facts[0].confidence).toBeCloseTo(0.7, 5);
+      expect(facts[0].sourceType).toBe('explicit');
     });
 
     it('skips assistant messages', async () => {
@@ -212,10 +272,41 @@ describe('Memory Processor', () => {
       expect(result.messagesProcessed).toBe(0);
     });
 
+    it('includes assistant tool summaries when enabled', async () => {
+      config.memoryProcessor.includeAssistant = true;
+      convHelpers.addTestMessage(
+        '+1234567890',
+        'assistant',
+        'Found 3 emails from Chase about your statement'
+      );
+
+      setMockResponses([
+        createTextResponse(
+          '{"facts":[{"fact":"Receives Chase statements","category":"recurring","confidence":0.7,"source_type":"inferred","evidence":"Found 3 emails from Chase"}]}'
+        ),
+      ]);
+
+      const result = await processUnprocessedMessages();
+
+      expect(result.messagesProcessed).toBe(1);
+      expect(result.factsExtracted).toBe(1);
+    });
+
+    it('skips assistant messages that are not tool summaries', async () => {
+      config.memoryProcessor.includeAssistant = true;
+      convHelpers.addTestMessage('+1234567890', 'assistant', 'Thanks for the update!');
+
+      const result = await processUnprocessedMessages();
+
+      expect(result.messagesProcessed).toBe(1);
+      expect(result.factsExtracted).toBe(0);
+      expect(getCreateCalls()).toHaveLength(0);
+    });
+
     it('marks messages as processed after extraction', async () => {
       const msg = convHelpers.addTestMessage('+1234567890', 'user', 'Test message');
 
-      setMockResponses([createTextResponse('[]')]);
+      setMockResponses([createTextResponse('{"facts": []}')]);
 
       await processUnprocessedMessages();
 
@@ -255,7 +346,7 @@ describe('Memory Processor', () => {
 
       // LLM returns same fact with different case
       setMockResponses([
-        createTextResponse('[{"fact": "loves coffee", "category": "preferences"}]'),
+        createTextResponse('{"facts":[{"fact": "loves coffee", "category": "preferences", "confidence": 0.6, "source_type": "explicit"}]}'),
       ]);
 
       const result = await processUnprocessedMessages();
@@ -265,6 +356,7 @@ describe('Memory Processor', () => {
 
       const facts = memHelpers.getFacts();
       expect(facts).toHaveLength(1); // Still just the original
+      expect(facts[0].confidence).toBeCloseTo(0.7, 5); // Reinforced
     });
 
     it('extracts multiple facts from single user batch', async () => {
@@ -272,7 +364,7 @@ describe('Memory Processor', () => {
 
       setMockResponses([
         createTextResponse(
-          '[{"fact": "Loves coffee", "category": "preferences"}, {"fact": "Has a dog named Max", "category": "relationships"}]'
+          '{"facts":[{"fact":"Loves coffee","category":"preferences","confidence":0.6,"source_type":"explicit"},{"fact":"Has a dog named Max","category":"relationships","confidence":0.6,"source_type":"explicit"}]}'
         ),
       ]);
 
@@ -288,7 +380,7 @@ describe('Memory Processor', () => {
     it('handles empty LLM response gracefully', async () => {
       convHelpers.addTestMessage('+1234567890', 'user', 'Hello there');
 
-      setMockResponses([createTextResponse('[]')]);
+      setMockResponses([createTextResponse('{"facts": []}')]);
 
       const result = await processUnprocessedMessages();
 
@@ -297,16 +389,66 @@ describe('Memory Processor', () => {
       expect(result.errors).toHaveLength(0);
     });
 
-    it('handles malformed LLM response gracefully', async () => {
+    it('does not mark messages as processed on malformed LLM response', async () => {
       convHelpers.addTestMessage('+1234567890', 'user', 'Test message');
 
       setMockResponses([createTextResponse('This is not JSON')]);
 
       const result = await processUnprocessedMessages();
 
-      expect(result.messagesProcessed).toBe(1);
+      expect(result.messagesProcessed).toBe(0);
       expect(result.factsExtracted).toBe(0);
-      expect(result.errors).toHaveLength(0);
+      expect(result.errors).toHaveLength(1);
+
+      const processedIds = convHelpers.getProcessedIds();
+      expect(processedIds.size).toBe(0);
+    });
+
+    it('retries once after parse failure and succeeds', async () => {
+      convHelpers.addTestMessage('+1234567890', 'user', 'I like tea');
+
+      setMockResponses([
+        createTextResponse('not json'),
+        createTextResponse(
+          '{"facts":[{"fact":"Likes tea","category":"preferences","confidence":0.6,"source_type":"explicit"}]}'
+        ),
+      ]);
+
+      const result = await processUnprocessedMessages();
+
+      expect(result.messagesProcessed).toBe(1);
+      expect(result.factsExtracted).toBe(1);
+      expect(getCreateCalls()).toHaveLength(2);
+    });
+
+    it('caps evidence length when storing', async () => {
+      convHelpers.addTestMessage('+1234567890', 'user', 'I like coffee');
+      const longEvidence = 'a'.repeat(200);
+
+      setMockResponses([
+        createTextResponse(
+          `{"facts":[{"fact":"Likes coffee","category":"preferences","confidence":0.6,"source_type":"explicit","evidence":"${longEvidence}"}]}`
+        ),
+      ]);
+
+      await processUnprocessedMessages();
+
+      const facts = memHelpers.getFacts();
+      expect(facts).toHaveLength(1);
+      expect(facts[0].evidence?.length).toBeLessThanOrEqual(120);
+    });
+
+    it('deletes stale low-confidence observations', async () => {
+      const oldTimestamp = Date.now() - 181 * 24 * 60 * 60 * 1000;
+      memHelpers.addTestFact('+1234567890', 'Old observation', {
+        confidence: 0.5,
+        extractedAt: oldTimestamp,
+      });
+
+      const result = await processUnprocessedMessages();
+
+      expect(result.messagesProcessed).toBe(0);
+      expect(memHelpers.getFacts()).toHaveLength(0);
     });
 
     it('handles LLM errors without marking messages as processed', async () => {
@@ -326,13 +468,29 @@ describe('Memory Processor', () => {
   });
 
   describe('fact parsing', () => {
+    it('accepts legacy array format', async () => {
+      convHelpers.addTestMessage('+1234567890', 'user', 'I like jazz');
+
+      setMockResponses([
+        createTextResponse('[{"fact": "Likes jazz", "category": "interests"}]'),
+      ]);
+
+      await processUnprocessedMessages();
+
+      const facts = memHelpers.getFacts();
+      expect(facts).toHaveLength(1);
+      expect(facts[0].fact).toBe('Likes jazz');
+      expect(facts[0].confidence).toBeCloseTo(0.5, 5);
+      expect(facts[0].sourceType).toBe('inferred');
+    });
+
     it('extracts JSON from response with surrounding text', async () => {
       convHelpers.addTestMessage('+1234567890', 'user', 'I work at Anthropic');
 
       // LLM includes extra text around JSON
       setMockResponses([
         createTextResponse(
-          'Based on the message, here are the facts:\n[{"fact": "Works at Anthropic", "category": "work"}]\nThat is all.'
+          'Based on the message, here are the facts:\n{"facts":[{"fact": "Works at Anthropic", "category": "work", "confidence": 0.6, "source_type": "explicit"}]}\nThat is all.'
         ),
       ]);
 
@@ -348,7 +506,7 @@ describe('Memory Processor', () => {
 
       setMockResponses([
         createTextResponse(
-          '[{"fact": "Valid fact", "category": "other"}, {"fact": "", "category": "other"}, {"fact": "   ", "category": "other"}]'
+          '{"facts":[{"fact": "Valid fact", "category": "other", "confidence": 0.5, "source_type": "explicit"}, {"fact": "", "category": "other"}, {"fact": "   ", "category": "other"}]}'
         ),
       ]);
 

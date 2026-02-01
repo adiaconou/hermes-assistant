@@ -38,17 +38,74 @@ export class SqliteMemoryStore implements MemoryStore {
         phone_number TEXT NOT NULL,
         fact TEXT NOT NULL,
         category TEXT,
+        confidence REAL NOT NULL DEFAULT 0.5,
+        source_type TEXT NOT NULL DEFAULT 'explicit',
+        evidence TEXT,
+        last_reinforced_at INTEGER,
         extracted_at INTEGER NOT NULL
       );
 
       CREATE INDEX IF NOT EXISTS idx_user_facts_phone ON user_facts(phone_number);
     `);
+
+    this.applyMigrations();
+  }
+
+  private applyMigrations(): void {
+    const columns = this.db
+      .prepare(`PRAGMA table_info(user_facts)`)
+      .all() as Array<{ name: string }>;
+    const columnNames = new Set(columns.map((col) => col.name));
+
+    const missingColumns: Array<{ name: string; sql: string }> = [];
+    if (!columnNames.has('confidence')) {
+      missingColumns.push({
+        name: 'confidence',
+        sql: `ALTER TABLE user_facts ADD COLUMN confidence REAL DEFAULT 0.5`,
+      });
+    }
+    if (!columnNames.has('source_type')) {
+      missingColumns.push({
+        name: 'source_type',
+        sql: `ALTER TABLE user_facts ADD COLUMN source_type TEXT DEFAULT 'explicit'`,
+      });
+    }
+    if (!columnNames.has('evidence')) {
+      missingColumns.push({
+        name: 'evidence',
+        sql: `ALTER TABLE user_facts ADD COLUMN evidence TEXT`,
+      });
+    }
+    if (!columnNames.has('last_reinforced_at')) {
+      missingColumns.push({
+        name: 'last_reinforced_at',
+        sql: `ALTER TABLE user_facts ADD COLUMN last_reinforced_at INTEGER`,
+      });
+    }
+
+    const transaction = this.db.transaction(() => {
+      for (const column of missingColumns) {
+        this.db.exec(column.sql);
+      }
+
+      // Backfill defaults for existing rows
+      this.db
+        .prepare(`UPDATE user_facts SET confidence = 0.5 WHERE confidence IS NULL`)
+        .run();
+      this.db
+        .prepare(`UPDATE user_facts SET source_type = 'explicit' WHERE source_type IS NULL`)
+        .run();
+      this.db
+        .prepare(`UPDATE user_facts SET last_reinforced_at = extracted_at WHERE last_reinforced_at IS NULL`)
+        .run();
+    });
+    transaction();
   }
 
   async getFacts(phoneNumber: string): Promise<UserFact[]> {
     const rows = this.db
       .prepare(
-        `SELECT id, phone_number, fact, category, extracted_at
+        `SELECT id, phone_number, fact, category, confidence, source_type, evidence, last_reinforced_at, extracted_at
          FROM user_facts
          WHERE phone_number = ?
          ORDER BY extracted_at DESC`
@@ -58,6 +115,10 @@ export class SqliteMemoryStore implements MemoryStore {
       phone_number: string;
       fact: string;
       category: string | null;
+      confidence: number | null;
+      source_type: string | null;
+      evidence: string | null;
+      last_reinforced_at: number | null;
       extracted_at: number;
     }>;
 
@@ -66,6 +127,10 @@ export class SqliteMemoryStore implements MemoryStore {
       phoneNumber: row.phone_number,
       fact: row.fact,
       category: row.category ?? undefined,
+      confidence: row.confidence ?? 0.5,
+      sourceType: (row.source_type as 'explicit' | 'inferred') ?? 'explicit',
+      evidence: row.evidence ?? undefined,
+      lastReinforcedAt: row.last_reinforced_at ?? undefined,
       extractedAt: row.extracted_at,
     }));
   }
@@ -73,7 +138,7 @@ export class SqliteMemoryStore implements MemoryStore {
   async getAllFacts(): Promise<UserFact[]> {
     const rows = this.db
       .prepare(
-        `SELECT id, phone_number, fact, category, extracted_at
+        `SELECT id, phone_number, fact, category, confidence, source_type, evidence, last_reinforced_at, extracted_at
          FROM user_facts
          ORDER BY extracted_at DESC`
       )
@@ -82,6 +147,10 @@ export class SqliteMemoryStore implements MemoryStore {
       phone_number: string;
       fact: string;
       category: string | null;
+      confidence: number | null;
+      source_type: string | null;
+      evidence: string | null;
+      last_reinforced_at: number | null;
       extracted_at: number;
     }>;
 
@@ -90,29 +159,45 @@ export class SqliteMemoryStore implements MemoryStore {
       phoneNumber: row.phone_number,
       fact: row.fact,
       category: row.category ?? undefined,
+      confidence: row.confidence ?? 0.5,
+      sourceType: (row.source_type as 'explicit' | 'inferred') ?? 'explicit',
+      evidence: row.evidence ?? undefined,
+      lastReinforcedAt: row.last_reinforced_at ?? undefined,
       extractedAt: row.extracted_at,
     }));
   }
 
   async addFact(fact: Omit<UserFact, 'id'>): Promise<UserFact> {
     const id = randomUUID();
+    const confidence = fact.confidence ?? 0.5;
+    const sourceType = fact.sourceType ?? 'explicit';
+    const evidence = fact.evidence ?? null;
+    const lastReinforcedAt = fact.lastReinforcedAt ?? fact.extractedAt;
 
     this.db
       .prepare(
-        `INSERT INTO user_facts (id, phone_number, fact, category, extracted_at)
-         VALUES (?, ?, ?, ?, ?)`
+        `INSERT INTO user_facts (id, phone_number, fact, category, confidence, source_type, evidence, last_reinforced_at, extracted_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
         fact.phoneNumber,
         fact.fact,
         fact.category ?? null,
+        confidence,
+        sourceType,
+        evidence,
+        lastReinforcedAt,
         fact.extractedAt
       );
 
     return {
       id,
       ...fact,
+      confidence,
+      sourceType,
+      evidence: evidence ?? undefined,
+      lastReinforcedAt,
     };
   }
 
@@ -127,6 +212,22 @@ export class SqliteMemoryStore implements MemoryStore {
     if (updates.category !== undefined) {
       updateFields.push('category = ?');
       values.push(updates.category ?? null);
+    }
+    if (updates.confidence !== undefined) {
+      updateFields.push('confidence = ?');
+      values.push(updates.confidence);
+    }
+    if (updates.sourceType !== undefined) {
+      updateFields.push('source_type = ?');
+      values.push(updates.sourceType);
+    }
+    if (updates.evidence !== undefined) {
+      updateFields.push('evidence = ?');
+      values.push(updates.evidence ?? null);
+    }
+    if (updates.lastReinforcedAt !== undefined) {
+      updateFields.push('last_reinforced_at = ?');
+      values.push(updates.lastReinforcedAt ?? null);
     }
     if (updates.extractedAt !== undefined) {
       updateFields.push('extracted_at = ?');
@@ -148,6 +249,18 @@ export class SqliteMemoryStore implements MemoryStore {
     this.db
       .prepare(`DELETE FROM user_facts WHERE id = ?`)
       .run(id);
+  }
+
+  async deleteStaleObservations(): Promise<number> {
+    const cutoff = Date.now() - 180 * 24 * 60 * 60 * 1000;
+    const result = this.db
+      .prepare(
+        `DELETE FROM user_facts
+         WHERE confidence < 0.6
+           AND extracted_at < ?`
+      )
+      .run(cutoff);
+    return result.changes;
   }
 
   /** Close the database connection. */

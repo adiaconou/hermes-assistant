@@ -5,6 +5,10 @@
 import type { UserConfig } from '../../user-config/index.js';
 import type { UserFact } from '../../memory/types.js';
 import { getMemoryStore } from '../../memory/index.js';
+import {
+  DEFAULT_FACT_CHAR_CAP,
+  selectFactsWithCharCap,
+} from '../../memory/ranking.js';
 
 /**
  * Build time context string from user config.
@@ -39,30 +43,22 @@ export function buildFactsXml(
   options?: { maxFacts?: number; maxChars?: number }
 ): string {
   const maxFacts = options?.maxFacts ?? Number.POSITIVE_INFINITY;
-  const maxChars = options?.maxChars ?? Number.POSITIVE_INFINITY;
+  const maxChars = options?.maxChars ?? DEFAULT_FACT_CHAR_CAP;
 
-  const normalizedFacts = facts
-    .map((fact) => fact.fact.trim().replace(/\s+/g, ' '))
-    .filter((fact) => fact.length > 0);
+  const renderFact = (fact: UserFact) => {
+    const normalized = fact.fact.trim().replace(/\s+/g, ' ');
+    const learned = new Date(fact.extractedAt).toISOString().slice(0, 10);
+    return `${normalized} (learned ${learned})`;
+  };
 
-  const selected: string[] = [];
-  let totalChars = 0;
+  const { selected } = selectFactsWithCharCap(facts, renderFact, { maxChars });
+  const limited = selected.slice(0, maxFacts);
 
-  for (const fact of normalizedFacts) {
-    if (selected.length >= maxFacts) break;
-
-    const addition = (selected.length > 0 ? '. ' : '') + fact;
-    if (totalChars + addition.length + 1 > maxChars) break;
-
-    selected.push(fact);
-    totalChars += addition.length;
-  }
-
-  if (selected.length === 0) {
+  if (limited.length === 0) {
     return '';
   }
 
-  const factsText = `${selected.join('. ')}.`;
+  const factsText = `${limited.map(renderFact).join('. ')}.`;
 
   return `  <facts>\n    ${factsText}\n  </facts>`;
 }
@@ -107,11 +103,17 @@ export async function buildMemoryXml(phoneNumber: string): Promise<string> {
     return ''; // No memory to inject
   }
 
+  const renderFact = (fact: UserFact) => {
+    const learned = new Date(fact.extractedAt).toISOString().slice(0, 10);
+    return `${fact.fact} (learned ${learned})`;
+  };
+  const { selected } = selectFactsWithCharCap(facts, renderFact, { maxChars: DEFAULT_FACT_CHAR_CAP });
+
   // Log individual facts being injected
   console.log(JSON.stringify({
     level: 'info',
     message: 'Facts being injected',
-    facts: facts.map(f => ({
+    facts: selected.map(f => ({
       id: f.id,
       fact: f.fact,
       category: f.category || 'uncategorized',
@@ -119,7 +121,7 @@ export async function buildMemoryXml(phoneNumber: string): Promise<string> {
     timestamp: new Date().toISOString(),
   }));
 
-  const factsXml = buildFactsXml(facts);
+  const factsXml = buildFactsXml(selected);
   if (!factsXml) {
     return '';
   }

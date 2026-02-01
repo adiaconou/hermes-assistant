@@ -175,6 +175,17 @@ describe('SqliteConversationStore', () => {
       expect(unprocessed[0].role).toBe('user');
     });
 
+    it('includes assistant messages when enabled', async () => {
+      await store.addMessage('+1234567890', 'user', 'User msg');
+      await store.addMessage('+1234567890', 'assistant', 'Assistant msg');
+
+      const unprocessed = await store.getUnprocessedMessages({ includeAssistant: true });
+
+      expect(unprocessed).toHaveLength(2);
+      expect(unprocessed[0].role).toBe('user');
+      expect(unprocessed[1].role).toBe('assistant');
+    });
+
     it('returns messages in FIFO order', async () => {
       await store.addMessage('+1234567890', 'user', 'First');
       await store.addMessage('+1234567890', 'user', 'Second');

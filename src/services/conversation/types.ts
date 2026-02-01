@@ -87,6 +87,8 @@ export interface ConversationStore {
     limit?: number;
     /** Maximum messages per user */
     perUserLimit?: number;
+    /** Include assistant messages in results */
+    includeAssistant?: boolean;
   }): Promise<ConversationMessage[]>;
 
   /**

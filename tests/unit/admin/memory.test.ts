@@ -66,6 +66,8 @@ describe('Admin Memory API', () => {
         phoneNumber: '+1111111111',
         fact: 'User 1 likes coffee',
         category: 'preferences',
+        confidence: 0.6,
+        sourceType: 'explicit',
         extractedAt: Date.now(),
       });
 
@@ -73,6 +75,8 @@ describe('Admin Memory API', () => {
         phoneNumber: '+2222222222',
         fact: 'User 2 has a dog',
         category: 'relationships',
+        confidence: 0.6,
+        sourceType: 'explicit',
         extractedAt: Date.now(),
       });
 
@@ -80,6 +84,8 @@ describe('Admin Memory API', () => {
         phoneNumber: '+1111111111',
         fact: 'User 1 works remotely',
         category: 'work',
+        confidence: 0.6,
+        sourceType: 'explicit',
         extractedAt: Date.now(),
       });
 
@@ -108,18 +114,24 @@ describe('Admin Memory API', () => {
       await store.addFact({
         phoneNumber: '+1111111111',
         fact: 'First fact',
+        confidence: 0.6,
+        sourceType: 'explicit',
         extractedAt: baseTime,
       });
 
       await store.addFact({
         phoneNumber: '+1111111111',
         fact: 'Second fact',
+        confidence: 0.6,
+        sourceType: 'explicit',
         extractedAt: baseTime + 1000,
       });
 
       await store.addFact({
         phoneNumber: '+1111111111',
         fact: 'Third fact',
+        confidence: 0.6,
+        sourceType: 'explicit',
         extractedAt: baseTime + 2000,
       });
 
@@ -143,6 +155,8 @@ describe('Admin Memory API', () => {
       const added = await store.addFact({
         phoneNumber: '+1111111111',
         fact: 'Test fact to delete',
+        confidence: 0.6,
+        sourceType: 'explicit',
         extractedAt: Date.now(),
       });
 
@@ -178,12 +192,16 @@ describe('Admin Memory API', () => {
       const fact1 = await store.addFact({
         phoneNumber: '+1111111111',
         fact: 'Keep this fact',
+        confidence: 0.6,
+        sourceType: 'explicit',
         extractedAt: Date.now(),
       });
 
       const fact2 = await store.addFact({
         phoneNumber: '+1111111111',
         fact: 'Delete this fact',
+        confidence: 0.6,
+        sourceType: 'explicit',
         extractedAt: Date.now(),
       });
 

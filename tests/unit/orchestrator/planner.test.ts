@@ -298,7 +298,15 @@ describe('createPlan', () => {
       await createPlan({
         ...baseContext,
         userFacts: [
-          { id: '1', fact: 'User prefers mornings', category: 'preferences' },
+          {
+            id: '1',
+            phoneNumber: baseContext.phoneNumber,
+            fact: 'User prefers mornings',
+            category: 'preferences',
+            confidence: 0.6,
+            sourceType: 'explicit' as const,
+            extractedAt: Date.now(),
+          },
         ],
       }, mockRegistry);
 

@@ -298,6 +298,8 @@ describe('executeWithTools', () => {
             id: 'fact_1',
             phoneNumber: baseContext.phoneNumber,
             fact: 'Likes black coffee',
+            confidence: 0.6,
+            sourceType: 'explicit' as const,
             extractedAt: Date.now(),
           },
         ],

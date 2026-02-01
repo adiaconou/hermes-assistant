@@ -37,11 +37,15 @@ export const extractMemory: ToolDefinition = {
     }
 
     const store = getMemoryStore();
+    const now = Date.now();
     const saved = await store.addFact({
       phoneNumber,
       fact: fact.trim(),
       category,
-      extractedAt: Date.now(),
+      confidence: 1.0,
+      sourceType: 'explicit',
+      lastReinforcedAt: now,
+      extractedAt: now,
     });
 
     return { success: true, fact: saved };

@@ -11,7 +11,7 @@ import { SqliteMemoryStore } from './sqlite.js';
 
 export type { MemoryStore, UserFact } from './types.js';
 
-let instance: MemoryStore | null = null;
+let instance: SqliteMemoryStore | null = null;
 
 /**
  * Get the memory store instance.
@@ -33,4 +33,15 @@ export function getMemoryStore(): MemoryStore {
  */
 export function resetMemoryStore(): void {
   instance = null;
+}
+
+/**
+ * Close the memory store.
+ * Call this during graceful shutdown.
+ */
+export function closeMemoryStore(): void {
+  if (instance) {
+    instance.close();
+    instance = null;
+  }
 }

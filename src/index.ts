@@ -21,6 +21,7 @@ import { healthHandler } from './routes/health.js';
 import { initScheduler, stopScheduler } from './services/scheduler/index.js';
 import { closeConversationStore } from './services/conversation/index.js';
 import { startMemoryProcessor, stopMemoryProcessor } from './services/memory/processor.js';
+import { closeMemoryStore } from './services/memory/index.js';
 
 const app = express();
 
@@ -86,8 +87,14 @@ const server = app.listen(config.port, () => {
   startMemoryProcessor();
 });
 
+let isShuttingDown = false;
+
 // Graceful shutdown
 function shutdown(signal: string) {
+  if (isShuttingDown) {
+    return;
+  }
+  isShuttingDown = true;
   console.log(
     JSON.stringify({
       level: 'info',
@@ -100,9 +107,22 @@ function shutdown(signal: string) {
   stopScheduler();
   stopMemoryProcessor();
   closeConversationStore();
+  closeMemoryStore();
   db.close();
 
+  const forceExitTimer = setTimeout(() => {
+    console.log(
+      JSON.stringify({
+        level: 'warn',
+        message: 'Force exiting after shutdown timeout',
+        timestamp: new Date().toISOString(),
+      })
+    );
+    process.exit(1);
+  }, 10000);
+
   server.close(() => {
+    clearTimeout(forceExitTimer);
     console.log(
       JSON.stringify({
         level: 'info',

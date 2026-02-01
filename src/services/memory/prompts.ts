@@ -25,6 +25,12 @@
 
 import type { UserFact } from './types.js';
 import type { ConversationMessage } from '../conversation/types.js';
+import {
+  DEFAULT_FACT_CHAR_CAP,
+  ESTABLISHED_CONFIDENCE_THRESHOLD,
+  clampConfidence,
+  selectFactsWithCharCap,
+} from './ranking.js';
 
 /**
  * Categories for extracted facts.
@@ -37,10 +43,15 @@ export const FACT_CATEGORIES = [
   'work',          // Job, company, role, schedule
   'interests',     // Hobbies, activities, topics of interest
   'personal',      // Location, birthday, general personal details
+  'recurring',     // Bills, subscriptions, recurring appointments
+  'behavioral',    // Habits, activity patterns, communication style
+  'context',       // Current projects, situations, temporary longer-term context
   'other',         // Anything that doesn't fit above categories
 ] as const;
 
 export type FactCategory = typeof FACT_CATEGORIES[number];
+
+const OBSERVATION_WINDOW_MS = 180 * 24 * 60 * 60 * 1000;
 
 /**
  * Build the extraction prompt for the async memory processor.
@@ -59,76 +70,168 @@ export function buildExtractionPrompt(
   existingFacts: UserFact[],
   messages: ConversationMessage[]
 ): string {
-  const existingFactsList = existingFacts.length > 0
-    ? existingFacts.map((f) => `- ${f.fact}`).join('\n')
-    : '(No existing facts stored)';
+  const now = Date.now();
+  const recentObservations = existingFacts.filter(
+    (fact) =>
+      clampConfidence(fact.confidence) < ESTABLISHED_CONFIDENCE_THRESHOLD &&
+      now - fact.extractedAt <= OBSERVATION_WINDOW_MS
+  );
+  const establishedFacts = existingFacts.filter(
+    (fact) => clampConfidence(fact.confidence) >= ESTABLISHED_CONFIDENCE_THRESHOLD
+  );
+
+  const factRender = (fact: UserFact) => {
+    const learnedAt = new Date(fact.extractedAt).toISOString();
+    const confidence = clampConfidence(fact.confidence).toFixed(2);
+    return `- ${fact.fact} (${confidence}, learned ${learnedAt})`;
+  };
+
+  const { selected } = selectFactsWithCharCap(
+    [...establishedFacts, ...recentObservations],
+    factRender,
+    { maxChars: DEFAULT_FACT_CHAR_CAP }
+  );
+
+  const selectedEstablished = selected.filter(
+    (fact) => clampConfidence(fact.confidence) >= ESTABLISHED_CONFIDENCE_THRESHOLD
+  );
+  const selectedObservations = selected.filter(
+    (fact) => clampConfidence(fact.confidence) < ESTABLISHED_CONFIDENCE_THRESHOLD
+  );
+
+  const establishedFactsList = selectedEstablished.length > 0
+    ? selectedEstablished.map(factRender).join('\n')
+    : '(none)';
+
+  const recentObservationsList = selectedObservations.length > 0
+    ? selectedObservations.map(factRender).join('\n')
+    : '(none)';
 
   const messagesList = messages
-    .map((m) => `[${m.role}]: ${m.content}`)
+    .map((m) => `[${m.role} | ${new Date(m.createdAt).toISOString()}]: ${m.content}`)
     .join('\n');
 
-  return `You are analyzing conversation messages to extract persistent facts about the user for long-term memory storage.
+  return `You are a personal memory system that builds a comprehensive understanding of the user from conversations.
+Your goal is to identify meaningful facts and patterns that help personalize future interactions.
 
-<existing_facts>
-${existingFactsList}
-</existing_facts>
+## What You Are Analyzing
 
-<messages_to_analyze>
-${messagesList}
-</messages_to_analyze>
+You receive full conversation transcripts including:
+- User messages: what the user says directly
+- Assistant responses: summaries of tool results (email searches, calendar queries, etc.)
 
-## Your Task
+Assistant responses are included only when they look like tool summaries.
+Extract facts from both, using your judgment on source_type:
+- User explicitly states something -> explicit
+- Assistant tool summary -> inferred
 
-Extract NEW facts from the messages above. Each fact should be:
+## Types of Insights to Extract
 
-1. **Persistent** - Information that remains true over time
-   - YES: "Has a dog named Max", "Is allergic to peanuts", "Works as a software engineer"
-   - NO: "Is busy today", "Has a meeting at 3pm", "Is feeling tired"
+### Observations (single occurrences)
+First-time observations that may become patterns with more evidence.
+- Assign confidence 0.3-0.5
+- Mark source_type as inferred unless explicitly stated
 
-2. **From the user** - Only extract facts stated by the user (role: user), not the assistant
+### Patterns (confirmed)
+Observations backed by multiple data points or strong evidence.
+- Assign confidence 0.6-1.0
+- Include evidence with specific examples when possible
+- Prioritize recurring events, relationships, and behavioral preferences
 
-3. **Not a duplicate** - Skip facts already in <existing_facts> (even if worded differently)
+## Confidence Scoring
 
-4. **Atomic** - Each fact should be a single, self-contained piece of information
-   - YES: "Prefers morning meetings"
-   - NO: "Prefers morning meetings and likes coffee and has two kids"
+Confidence = how certain you are this fact is true and will remain relevant.
 
-5. **Third person** - Write facts as statements about "the user"
-   - YES: "Likes black coffee", "Has two children"
-   - NO: "I like black coffee", "You have two children"
+- 0.3: weak signal, single inferred observation
+- 0.4: single observation with some context
+- 0.5: clear single explicit statement
+- 0.6: pattern emerging (2-3 data points)
+- 0.7: solid pattern, multiple confirmations
+- 0.8: strong pattern, consistent over time
+- 0.9: very confident, repeatedly confirmed
+- 1.0: user explicitly asked to remember this
+
+Guidelines:
+- Explicit statements deserve higher confidence than inferences
+- When uncertain, lean lower (the system can reinforce later)
+- Patterns synthesized from observations should be 0.6+
 
 ## Categories
 
 Assign each fact to one of these categories:
 - preferences: Food, drinks, communication style, general preferences
-- health: Allergies, medical conditions, medications, dietary restrictions
+- health: Allergies, conditions, medications, dietary restrictions
 - relationships: Family members, pets, friends, colleagues
 - work: Job title, company, role, work schedule, professional details
 - interests: Hobbies, activities, topics of interest
 - personal: Location, birthday, general personal information
-- other: Facts that don't fit the above categories
+- recurring: Bills, subscriptions, recurring appointments
+- behavioral: Habits, activity patterns, communication preferences
+- context: Current projects, situations, ongoing plans
+- other: Facts that do not fit above categories
+
+## Privacy Exclusions
+
+NEVER extract these, even if mentioned multiple times:
+- Passwords, PINs, security codes
+- Full credit card/bank account numbers
+- SSNs, government IDs
+- API keys, tokens, credentials
+- Specific medical diagnoses or test results
+
+## Extraction Rules
+
+- Extract NEW facts only (skip duplicates from existing knowledge)
+- Focus on persistent information (not temporary states)
+- Each fact must be atomic and self-contained
+- Write facts in third person
+
+## Existing Knowledge
+
+<established_facts>
+${establishedFactsList}
+</established_facts>
+
+<recent_observations>
+${recentObservationsList}
+</recent_observations>
+
+## Conversation to Analyze
+
+<conversation>
+${messagesList}
+</conversation>
 
 ## Output Format
 
-Return ONLY a JSON array. No explanation, no markdown, just the array:
+Return ONLY valid JSON in this exact structure:
+{
+  "facts": [
+    {
+      "fact": "Example fact",
+      "category": "preferences",
+      "confidence": 0.6,
+      "source_type": "explicit",
+      "evidence": "Short supporting snippet"
+    }
+  ]
+}
 
-[{"fact": "...", "category": "..."}]
-
-Return an empty array [] if no new facts should be extracted.
+Return an empty facts array if nothing should be extracted.
 
 ## Examples
 
 Good extractions:
-- {"fact": "Has a daughter named Emma", "category": "relationships"}
-- {"fact": "Is vegetarian", "category": "health"}
-- {"fact": "Works at Google as a product manager", "category": "work"}
-- {"fact": "Enjoys hiking on weekends", "category": "interests"}
+- {"fact": "Has a daughter named Emma", "category": "relationships", "confidence": 0.7, "source_type": "explicit", "evidence": "User said 'my daughter Emma'"}
+- {"fact": "Is vegetarian", "category": "health", "confidence": 0.5, "source_type": "explicit"}
+- {"fact": "Works at Google as a product manager", "category": "work", "confidence": 0.6, "source_type": "explicit"}
+- {"fact": "Enjoys hiking on weekends", "category": "interests", "confidence": 0.4, "source_type": "explicit"}
+- {"fact": "Receives a Chase credit card bill monthly around mid-month", "category": "recurring", "confidence": 0.8, "source_type": "inferred", "evidence": "Three Chase statements dated 2025-11-15, 2025-12-15, 2026-01-15"}
 
 Skip these (don't extract):
 - Temporary states: "Is traveling this week"
 - Questions from user: "What's the weather like?"
-- Assistant statements: Anything the assistant said
-- Duplicates: Facts already in existing_facts (even if worded slightly differently)
+- Duplicates: Facts already in existing knowledge (even if worded slightly differently)
 - Vague statements: "Likes things" (too generic)`;
 }
 
@@ -136,12 +239,15 @@ Skip these (don't extract):
  * Format extracted facts for logging/debugging.
  */
 export function formatExtractedFactsForLog(
-  facts: Array<{ fact: string; category?: string }>
+  facts: Array<{ fact: string; category?: string; confidence?: number }>
 ): string {
   if (facts.length === 0) {
     return '(no facts extracted)';
   }
   return facts
-    .map((f) => `[${f.category || 'other'}] ${f.fact}`)
+    .map((f) => {
+      const confidence = f.confidence !== undefined ? ` ${f.confidence.toFixed(2)}` : '';
+      return `[${f.category || 'other'}] ${f.fact}${confidence}`;
+    })
     .join(', ');
 }

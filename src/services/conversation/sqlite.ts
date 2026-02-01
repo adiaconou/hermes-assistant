@@ -157,17 +157,20 @@ export class SqliteConversationStore implements ConversationStore {
   async getUnprocessedMessages(options?: {
     limit?: number;
     perUserLimit?: number;
+    includeAssistant?: boolean;
   }): Promise<ConversationMessage[]> {
     const limit = options?.limit ?? 100;
     const perUserLimit = options?.perUserLimit ?? 25;
+    const includeAssistant = options?.includeAssistant ?? false;
 
-    // FIFO across all users, user-role only, with per-user cap
+    // FIFO across all users, optionally including assistant role, with per-user cap
+    const roleFilter = includeAssistant ? '' : `AND role = 'user'`;
     const rows = this.db.prepare(
       `
       SELECT id, phone_number, role, content, channel, created_at,
              memory_processed, memory_processed_at
       FROM conversation_messages
-      WHERE memory_processed = 0 AND role = 'user'
+      WHERE memory_processed = 0 ${roleFilter}
       ORDER BY created_at ASC
       `
     ).all() as Array<{

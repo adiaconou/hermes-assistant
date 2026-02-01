@@ -78,6 +78,8 @@ describe('classifyMessage', () => {
         id: 'fact_1',
         phoneNumber: '+15551234567',
         fact: 'Likes sushi',
+        confidence: 0.6,
+        sourceType: 'explicit' as const,
         extractedAt: Date.now(),
       },
     ];

@@ -192,6 +192,16 @@
       font-weight: 500;
     }
 
+    .memory-chip {
+      background: var(--bg-secondary);
+      color: var(--text-secondary);
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      border: 1px solid var(--border-color);
+    }
+
     .memory-id {
       font-family: monospace;
       color: var(--text-muted);
@@ -216,6 +226,16 @@
     .btn-delete:hover {
       background: var(--danger-color);
       color: white;
+    }
+
+    .memory-evidence {
+      margin-top: 10px;
+      padding: 10px 12px;
+      background: var(--bg-secondary);
+      border: 1px dashed var(--border-color);
+      border-radius: 8px;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
     }
 
     .loading {
@@ -377,23 +397,37 @@
       content.innerHTML = html;
     }
 
+    function formatDate(timestamp) {
+      if (!timestamp) return 'Unknown';
+      return new Date(timestamp).toLocaleString();
+    }
+
     function renderMemoryCard(memory) {
-      const date = new Date(memory.extractedAt).toLocaleString();
-      const categoryHtml = memory.category
-        ? `<span class="memory-category">${escapeHtml(memory.category)}</span>`
-        : '';
+      const date = formatDate(memory.extractedAt);
+      const reinforcedDate = memory.lastReinforcedAt ? formatDate(memory.lastReinforcedAt) : null;
+      const confidence = typeof memory.confidence === 'number'
+        ? memory.confidence.toFixed(2)
+        : '0.00';
+      const sourceType = memory.sourceType || 'inferred';
+      const categoryLabel = memory.category ? memory.category : 'uncategorized';
+      const evidenceText = memory.evidence ? memory.evidence : 'No evidence captured.';
+      const reinforcedLabel = reinforcedDate ? reinforcedDate : 'Never';
 
       return `
         <div class="memory-card" id="memory-${memory.id}">
           <div class="memory-fact">${escapeHtml(memory.fact)}</div>
           <div class="memory-meta">
-            ${categoryHtml}
-            <span class="memory-date">${date}</span>
+            <span class="memory-category">${escapeHtml(categoryLabel)}</span>
+            <span class="memory-chip">Confidence: ${confidence}</span>
+            <span class="memory-chip">Source: ${escapeHtml(sourceType)}</span>
+            <span class="memory-chip">Learned: ${date}</span>
+            <span class="memory-chip">Reinforced: ${reinforcedLabel}</span>
             <span class="memory-id">ID: ${memory.id.substring(0, 8)}...</span>
             <div class="memory-actions">
               <button class="btn-delete" onclick="deleteMemory('${memory.id}')">Delete</button>
             </div>
           </div>
+          <div class="memory-evidence">Evidence: ${escapeHtml(evidenceText)}</div>
         </div>
       `;
     }
@@ -441,6 +475,7 @@
         alert('Error deleting memory: ' + error.message);
       }
     }
+
 
     function escapeHtml(text) {
       const div = document.createElement('div');

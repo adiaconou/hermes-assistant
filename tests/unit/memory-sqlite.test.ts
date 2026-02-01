@@ -38,6 +38,8 @@ describe('SqliteMemoryStore', () => {
       phoneNumber: '+1234567890',
       fact: 'Likes black coffee',
       category: 'preferences',
+      confidence: 0.6,
+      sourceType: 'explicit' as const,
       extractedAt: Date.now(),
     };
 
@@ -56,6 +58,8 @@ describe('SqliteMemoryStore', () => {
       phoneNumber: '+1234567890',
       fact: 'Likes coffee',
       category: 'preferences',
+      confidence: 0.6,
+      sourceType: 'explicit' as const,
       extractedAt: Date.now(),
     };
 
@@ -79,6 +83,8 @@ describe('SqliteMemoryStore', () => {
       phoneNumber: '+1234567890',
       fact: 'Has a dog named Max',
       category: 'relationships',
+      confidence: 0.6,
+      sourceType: 'explicit' as const,
       extractedAt: Date.now(),
     };
 
@@ -108,6 +114,8 @@ describe('SqliteMemoryStore', () => {
       phoneNumber,
       fact: 'Likes black coffee',
       category: 'preferences',
+      confidence: 0.6,
+      sourceType: 'explicit',
       extractedAt: Date.now(),
     });
 
@@ -115,6 +123,8 @@ describe('SqliteMemoryStore', () => {
       phoneNumber,
       fact: 'Has a dog named Max',
       category: 'relationships',
+      confidence: 0.6,
+      sourceType: 'explicit',
       extractedAt: Date.now(),
     });
 
@@ -122,6 +132,8 @@ describe('SqliteMemoryStore', () => {
       phoneNumber,
       fact: 'Allergic to peanuts',
       category: 'health',
+      confidence: 0.6,
+      sourceType: 'explicit',
       extractedAt: Date.now(),
     });
 
@@ -133,12 +145,16 @@ describe('SqliteMemoryStore', () => {
     await store.addFact({
       phoneNumber: '+1111111111',
       fact: 'User 1 fact',
+      confidence: 0.6,
+      sourceType: 'explicit',
       extractedAt: Date.now(),
     });
 
     await store.addFact({
       phoneNumber: '+2222222222',
       fact: 'User 2 fact',
+      confidence: 0.6,
+      sourceType: 'explicit',
       extractedAt: Date.now(),
     });
 
@@ -158,18 +174,24 @@ describe('SqliteMemoryStore', () => {
     await store.addFact({
       phoneNumber,
       fact: 'First fact',
+      confidence: 0.6,
+      sourceType: 'explicit',
       extractedAt: baseTime,
     });
 
     await store.addFact({
       phoneNumber,
       fact: 'Second fact',
+      confidence: 0.6,
+      sourceType: 'explicit',
       extractedAt: baseTime + 1000,
     });
 
     await store.addFact({
       phoneNumber,
       fact: 'Third fact',
+      confidence: 0.6,
+      sourceType: 'explicit',
       extractedAt: baseTime + 2000,
     });
 
@@ -178,5 +200,32 @@ describe('SqliteMemoryStore', () => {
     expect(facts[0].fact).toBe('Third fact');
     expect(facts[1].fact).toBe('Second fact');
     expect(facts[2].fact).toBe('First fact');
+  });
+
+  it('deletes stale low-confidence observations', async () => {
+    const oldTimestamp = Date.now() - 181 * 24 * 60 * 60 * 1000;
+
+    await store.addFact({
+      phoneNumber: '+1234567890',
+      fact: 'Old observation',
+      confidence: 0.5,
+      sourceType: 'explicit',
+      extractedAt: oldTimestamp,
+    });
+
+    await store.addFact({
+      phoneNumber: '+1234567890',
+      fact: 'Old established fact',
+      confidence: 0.7,
+      sourceType: 'explicit',
+      extractedAt: oldTimestamp,
+    });
+
+    const deleted = await store.deleteStaleObservations();
+    expect(deleted).toBe(1);
+
+    const facts = await store.getFacts('+1234567890');
+    expect(facts).toHaveLength(1);
+    expect(facts[0].fact).toBe('Old established fact');
   });
 });
