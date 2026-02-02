@@ -95,6 +95,9 @@ describe('SqliteConversationStore', () => {
       const history = await store.getHistory('+1234567890', { limit: 5 });
 
       expect(history).toHaveLength(5);
+      // Should return the most recent 5 messages, in chronological order
+      expect(history[0].content).toBe('Message 6');
+      expect(history[4].content).toBe('Message 10');
     });
 
     it('filters by memoryProcessed status', async () => {
