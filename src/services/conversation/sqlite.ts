@@ -117,8 +117,9 @@ export class SqliteConversationStore implements ConversationStore {
       ? `WHERE ${conditions.join(' AND ')}`
       : '';
 
-    // Order by created_at for chat history
-    const orderBy = 'ORDER BY created_at ASC';
+    // Order by newest first so LIMIT returns the most recent messages
+    // We'll reverse after fetching to return chronological order to callers
+    const orderBy = 'ORDER BY created_at DESC';
 
     const query = `
       SELECT id, phone_number, role, content, channel, created_at,
@@ -142,7 +143,10 @@ export class SqliteConversationStore implements ConversationStore {
       memory_processed_at: number | null;
     }>;
 
-    return rows.map((row) => ({
+    // Reverse to chronological order (oldest → newest) for downstream consumers
+    const chronologicalRows = rows.reverse();
+
+    return chronologicalRows.map((row) => ({
       id: row.id,
       phoneNumber: row.phone_number,
       role: row.role as 'user' | 'assistant',
@@ -161,7 +165,7 @@ export class SqliteConversationStore implements ConversationStore {
   }): Promise<ConversationMessage[]> {
     const limit = options?.limit ?? 100;
     const perUserLimit = options?.perUserLimit ?? 25;
-    const includeAssistant = options?.includeAssistant ?? false;
+    const includeAssistant = options?.includeAssistant ?? true;
 
     // FIFO across all users, optionally including assistant role, with per-user cap
     const roleFilter = includeAssistant ? '' : `AND role = 'user'`;

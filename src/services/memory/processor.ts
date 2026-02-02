@@ -57,6 +57,7 @@ interface ExtractedFact {
 
 interface ParsedFactsResult {
   facts: ExtractedFact[];
+  reasoning: string;
   raw: string;
 }
 
@@ -81,6 +82,7 @@ interface UserProcessingDebug {
   existingFactsCount: number;
   prompt: string;
   llmResponse: string;
+  llmReasoning: string;
   extractedFacts: ExtractedFact[];
   storedFacts: ExtractedFact[];
   duplicatesSkipped: number;
@@ -222,6 +224,15 @@ function parseExtractedFacts(response: string): ParsedFactsResult {
     throw new ParseError('Failed to parse JSON from LLM response');
   }
 
+  // Extract reasoning from the response object
+  let reasoning = '';
+  if (typeof payload === 'object' && payload !== null) {
+    const payloadObj = payload as Record<string, unknown>;
+    if (typeof payloadObj.reasoning === 'string') {
+      reasoning = payloadObj.reasoning;
+    }
+  }
+
   const factArray = Array.isArray(payload)
     ? payload
     : typeof payload === 'object' && payload !== null && Array.isArray((payload as { facts?: unknown }).facts)
@@ -236,7 +247,7 @@ function parseExtractedFacts(response: string): ParsedFactsResult {
     .map(normalizeExtractedFact)
     .filter((fact): fact is ExtractedFact => fact !== null);
 
-  return { facts: normalized, raw: response };
+  return { facts: normalized, reasoning, raw: response };
 }
 
 /**
@@ -325,10 +336,9 @@ async function processUserMessages(
   const existingFacts = await memoryStore.getFacts(phoneNumber);
   const existingFactsCount = existingFacts.length;
 
-  const includeAssistant = config.memoryProcessor.includeAssistant;
+  // Always include user messages; include assistant messages that look like tool summaries
   const filteredMessages = messages.filter((message) => {
     if (message.role === 'user') return true;
-    if (!includeAssistant) return false;
     return isAssistantSummary(message.content);
   });
   const assistantIncluded = filteredMessages.filter((m) => m.role === 'assistant').length;
@@ -349,6 +359,7 @@ async function processUserMessages(
         existingFactsCount,
         prompt: '',
         llmResponse: '',
+        llmReasoning: 'No messages to analyze after filtering.',
         extractedFacts: [],
         storedFacts: [],
         duplicatesSkipped: 0,
@@ -362,6 +373,7 @@ async function processUserMessages(
 
   let responseText = '';
   let extractedFacts: ExtractedFact[] = [];
+  let llmReasoning = '';
   let parseFailures = 0;
   let llmErrors = 0;
 
@@ -378,7 +390,9 @@ async function processUserMessages(
         .map((block) => block.text)
         .join('');
 
-      extractedFacts = parseExtractedFacts(responseText).facts;
+      const parsed = parseExtractedFacts(responseText);
+      extractedFacts = parsed.facts;
+      llmReasoning = parsed.reasoning;
       break;
     } catch (error) {
       if (error instanceof ParseError) {
@@ -485,6 +499,7 @@ async function processUserMessages(
       existingFactsCount,
       prompt,
       llmResponse: responseText,
+      llmReasoning,
       extractedFacts,
       storedFacts,
       duplicatesSkipped,
@@ -543,21 +558,26 @@ function formatDebugLog(data: DebugLogData): string {
     messagesByUser.set(msg.phoneNumber, existing);
   }
 
-  for (const [phone, msgs] of messagesByUser) {
-    const phoneSuffix = phone.slice(-4);
-    lines.push(`[User ...${phoneSuffix}] ${msgs.length} message(s):`);
-    for (const msg of msgs) {
-      const createdIso = formatIso(msg.createdAt);
-      const ageMs = Math.max(0, now - msg.createdAt);
-      const age = formatDuration(ageMs);
-      const preview = msg.content.length > 80
-        ? msg.content.substring(0, 80) + '...'
-        : msg.content;
-      lines.push(
-        `  - [${msg.id.substring(0, 8)}] "${preview}" | created ${createdIso} (${age} ago)`
-      );
-    }
+  if (data.messagesRetrieved.length === 0) {
+    lines.push('  (No unprocessed messages found)');
     lines.push('');
+  } else {
+    for (const [phone, msgs] of messagesByUser) {
+      const phoneSuffix = phone.slice(-4);
+      lines.push(`[User ...${phoneSuffix}] ${msgs.length} message(s):`);
+      for (const msg of msgs) {
+        const createdIso = formatIso(msg.createdAt);
+        const ageMs = Math.max(0, now - msg.createdAt);
+        const age = formatDuration(ageMs);
+        const preview = msg.content.length > 80
+          ? msg.content.substring(0, 80) + '...'
+          : msg.content;
+        lines.push(
+          `  - [${msg.id.substring(0, 8)}] "${preview}" | created ${createdIso} (${age} ago)`
+        );
+      }
+      lines.push('');
+    }
   }
 
   // Extraction results per user
@@ -602,6 +622,14 @@ function formatDebugLog(data: DebugLogData): string {
     lines.push('  ' + userResult.llmResponse);
     lines.push('  --- END RESPONSE ---');
     lines.push('');
+
+    // LLM Reasoning
+    if (userResult.llmReasoning) {
+      lines.push('  --- LLM REASONING ---');
+      lines.push('  ' + userResult.llmReasoning);
+      lines.push('  --- END REASONING ---');
+      lines.push('');
+    }
 
     // Facts extracted
     lines.push(`  Facts extracted: ${userResult.extractedFacts.length}`);
@@ -683,11 +711,11 @@ export async function processUnprocessedMessages(): Promise<ProcessingResult> {
 
   metrics.stale_deleted = await memoryStore.deleteStaleObservations();
 
-  // Get unprocessed messages in FIFO order with per-user cap
+  // Get unprocessed messages in FIFO order with per-user cap (always include assistant)
   const messages = await conversationStore.getUnprocessedMessages({
     limit: batchSize,
     perUserLimit: config.memoryProcessor.perUserBatchSize,
-    includeAssistant: config.memoryProcessor.includeAssistant,
+    includeAssistant: true,
   });
 
   if (messages.length === 0) {
@@ -695,13 +723,29 @@ export async function processUnprocessedMessages(): Promise<ProcessingResult> {
       event: 'memory_processor_no_work',
       timestamp: new Date().toISOString(),
     }));
+
+    // Write debug log even when no messages found
+    if (config.nodeEnv === 'development' && config.memoryProcessor.logVerbose) {
+      writeDebugLog('memory-processor.log', formatDebugLog({
+        timestamp: new Date().toISOString(),
+        config: {
+          batchSize: config.memoryProcessor.batchSize,
+          perUserBatchSize: config.memoryProcessor.perUserBatchSize,
+          intervalMs: config.memoryProcessor.intervalMs,
+        },
+        messagesRetrieved: [],
+        userResults: [],
+        summary: { messagesProcessed: 0, factsExtracted: 0, errors: [] },
+        durationMs: 0,
+      }));
+    }
+
     return { messagesProcessed: 0, factsExtracted: 0, errors: [] };
   }
 
   console.log(JSON.stringify({
     event: 'memory_processor_start',
     messageCount: messages.length,
-    includeAssistant: config.memoryProcessor.includeAssistant,
     staleDeleted: metrics.stale_deleted,
     timestamp: new Date().toISOString(),
   }));
@@ -792,6 +836,7 @@ export async function processUnprocessedMessages(): Promise<ProcessingResult> {
         existingFactsCount: 0,
         prompt: '',
         llmResponse: '',
+        llmReasoning: '',
         extractedFacts: [],
         storedFacts: [],
         duplicatesSkipped: 0,

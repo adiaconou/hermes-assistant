@@ -76,8 +76,6 @@ const config = {
     enabled: process.env.MEMORY_PROCESSOR_ENABLED !== 'false',
     /** Model ID for memory extraction */
     modelId: process.env.MEMORY_MODEL_ID || 'claude-opus-4-5-20251101',
-    /** Whether assistant messages can be included (tool summary only) */
-    includeAssistant: process.env.MEMORY_INCLUDE_ASSISTANT === 'true',
     /** Verbose logging for prompts/responses (dev/local only) */
     logVerbose: process.env.MEMORY_LOG_VERBOSE === 'true',
   },

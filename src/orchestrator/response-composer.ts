@@ -34,13 +34,16 @@ that summarizes what was done.
 
 {errorContext}
 
+{dataPriority}
+
 <rules>
 1. Be conversational and friendly
-2. Response MUST be under 1000 characters - summarize if needed
+2. Response should be concise but complete - aim for under 1500 characters when possible
 3. Don't mention internal steps or technical details
 4. If there were partial failures, acknowledge what succeeded and what didn't
 5. If there's a URL or link in the results, include it prominently
 6. Use the user's name if available
+7. CRITICAL: If the user asked for specific numbers, amounts, prices, dates, or quantities, you MUST include ALL of them in your response. Never summarize numerical data away.
 </rules>
 
 Write ONLY the final response message (no JSON, no explanation).`;
@@ -48,7 +51,7 @@ Write ONLY the final response message (no JSON, no explanation).`;
 /**
  * Format step results for the composition prompt.
  */
-const MAX_RESULT_OUTPUT_CHARS = 500;
+const MAX_RESULT_OUTPUT_CHARS = 2000;
 
 function formatStepResults(stepResults: Record<string, StepResult>): string {
   const entries = Object.entries(stepResults);
@@ -108,13 +111,21 @@ Explain what succeeded and what didn't.
 </error>`;
   }
 
+  // Detect if user is asking for specific data (amounts, quantities, etc.)
+  const dataPatterns = /how much|how many|what (is|was|were|are) the (amount|price|cost|total|balance|number)|list all|show me all|what did .* cost/i;
+  const isDataQuestion = dataPatterns.test(context.userMessage);
+  const dataPriority = isDataQuestion
+    ? '<response_priority>\nThe user is asking for SPECIFIC DATA. Include ALL numbers, amounts, and values from the results. Do not summarize them.\n</response_priority>'
+    : '';
+
   // Build the composition prompt
   const resultsText = formatStepResults(context.stepResults);
   const prompt = COMPOSITION_PROMPT
     .replace('{request}', context.userMessage)
     .replace('{goal}', plan.goal)
     .replace('{results}', resultsText)
-    .replace('{errorContext}', errorContext);
+    .replace('{errorContext}', errorContext)
+    .replace('{dataPriority}', dataPriority);
   const memoryXml = buildUserMemoryXml(context.userFacts, { maxFacts: 20, maxChars: 1500 });
   const promptWithMemory = memoryXml
     ? `${prompt}\n\n${memoryXml}`

@@ -48,7 +48,7 @@ vi.mock('../../src/services/conversation/index.js', () => {
       getUnprocessedMessages: async (options?: { limit?: number; perUserLimit?: number; includeAssistant?: boolean }) => {
         const limit = options?.limit ?? 100;
         const perUserLimit = options?.perUserLimit ?? 25;
-        const includeAssistant = options?.includeAssistant ?? false;
+        const includeAssistant = options?.includeAssistant ?? true;
         const unprocessed = messages.filter(
           (m) => (includeAssistant || m.role === 'user') && !processedIds.has(m.id)
         );
@@ -208,7 +208,6 @@ vi.mock('../../src/config.js', () => ({
       batchSize: 100,
       perUserBatchSize: 25,
       modelId: 'test-model',
-      includeAssistant: false,
       logVerbose: false,
     },
   },
@@ -225,7 +224,6 @@ describe('Memory Processor', () => {
     clearMockState();
     convHelpers.reset();
     memHelpers.reset();
-    config.memoryProcessor.includeAssistant = false;
     config.memoryProcessor.logVerbose = false;
   });
 
@@ -272,8 +270,7 @@ describe('Memory Processor', () => {
       expect(result.messagesProcessed).toBe(0);
     });
 
-    it('includes assistant tool summaries when enabled', async () => {
-      config.memoryProcessor.includeAssistant = true;
+    it('includes assistant tool summaries', async () => {
       convHelpers.addTestMessage(
         '+1234567890',
         'assistant',
@@ -293,7 +290,6 @@ describe('Memory Processor', () => {
     });
 
     it('skips assistant messages that are not tool summaries', async () => {
-      config.memoryProcessor.includeAssistant = true;
       convHelpers.addTestMessage('+1234567890', 'assistant', 'Thanks for the update!');
 
       const result = await processUnprocessedMessages();

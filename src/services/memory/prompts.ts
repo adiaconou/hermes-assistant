@@ -206,6 +206,7 @@ ${messagesList}
 
 Return ONLY valid JSON in this exact structure:
 {
+  "reasoning": "Brief explanation of your analysis: what you looked for, what you found or didn't find, and why you made each extraction decision.",
   "facts": [
     {
       "fact": "Example fact",
@@ -217,16 +218,29 @@ Return ONLY valid JSON in this exact structure:
   ]
 }
 
-Return an empty facts array if nothing should be extracted.
+The "reasoning" field is REQUIRED even if no facts are extracted. Explain:
+- What types of information you looked for in the messages
+- Why specific messages did or didn't contain extractable facts
+- Any patterns you noticed but chose not to extract (and why)
+
+Return an empty facts array if nothing should be extracted, but still provide reasoning.
 
 ## Examples
 
-Good extractions:
-- {"fact": "Has a daughter named Emma", "category": "relationships", "confidence": 0.7, "source_type": "explicit", "evidence": "User said 'my daughter Emma'"}
-- {"fact": "Is vegetarian", "category": "health", "confidence": 0.5, "source_type": "explicit"}
-- {"fact": "Works at Google as a product manager", "category": "work", "confidence": 0.6, "source_type": "explicit"}
-- {"fact": "Enjoys hiking on weekends", "category": "interests", "confidence": 0.4, "source_type": "explicit"}
-- {"fact": "Receives a Chase credit card bill monthly around mid-month", "category": "recurring", "confidence": 0.8, "source_type": "inferred", "evidence": "Three Chase statements dated 2025-11-15, 2025-12-15, 2026-01-15"}
+Example with extractions:
+{
+  "reasoning": "User mentioned family details and work information. Extracted daughter's name (explicit mention) and job role. Skipped 'busy today' as temporary state.",
+  "facts": [
+    {"fact": "Has a daughter named Emma", "category": "relationships", "confidence": 0.7, "source_type": "explicit", "evidence": "User said 'my daughter Emma'"},
+    {"fact": "Works at Google as a product manager", "category": "work", "confidence": 0.6, "source_type": "explicit"}
+  ]
+}
+
+Example with no extractions:
+{
+  "reasoning": "Messages contain only greetings ('Hi', 'Hello') and task commands ('Create a list'). No personal facts, preferences, or persistent information to extract.",
+  "facts": []
+}
 
 Skip these (don't extract):
 - Temporary states: "Is traveling this week"
