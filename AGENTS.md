@@ -155,7 +155,7 @@ Environment variables are defined in `.env.example`. Key variables:
 
 #### Testing Workflow
 1. **Write tests alongside code changes** - New features and bug fixes require new tests
-2. **Run tests after every change**: `npm test`
+2. **Run unit and integration tests after every change**: `npm run test:unit` and `npm run test:integration`
 3. **All tests must pass** - Never consider work complete with failing tests
 4. **If tests fail, keep working** - Debug and fix until all tests pass
 5. **Don't skip or disable tests** - Fix the code or the test, never skip
@@ -187,16 +187,32 @@ Environment variables are defined in `.env.example`. Key variables:
 **CRITICAL:** All code changes require tests and verification.
 
 1. **Write/update tests** - Add unit and integration tests for new code paths and error modes
-2. **Run all tests**: `npm test`
+2. **Run unit and integration tests**: `npm run test:unit` and `npm run test:integration`
 3. **If tests fail** - Debug, fix, and re-run until all pass. Do not proceed with failing tests.
 4. **Repeat** - Continue iterating until all tests pass
 
+### Architecture Documentation Maintenance
+
+**MANDATORY:** When making code changes, always include a task to check if architecture documentation needs updating.
+
+| Document | Update When |
+|----------|-------------|
+| `MEMORY.md` | Any change to memory system: storage, extraction, prompts, context injection, processor, or memory agent |
+| `ARCHITECTURE.md` | Any change to system design: new services, request flow, data models, external integrations, or component interactions |
+
+**Task List Requirement:** Every task list for code changes MUST include:
+- "Check if MEMORY.md needs updating" (for memory-related changes)
+- "Check if ARCHITECTURE.md needs updating" (for architecture-related changes)
+
+These documents are the source of truth for understanding the system. Outdated documentation causes confusion and bugs.
+
 ### Before Committing
 
-1. **Verify all tests pass**: `npm test` (run again to confirm)
+1. **Verify unit and integration tests pass**: `npm run test:unit` and `npm run test:integration` (run again to confirm)
 2. **Run linter**: `npm run lint`
 3. **Build to verify**: `npm run build`
-4. **Update docs**: If you changed behavior, update relevant docs
+4. **Update architecture docs**: If you changed memory or system architecture, update `MEMORY.md` or `ARCHITECTURE.md`
+5. **Update other docs**: If you changed behavior, update relevant docs
 
 ### Testing
 

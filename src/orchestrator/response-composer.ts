@@ -5,10 +5,16 @@
  * This takes all step outputs and creates a coherent, conversational message.
  */
 
-import type { TextBlock } from '@anthropic-ai/sdk/resources/messages';
+import type {
+  TextBlock,
+  ToolUseBlock,
+  ToolResultBlockParam,
+  MessageParam,
+} from '@anthropic-ai/sdk/resources/messages';
 
 import { getClient } from '../services/anthropic/client.js';
 import { buildUserMemoryXml } from '../services/anthropic/prompts/context.js';
+import { formatMapsLink, executeTool } from '../tools/index.js';
 import type { ExecutionPlan, PlanContext, StepResult } from './types.js';
 import type { TraceLogger } from '../utils/trace-logger.js';
 
@@ -44,6 +50,7 @@ that summarizes what was done.
 5. If there's a URL or link in the results, include it prominently
 6. Use the user's name if available
 7. CRITICAL: If the user asked for specific numbers, amounts, prices, dates, or quantities, you MUST include ALL of them in your response. Never summarize numerical data away.
+8. When mentioning a physical address or location from the results, use the format_maps_link tool and include its "text" field (Label: URL). Avoid markdown; use plain URLs.
 </rules>
 
 Write ONLY the final response message (no JSON, no explanation).`;
@@ -138,22 +145,36 @@ Explain what succeeded and what didn't.
   }
 
   try {
+    // Tools available for composition (just maps for now)
+    const tools = [formatMapsLink.tool];
+
+    // Build tool context for execution
+    const toolContext = {
+      phoneNumber: context.phoneNumber,
+      channel: context.channel,
+      userConfig: context.userConfig,
+    };
+
     // Log LLM request
     logger?.llmRequest('composition', {
       model: 'claude-opus-4-5-20251101',
       maxTokens: 512,
       systemPrompt: promptWithMemory + systemAddition,
       messages: [{ role: 'user', content: 'Compose the final response.' }],
+      tools: tools.map(t => ({ name: t.name })),
     });
 
-    const llmStartTime = Date.now();
-    const response = await anthropic.messages.create({
+    const messages: MessageParam[] = [
+      { role: 'user', content: 'Compose the final response.' },
+    ];
+
+    let llmStartTime = Date.now();
+    let response = await anthropic.messages.create({
       model: 'claude-opus-4-5-20251101',
       max_tokens: 512,
       system: promptWithMemory + systemAddition,
-      messages: [
-        { role: 'user', content: 'Compose the final response.' },
-      ],
+      tools,
+      messages,
     });
 
     // Log LLM response
@@ -166,12 +187,78 @@ Explain what succeeded and what didn't.
       } : undefined,
     }, Date.now() - llmStartTime);
 
+    // Handle tool calls (allow up to 2 iterations for multiple addresses)
+    let toolIterations = 0;
+    const maxToolIterations = 2;
+
+    while (response.stop_reason === 'tool_use' && toolIterations < maxToolIterations) {
+      toolIterations++;
+
+      const toolUseBlocks = response.content.filter(
+        (block): block is ToolUseBlock => block.type === 'tool_use'
+      );
+
+      // Execute all tool calls in parallel
+      const toolResults: ToolResultBlockParam[] = await Promise.all(
+        toolUseBlocks.map(async (toolUse) => {
+          logger?.log('DEBUG', 'Composition tool call', {
+            tool: toolUse.name,
+            input: toolUse.input,
+          });
+
+          const result = await executeTool(
+            toolUse.name,
+            toolUse.input as Record<string, unknown>,
+            toolContext
+          );
+
+          return {
+            type: 'tool_result' as const,
+            tool_use_id: toolUse.id,
+            content: result,
+          };
+        })
+      );
+
+      // Continue conversation with tool results
+      messages.push({ role: 'assistant', content: response.content });
+      messages.push({ role: 'user', content: toolResults });
+
+      logger?.llmRequest(`composition: tool iteration ${toolIterations}`, {
+        model: 'claude-opus-4-5-20251101',
+        maxTokens: 512,
+        systemPrompt: '(same as initial)',
+        messages: [{ role: 'user', content: '(continuing with tool results)' }],
+      });
+
+      llmStartTime = Date.now();
+      response = await anthropic.messages.create({
+        model: 'claude-opus-4-5-20251101',
+        max_tokens: 512,
+        system: promptWithMemory + systemAddition,
+        tools,
+        messages,
+      });
+
+      logger?.llmResponse(`composition: tool iteration ${toolIterations}`, {
+        stopReason: response.stop_reason ?? 'unknown',
+        content: response.content,
+        usage: response.usage ? {
+          inputTokens: response.usage.input_tokens,
+          outputTokens: response.usage.output_tokens,
+        } : undefined,
+      }, Date.now() - llmStartTime);
+    }
+
     const textBlock = response.content.find(
       (block): block is TextBlock => block.type === 'text'
     );
 
     const finalResponse = textBlock?.text || 'I completed your request.';
-    logger?.log('INFO', 'Response composed', { Length: finalResponse.length });
+    logger?.log('INFO', 'Response composed', {
+      Length: finalResponse.length,
+      toolIterations,
+    });
 
     return finalResponse;
   } catch (error) {

@@ -11,6 +11,7 @@ import { getEmails, readEmail, getEmailThread } from './email.js';
 import { extractMemory, listMemories, updateMemory, removeMemory } from './memory.js';
 import { setUserConfig, deleteUserData } from './user-config.js';
 import { createScheduledJob, listScheduledJobs, updateScheduledJob, deleteScheduledJob } from './scheduler.js';
+import { formatMapsLink } from './maps.js';
 
 /**
  * All tool definitions.
@@ -41,6 +42,8 @@ const allTools: ToolDefinition[] = [
   listScheduledJobs,
   updateScheduledJob,
   deleteScheduledJob,
+  // Maps
+  formatMapsLink,
 ];
 
 /**
@@ -65,6 +68,7 @@ export const READ_ONLY_TOOLS: Tool[] = [
   getEmails.tool,
   readEmail.tool,
   getEmailThread.tool,
+  formatMapsLink.tool,
 ];
 
 /**
@@ -108,3 +112,6 @@ export async function executeTool(
 }
 
 export type { ToolDefinition, ToolHandler, ToolContext } from './types.js';
+
+// Re-export maps tool for direct use by response composer
+export { formatMapsLink } from './maps.js';

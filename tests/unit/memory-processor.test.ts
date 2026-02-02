@@ -267,7 +267,8 @@ describe('Memory Processor', () => {
 
       const result = await processUnprocessedMessages();
 
-      expect(result.messagesProcessed).toBe(0);
+      expect(result.messagesProcessed).toBe(1);
+      expect(result.factsExtracted).toBe(0);
     });
 
     it('includes assistant tool summaries', async () => {

@@ -8,6 +8,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   setMockResponses,
   createTextResponse,
+  createToolUseResponse,
   clearMockState,
   getCreateCalls,
   mockCreate,
@@ -127,6 +128,27 @@ describe('synthesizeResponse', () => {
       const calls = getCreateCalls();
       expect(calls[0].system).toContain('Meeting at 2pm with John');
       expect(calls[0].system).toContain('SUCCESS');
+    });
+  });
+
+  describe('tool use flow', () => {
+    it('should execute tools and continue composition', async () => {
+      setMockResponses([
+        createToolUseResponse('format_maps_link', { address: '123 Main St', label: 'Office' }),
+        createTextResponse('Office: https://www.google.com/maps/search/?api=1&query=123%20Main%20St'),
+      ]);
+
+      const context = createBaseContext({
+        stepResults: {
+          step_1: { success: true, output: 'Meet at 123 Main St' },
+        },
+      });
+      const plan = createBasePlan();
+
+      const response = await synthesizeResponse(context, plan);
+
+      expect(response).toContain('Office: https://www.google.com/maps/search/?api=1&query=123%20Main%20St');
+      expect(getCreateCalls().length).toBe(2);
     });
   });
 
@@ -263,10 +285,10 @@ describe('synthesizeResponse', () => {
       await synthesizeResponse(context, plan);
 
       const calls = getCreateCalls();
-      // Output should be truncated to 500 chars
+      // Output should be truncated to 2000 chars
       const outputInPrompt = calls[0].system.match(/Output: (A+)/);
       expect(outputInPrompt).toBeTruthy();
-      expect(outputInPrompt![1].length).toBeLessThanOrEqual(500);
+      expect(outputInPrompt![1].length).toBeLessThanOrEqual(2000);
     });
   });
 

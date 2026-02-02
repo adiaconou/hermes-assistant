@@ -165,7 +165,7 @@ export class SqliteConversationStore implements ConversationStore {
   }): Promise<ConversationMessage[]> {
     const limit = options?.limit ?? 100;
     const perUserLimit = options?.perUserLimit ?? 25;
-    const includeAssistant = options?.includeAssistant ?? true;
+    const includeAssistant = options?.includeAssistant ?? false;
 
     // FIFO across all users, optionally including assistant role, with per-user cap
     const roleFilter = includeAssistant ? '' : `AND role = 'user'`;
