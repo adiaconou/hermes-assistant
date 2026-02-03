@@ -61,11 +61,12 @@ Analyze the user's request and create a plan with sequential steps.
 6. Maximum 10 steps per plan
 7. If dates/times are relative (tomorrow, friday, next week), resolve them to specific dates in the task description
 8. Today is {today}
-9. Data flow: Some agents can fetch data but not display it richly; others can display but not fetch. When a user wants data displayed interactively:
+9. Memory tasks (store/recall/update/delete user facts) should use memory-agent; use general-agent only if no specialized agent fits
+10. Data flow: Some agents can fetch data but not display it richly; others can display but not fetch. When a user wants data displayed interactively:
    - First step: Use an agent that can fetch the data (e.g., calendar-agent, email-agent, general-agent)
    - Second step: Pass the data to ui-agent to render it interactively
    - Example: "Show my calendar in a visual dashboard" → step 1: calendar-agent fetches events, step 2: ui-agent renders them
-10. The ui-agent has NO network access - it can only render data provided to it from previous steps or create standalone tools (calculators, forms, timers)
+11. The ui-agent has NO network access - it can only render data provided to it from previous steps or create standalone tools (calculators, forms, timers)
 </rules>
 
 <output_format>

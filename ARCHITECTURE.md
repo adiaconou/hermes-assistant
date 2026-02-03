@@ -33,6 +33,8 @@ This document describes the system design of Hermes Assistant.
 4. **Tool Execution**: Claude may call tools (calendar, email, scheduler, memory, etc.)
 5. **Response**: Final response sent back via Twilio SMS
 
+**Memory routing note:** The classifier prompt directs memory-intent messages (remember/recall/forget/update, “what do you know/remember about me”) to the async path, and the planner biases to `memory-agent` for those tasks. General-agent remains a fallback if no specialized agent fits.
+
 ## Core Components
 
 ### Express Server (`src/index.ts`)

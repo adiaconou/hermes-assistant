@@ -241,6 +241,24 @@ describe('createPlan', () => {
       expect(calls[0].system).toContain('planning module');
       expect(calls[0].system).toContain('available_agents');
     });
+
+    it('should instruct planner to use memory-agent for memory tasks', async () => {
+      setMockResponses([
+        createTextResponse(JSON.stringify({
+          analysis: 'Memory task',
+          goal: 'Store a fact',
+          steps: [{ id: 'step_1', agent: 'memory-agent', task: 'Remember user likes tea' }],
+        })),
+      ]);
+
+      await createPlan({
+        ...baseContext,
+        userMessage: 'Remember that I like tea',
+      }, mockRegistry);
+
+      const calls = getCreateCalls();
+      expect(calls[0].system).toContain('Memory tasks (store/recall/update/delete user facts)');
+    });
   });
 
   describe('error handling', () => {

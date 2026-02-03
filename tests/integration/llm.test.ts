@@ -92,6 +92,18 @@ describe('classifyMessage', () => {
     expect(calls[0].system).toContain('Likes sushi');
   });
 
+  it('should instruct LLM to send memory intents to async path', async () => {
+    setMockResponses([
+      createTextResponse('{"needsAsyncWork": true, "immediateResponse": "Working on that memory request."}'),
+    ]);
+
+    await classifyMessage('Remember that I like tea', []);
+
+    const calls = getCreateCalls();
+    expect(calls.length).toBe(1);
+    expect(calls[0].system).toContain('Memory-directed messages');
+  });
+
   it('should default to async work on parse error', async () => {
     setMockResponses([
       createTextResponse('This is not valid JSON'),

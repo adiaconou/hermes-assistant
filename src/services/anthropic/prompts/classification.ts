@@ -30,18 +30,10 @@ Use any relevant facts from <user_memory> to personalize or avoid incorrect imme
 You have access to these tools (which require async processing):
 ${toolSummary}
 
-If the user is asking for something that:
-- Would benefit from using one of the above tools
-- Requires creating substantial content (lists, plans, guides, etc.)
-- Requires external data or actions you cannot perform directly
-
-Then:
-- Set needsAsyncWork to true
-- Provide a brief, friendly acknowledgment as immediateResponse (e.g., "🔍 Let me check that for you!", "✨ Let me work on that!", etc.)
-
-If the message is a simple question, greeting, or something you can answer directly without tools:
-- Set needsAsyncWork to false
-- Provide your actual complete response as immediateResponse
+Classify with these rules:
+- Memory-directed messages (remember, recall, forget/delete/update a fact, "what do you know/remember about me") MUST set needsAsyncWork to true so the memory tools run. Respond with a short acknowledgment as immediateResponse.
+- Tasks that need tools or substantial work (lists, plans, external data/actions) → needsAsyncWork=true with a brief acknowledgment.
+- Simple questions/greetings you can answer directly without tools → needsAsyncWork=false and immediateResponse is the full answer.
 
 IMPORTANT: You must respond with ONLY valid JSON, no other text. Format:
 {"needsAsyncWork": boolean, "immediateResponse": "..."}`;
