@@ -5,7 +5,8 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "npm rebuild better-sqlite3 && tsc",
+    "build": "npm rebuild better-sqlite3 && tsc && npm run build:copy-views",
+    "build:copy-views": "node -e \"const fs=require('fs');fs.mkdirSync('dist/admin/views',{recursive:true});fs.cpSync('src/admin/views','dist/admin/views',{recursive:true});\"",
     "start": "node dist/index.js",
     "dev": "concurrently -n server,tunnel -c blue,green \"npm run dev:server\" \"npm run dev:tunnel\"",
     "dev:server": "tsx watch --ignore dist --ignore logs --ignore data --ignore '**/*.log' --ignore '.npm-cache' src/index.ts",
@@ -52,6 +53,7 @@
     "googleapis": "^170.1.0",
     "https-proxy-agent": "^5.0.1",
     "luxon": "^3.5.0",
+    "personal-assistant": "file:",
     "twilio": "^5.11.2"
   },
   "engines": {
