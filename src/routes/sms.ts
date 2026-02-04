@@ -17,7 +17,13 @@ import { sendSms, sendWhatsApp, validateTwilioSignature } from '../twilio.js';
 import { getUserConfigStore, type UserConfig } from '../services/user-config/index.js';
 import { getMemoryStore } from '../services/memory/index.js';
 import { handleWithOrchestrator } from '../orchestrator/index.js';
+import type { MediaAttachment } from '../tools/types.js';
+import type { StoredMediaAttachment } from '../services/conversation/types.js';
+import { uploadMediaAttachments } from '../services/media/index.js';
 import config from '../config.js';
+
+// Re-export for backwards compatibility
+export type { MediaAttachment } from '../tools/types.js';
 
 /**
  * Send a response via the appropriate channel (SMS or WhatsApp).
@@ -46,7 +52,59 @@ type TwilioWebhookBody = {
   From: string;
   To: string;
   Body: string;
+  // Media attachment fields
+  NumMedia?: string;
+  MediaUrl0?: string;
+  MediaContentType0?: string;
+  MediaUrl1?: string;
+  MediaContentType1?: string;
+  MediaUrl2?: string;
+  MediaContentType2?: string;
+  MediaUrl3?: string;
+  MediaContentType3?: string;
+  MediaUrl4?: string;
+  MediaContentType4?: string;
+  MediaUrl5?: string;
+  MediaContentType5?: string;
+  MediaUrl6?: string;
+  MediaContentType6?: string;
+  MediaUrl7?: string;
+  MediaContentType7?: string;
+  MediaUrl8?: string;
+  MediaContentType8?: string;
+  MediaUrl9?: string;
+  MediaContentType9?: string;
 };
+
+/**
+ * Extract media attachments from Twilio webhook body.
+ */
+export function extractMediaAttachments(body: TwilioWebhookBody): MediaAttachment[] {
+  const numMedia = parseInt(body.NumMedia || '0', 10);
+  if (numMedia === 0) {
+    return [];
+  }
+
+  const attachments: MediaAttachment[] = [];
+
+  for (let i = 0; i < numMedia && i < 10; i++) {
+    const urlKey = `MediaUrl${i}` as keyof TwilioWebhookBody;
+    const typeKey = `MediaContentType${i}` as keyof TwilioWebhookBody;
+
+    const url = body[urlKey] as string | undefined;
+    const contentType = body[typeKey] as string | undefined;
+
+    if (url && contentType) {
+      attachments.push({
+        url,
+        contentType,
+        index: i,
+      });
+    }
+  }
+
+  return attachments;
+}
 
 type MessageChannel = 'whatsapp' | 'sms';
 
@@ -64,6 +122,42 @@ function stripPrefix(address: string): string {
 function sanitizePhone(phone: string): string {
   if (phone.length < 4) return '****';
   return '***' + phone.slice(-4);
+}
+
+/**
+ * Generates a descriptive placeholder when user sends media without text.
+ * This ensures the LLM receives non-empty content and understands media is attached.
+ * Exported for testing.
+ */
+export function generateMediaDescription(attachments: MediaAttachment[]): string {
+  const typeDescriptions = attachments.map((a) => {
+    const type = a.contentType.split('/')[0]; // 'image', 'application', 'audio', etc.
+    const subtype = a.contentType.split('/')[1]; // 'jpeg', 'pdf', etc.
+
+    if (type === 'image') return 'image';
+    if (type === 'audio') return 'audio file';
+    if (type === 'video') return 'video';
+    if (subtype === 'pdf') return 'PDF document';
+    if (a.contentType.includes('word') || a.contentType.includes('document')) return 'document';
+    return 'file';
+  });
+
+  // Deduplicate and count
+  const counts = new Map<string, number>();
+  for (const desc of typeDescriptions) {
+    counts.set(desc, (counts.get(desc) || 0) + 1);
+  }
+
+  const parts: string[] = [];
+  for (const [desc, count] of counts) {
+    if (count === 1) {
+      parts.push(`an ${desc}`);
+    } else {
+      parts.push(`${count} ${desc}s`);
+    }
+  }
+
+  return `[User sent ${parts.join(' and ')}]`;
 }
 
 /** Escapes special XML characters for safe TwiML embedding. */
@@ -99,14 +193,17 @@ export function enforceSmsLength(message: string, channel: MessageChannel): stri
  * Called when classification determines async work is needed.
  *
  * Uses the orchestrator for async work (legacy generateResponse removed).
+ * If media attachments are present, uploads them to Google Drive first.
  */
 async function processAsyncWork(
   sender: string,
   message: string,
   channel: MessageChannel,
-  userConfig: UserConfig | null
+  userConfig: UserConfig | null,
+  mediaAttachments?: MediaAttachment[]
 ): Promise<void> {
   const startTime = Date.now();
+  let storedMedia: StoredMediaAttachment[] = [];
 
   try {
     console.log(JSON.stringify({
@@ -114,11 +211,27 @@ async function processAsyncWork(
       message: 'Starting async work',
       channel,
       useOrchestrator: true,
+      numMedia: mediaAttachments?.length || 0,
       timestamp: new Date().toISOString(),
     }));
 
+    // Upload media attachments to Google Drive if present
+    if (mediaAttachments && mediaAttachments.length > 0) {
+      storedMedia = await uploadMediaAttachments(sender, mediaAttachments);
+
+      if (storedMedia.length > 0) {
+        console.log(JSON.stringify({
+          level: 'info',
+          message: 'Media uploaded to Drive',
+          count: storedMedia.length,
+          fileIds: storedMedia.map(m => m.driveFileId),
+          timestamp: new Date().toISOString(),
+        }));
+      }
+    }
+
     // Always use orchestrator handler
-    const responseText = await handleWithOrchestrator(message, sender, channel, userConfig);
+    const responseText = await handleWithOrchestrator(message, sender, channel, userConfig, mediaAttachments, storedMedia);
 
     console.log(JSON.stringify({
       level: 'info',
@@ -188,11 +301,18 @@ export async function handleSmsWebhook(req: Request, res: Response): Promise<voi
     return;
   }
 
-  const { From, Body } = req.body as TwilioWebhookBody;
+  const webhookBody = req.body as TwilioWebhookBody;
+  const { From, Body } = webhookBody;
 
   const channel = detectChannel(From || '');
   const sender = stripPrefix(From || '');
-  const message = Body || '';
+
+  // Extract media attachments
+  const mediaAttachments = extractMediaAttachments(webhookBody);
+
+  // If message body is empty but has media, create a descriptive placeholder
+  // This prevents "empty content" errors from the LLM API
+  const message = Body || (mediaAttachments.length > 0 ? generateMediaDescription(mediaAttachments) : '');
 
   console.log(
     JSON.stringify({
@@ -201,6 +321,8 @@ export async function handleSmsWebhook(req: Request, res: Response): Promise<voi
       channel,
       from: sanitizePhone(sender),
       bodyLength: message.length,
+      numMedia: mediaAttachments.length,
+      mediaTypes: mediaAttachments.map(m => m.contentType),
       timestamp: new Date().toISOString(),
     })
   );
@@ -249,7 +371,7 @@ export async function handleSmsWebhook(req: Request, res: Response): Promise<voi
 
     // If async work needed, spawn background processing (fire and forget)
     if (classification.needsAsyncWork) {
-      processAsyncWork(sender, message, channel, userConfig).catch((error) => {
+      processAsyncWork(sender, message, channel, userConfig, mediaAttachments).catch((error) => {
         console.error(JSON.stringify({
           level: 'error',
           message: 'Unhandled error in async work',
@@ -281,7 +403,7 @@ export async function handleSmsWebhook(req: Request, res: Response): Promise<voi
     // Try to process with full pipeline even after classification failure
     const configStore = getUserConfigStore();
     configStore.get(sender).then((userConfig) => {
-      processAsyncWork(sender, message, channel, userConfig).catch((asyncError) => {
+      processAsyncWork(sender, message, channel, userConfig, mediaAttachments).catch((asyncError) => {
         console.error(JSON.stringify({
           level: 'error',
           message: 'Async fallback processing failed',

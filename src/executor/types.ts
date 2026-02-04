@@ -9,6 +9,12 @@ import type { ToolUseBlock } from '@anthropic-ai/sdk/resources/messages';
 import type { UserConfig } from '../services/user-config/types.js';
 import type { UserFact } from '../services/memory/types.js';
 import type { TraceLogger } from '../utils/trace-logger.js';
+import type { MediaAttachment } from '../tools/types.js';
+import type { StoredMediaAttachment } from '../services/conversation/types.js';
+
+// Re-export for convenience
+export type { MediaAttachment } from '../tools/types.js';
+export type { StoredMediaAttachment } from '../services/conversation/types.js';
 
 // ============================================================================
 // Step Result Types
@@ -99,6 +105,12 @@ export interface AgentExecutionContext {
 
   /** Results from previous steps (for context passing) */
   previousStepResults: Record<string, StepResult>;
+
+  /** Media attachments from inbound MMS/WhatsApp message */
+  mediaAttachments?: MediaAttachment[];
+
+  /** Media files uploaded to Google Drive (persistent storage) */
+  storedMedia?: StoredMediaAttachment[];
 
   /** Trace logger for debugging (optional, only present in development) */
   logger?: TraceLogger;

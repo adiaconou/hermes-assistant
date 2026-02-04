@@ -103,6 +103,8 @@ export async function executeStep(
     userConfig: context.userConfig,
     userFacts: context.userFacts,
     previousStepResults: context.stepResults,
+    mediaAttachments: context.mediaAttachments,
+    storedMedia: context.storedMedia,
     logger,
   };
 

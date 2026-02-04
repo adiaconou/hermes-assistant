@@ -10,7 +10,7 @@
  * This is the function that message handlers call to process complex requests.
  */
 
-import type { ConversationMessage } from '../services/conversation/types.js';
+import type { ConversationMessage, StoredMediaAttachment } from '../services/conversation/types.js';
 import type { UserFact } from '../services/memory/types.js';
 import type { UserConfig } from '../services/user-config/types.js';
 import type {
@@ -18,6 +18,7 @@ import type {
   PlanContext,
   OrchestratorResult,
   StepResult,
+  MediaAttachment,
 } from './types.js';
 import { ORCHESTRATOR_LIMITS } from './types.js';
 import { createAgentRegistry } from '../executor/registry.js';
@@ -87,7 +88,9 @@ export async function orchestrate(
   userConfig: UserConfig | null,
   phoneNumber: string,
   channel: 'sms' | 'whatsapp',
-  logger: TraceLogger
+  logger: TraceLogger,
+  mediaAttachments?: MediaAttachment[],
+  storedMedia?: StoredMediaAttachment[]
 ): Promise<OrchestratorResult> {
   const startTime = Date.now();
   const registry = createAgentRegistry();
@@ -110,6 +113,8 @@ export async function orchestrate(
     userConfig,
     phoneNumber,
     channel,
+    mediaAttachments,
+    storedMedia,
     stepResults: {},
     errors: [],
   };

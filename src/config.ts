@@ -41,8 +41,8 @@ const config = {
     sharedDriveId: process.env.GOOGLE_SHARED_DRIVE_ID,
     /** Gemini API key for vision/OCR */
     geminiApiKey: process.env.GEMINI_API_KEY,
-    /** Gemini model to use (default: gemini-2.0-flash) */
-    geminiModel: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+    /** Gemini model to use (default: gemini-2.5-flash) */
+    geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
   },
 
   /** Credential storage configuration */

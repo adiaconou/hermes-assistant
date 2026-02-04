@@ -98,6 +98,8 @@ export async function executeWithTools(
     phoneNumber: context.phoneNumber,
     channel: context.channel,
     userConfig: context.userConfig,
+    mediaAttachments: context.mediaAttachments,
+    storedMedia: context.storedMedia,
   };
 
   // Build initial messages

@@ -6,6 +6,20 @@
  */
 
 /**
+ * Media attachment stored with a message.
+ */
+export interface StoredMediaAttachment {
+  /** Google Drive file ID */
+  driveFileId: string;
+  /** Original filename */
+  filename: string;
+  /** MIME type */
+  mimeType: string;
+  /** Google Drive web view link */
+  webViewLink?: string;
+}
+
+/**
  * A single message in a conversation.
  */
 export interface ConversationMessage {
@@ -32,6 +46,9 @@ export interface ConversationMessage {
 
   /** Unix timestamp (milliseconds) when memory was processed */
   memoryProcessedAt?: number;
+
+  /** Media attachments uploaded to Drive */
+  mediaAttachments?: StoredMediaAttachment[];
 }
 
 /**
@@ -66,7 +83,8 @@ export interface ConversationStore {
     phoneNumber: string,
     role: 'user' | 'assistant',
     content: string,
-    channel?: 'sms' | 'whatsapp'
+    channel?: 'sms' | 'whatsapp',
+    mediaAttachments?: StoredMediaAttachment[]
   ): Promise<ConversationMessage>;
 
   /**
@@ -96,4 +114,16 @@ export interface ConversationStore {
    * @param messageIds Array of message IDs to mark
    */
   markAsProcessed(messageIds: string[]): Promise<void>;
+
+  /**
+   * Get recent media attachments from a user's conversation.
+   * @param phoneNumber User's phone number
+   * @param limit Maximum number of attachments to return (default: 10)
+   * @returns Array of media attachments with message context
+   */
+  getRecentMedia(phoneNumber: string, limit?: number): Promise<Array<{
+    attachment: StoredMediaAttachment;
+    messageId: string;
+    createdAt: number;
+  }>>;
 }

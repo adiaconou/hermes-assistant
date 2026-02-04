@@ -12,6 +12,11 @@ import { extractMemory, listMemories, updateMemory, removeMemory } from './memor
 import { setUserConfig, deleteUserData } from './user-config.js';
 import { createScheduledJob, listScheduledJobs, updateScheduledJob, deleteScheduledJob } from './scheduler.js';
 import { formatMapsLink } from './maps.js';
+// Google Workspace tools
+import { uploadToDrive, listDriveFiles, createDriveFolder, readDriveFile, searchDrive, getHermesFolder } from './drive.js';
+import { createSpreadsheetTool, readSpreadsheet, writeSpreadsheet, appendToSpreadsheet, findSpreadsheetTool } from './sheets.js';
+import { createDocumentTool, readDocument, appendToDocument, findDocumentTool } from './docs.js';
+import { analyzeImageTool } from './vision.js';
 
 /**
  * All tool definitions.
@@ -44,6 +49,26 @@ const allTools: ToolDefinition[] = [
   deleteScheduledJob,
   // Maps
   formatMapsLink,
+  // Drive
+  uploadToDrive,
+  listDriveFiles,
+  createDriveFolder,
+  readDriveFile,
+  searchDrive,
+  getHermesFolder,
+  // Sheets
+  createSpreadsheetTool,
+  readSpreadsheet,
+  writeSpreadsheet,
+  appendToSpreadsheet,
+  findSpreadsheetTool,
+  // Docs
+  createDocumentTool,
+  readDocument,
+  appendToDocument,
+  findDocumentTool,
+  // Vision
+  analyzeImageTool,
 ];
 
 /**

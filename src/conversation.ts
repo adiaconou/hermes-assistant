@@ -6,6 +6,7 @@
  */
 
 import { getConversationStore } from './services/conversation/index.js';
+import type { StoredMediaAttachment } from './services/conversation/types.js';
 
 export type Message = {
   role: 'user' | 'assistant';
@@ -36,8 +37,9 @@ export async function addMessage(
   phoneNumber: string,
   role: 'user' | 'assistant',
   content: string,
-  channel: 'sms' | 'whatsapp' = 'sms'
+  channel: 'sms' | 'whatsapp' = 'sms',
+  mediaAttachments?: StoredMediaAttachment[]
 ): Promise<void> {
   const store = getConversationStore();
-  await store.addMessage(phoneNumber, role, content, channel);
+  await store.addMessage(phoneNumber, role, content, channel, mediaAttachments);
 }

@@ -5,7 +5,7 @@
  * tracks, and dynamically adjusts execution of complex user requests.
  */
 
-import type { ConversationMessage } from '../services/conversation/types.js';
+import type { ConversationMessage, StoredMediaAttachment } from '../services/conversation/types.js';
 import type { UserFact } from '../services/memory/types.js';
 import type { UserConfig } from '../services/user-config/types.js';
 
@@ -16,10 +16,11 @@ export type {
   AgentRegistry,
   AgentExecutionContext,
   AgentExecutor,
+  MediaAttachment,
 } from '../executor/types.js';
 
-// Import StepResult for use in this file
-import type { StepResult } from '../executor/types.js';
+// Import types for use in this file
+import type { StepResult, MediaAttachment } from '../executor/types.js';
 
 // ============================================================================
 // Step Types
@@ -88,6 +89,12 @@ export interface PlanContext {
 
   /** Message channel */
   channel: 'sms' | 'whatsapp';
+
+  /** Media attachments from inbound MMS/WhatsApp message */
+  mediaAttachments?: MediaAttachment[];
+
+  /** Media files uploaded to Google Drive (persistent storage) */
+  storedMedia?: StoredMediaAttachment[];
 
   /** Results from completed steps, keyed by step ID */
   stepResults: Record<string, StepResult>;

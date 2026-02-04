@@ -10,8 +10,9 @@
  * - Keeps the same signature previously used by legacy handlers
  */
 
-import type { ConversationMessage } from '../services/conversation/types.js';
+import type { ConversationMessage, StoredMediaAttachment } from '../services/conversation/types.js';
 import type { UserConfig } from '../services/user-config/types.js';
+import type { MediaAttachment } from './types.js';
 import { getMemoryStore } from '../services/memory/index.js';
 import { getConversationStore } from '../services/conversation/index.js';
 import { orchestrate } from './orchestrate.js';
@@ -31,7 +32,9 @@ export async function handleWithOrchestrator(
   userMessage: string,
   phoneNumber: string,
   channel: 'sms' | 'whatsapp',
-  userConfig: UserConfig | null
+  userConfig: UserConfig | null,
+  mediaAttachments?: MediaAttachment[],
+  storedMedia?: StoredMediaAttachment[]
 ): Promise<string> {
   // Create trace logger for this request
   const logger = createTraceLogger(phoneNumber);
@@ -73,7 +76,9 @@ export async function handleWithOrchestrator(
       userConfig,
       phoneNumber,
       channel,
-      logger
+      logger,
+      mediaAttachments,
+      storedMedia
     );
 
     if (result.success) {

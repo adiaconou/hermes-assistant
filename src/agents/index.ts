@@ -44,12 +44,18 @@ export {
   executor as executeGeneralAgent,
 } from './general/index.js';
 
+export {
+  capability as driveAgentCapability,
+  executor as executeDriveAgent,
+} from './drive/index.js';
+
 import type { AgentCapability, AgentExecutor } from '../executor/types.js';
 import { capability as calendarCapability, executor as calendarExecutor } from './calendar/index.js';
 import { capability as schedulerCapability, executor as schedulerExecutor } from './scheduler/index.js';
 import { capability as emailCapability, executor as emailExecutor } from './email/index.js';
 import { capability as memoryCapability, executor as memoryExecutor } from './memory/index.js';
 import { capability as uiCapability, executor as uiExecutor } from './ui/index.js';
+import { capability as driveCapability, executor as driveExecutor } from './drive/index.js';
 import { capability as generalCapability, executor as generalExecutor } from './general/index.js';
 
 export const AGENTS: Array<{ capability: AgentCapability; executor: AgentExecutor }> = [
@@ -58,5 +64,6 @@ export const AGENTS: Array<{ capability: AgentCapability; executor: AgentExecuto
   { capability: emailCapability, executor: emailExecutor },
   { capability: memoryCapability, executor: memoryExecutor },
   { capability: uiCapability, executor: uiExecutor },
+  { capability: driveCapability, executor: driveExecutor },
   { capability: generalCapability, executor: generalExecutor },
 ];

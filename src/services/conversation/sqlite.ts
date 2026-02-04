@@ -9,7 +9,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { randomUUID } from 'crypto';
-import type { ConversationStore, ConversationMessage, GetHistoryOptions } from './types.js';
+import type { ConversationStore, ConversationMessage, GetHistoryOptions, StoredMediaAttachment } from './types.js';
 
 /**
  * SQLite implementation of conversation store.
@@ -38,7 +38,8 @@ export class SqliteConversationStore implements ConversationStore {
         channel TEXT NOT NULL DEFAULT 'sms',
         created_at INTEGER NOT NULL,
         memory_processed INTEGER NOT NULL DEFAULT 0,
-        memory_processed_at INTEGER
+        memory_processed_at INTEGER,
+        media_attachments TEXT
       );
 
       CREATE INDEX IF NOT EXISTS idx_messages_phone
@@ -48,24 +49,35 @@ export class SqliteConversationStore implements ConversationStore {
         ON conversation_messages(memory_processed, created_at)
         WHERE memory_processed = 0;
     `);
+
+    // Migration: add media_attachments column if it doesn't exist
+    const columns = this.db.prepare(`PRAGMA table_info(conversation_messages)`).all() as Array<{ name: string }>;
+    const hasMediaColumn = columns.some((col) => col.name === 'media_attachments');
+    if (!hasMediaColumn) {
+      this.db.exec(`ALTER TABLE conversation_messages ADD COLUMN media_attachments TEXT`);
+    }
   }
 
   async addMessage(
     phoneNumber: string,
     role: 'user' | 'assistant',
     content: string,
-    channel: 'sms' | 'whatsapp' = 'sms'
+    channel: 'sms' | 'whatsapp' = 'sms',
+    mediaAttachments?: StoredMediaAttachment[]
   ): Promise<ConversationMessage> {
     const id = randomUUID();
     const createdAt = Date.now();
+    const mediaJson = mediaAttachments && mediaAttachments.length > 0
+      ? JSON.stringify(mediaAttachments)
+      : null;
 
     this.db
       .prepare(
         `INSERT INTO conversation_messages
-         (id, phone_number, role, content, channel, created_at, memory_processed)
-         VALUES (?, ?, ?, ?, ?, ?, 0)`
+         (id, phone_number, role, content, channel, created_at, memory_processed, media_attachments)
+         VALUES (?, ?, ?, ?, ?, ?, 0, ?)`
       )
-      .run(id, phoneNumber, role, content, channel, createdAt);
+      .run(id, phoneNumber, role, content, channel, createdAt, mediaJson);
 
     return {
       id,
@@ -75,6 +87,7 @@ export class SqliteConversationStore implements ConversationStore {
       channel,
       createdAt,
       memoryProcessed: false,
+      mediaAttachments,
     };
   }
 
@@ -123,7 +136,7 @@ export class SqliteConversationStore implements ConversationStore {
 
     const query = `
       SELECT id, phone_number, role, content, channel, created_at,
-             memory_processed, memory_processed_at
+             memory_processed, memory_processed_at, media_attachments
       FROM conversation_messages
       ${whereClause}
       ${orderBy}
@@ -141,6 +154,7 @@ export class SqliteConversationStore implements ConversationStore {
       created_at: number;
       memory_processed: number;
       memory_processed_at: number | null;
+      media_attachments: string | null;
     }>;
 
     // Reverse to chronological order (oldest → newest) for downstream consumers
@@ -155,6 +169,9 @@ export class SqliteConversationStore implements ConversationStore {
       createdAt: row.created_at,
       memoryProcessed: row.memory_processed === 1,
       memoryProcessedAt: row.memory_processed_at ?? undefined,
+      mediaAttachments: row.media_attachments
+        ? JSON.parse(row.media_attachments) as StoredMediaAttachment[]
+        : undefined,
     }));
   }
 
@@ -172,7 +189,7 @@ export class SqliteConversationStore implements ConversationStore {
     const rows = this.db.prepare(
       `
       SELECT id, phone_number, role, content, channel, created_at,
-             memory_processed, memory_processed_at
+             memory_processed, memory_processed_at, media_attachments
       FROM conversation_messages
       WHERE memory_processed = 0 ${roleFilter}
       ORDER BY created_at ASC
@@ -186,6 +203,7 @@ export class SqliteConversationStore implements ConversationStore {
       created_at: number;
       memory_processed: number;
       memory_processed_at: number | null;
+      media_attachments: string | null;
     }>;
 
     // Apply per-user limit in-memory to maintain FIFO ordering
@@ -208,6 +226,9 @@ export class SqliteConversationStore implements ConversationStore {
       createdAt: row.created_at,
       memoryProcessed: row.memory_processed === 1,
       memoryProcessedAt: row.memory_processed_at ?? undefined,
+      mediaAttachments: row.media_attachments
+        ? JSON.parse(row.media_attachments) as StoredMediaAttachment[]
+        : undefined,
     }));
   }
 
@@ -224,6 +245,52 @@ export class SqliteConversationStore implements ConversationStore {
          WHERE id IN (${placeholders})`
       )
       .run(now, ...messageIds);
+  }
+
+  async getRecentMedia(
+    phoneNumber: string,
+    limit: number = 10
+  ): Promise<Array<{
+    attachment: StoredMediaAttachment;
+    messageId: string;
+    createdAt: number;
+  }>> {
+    // Get recent messages with media attachments
+    const rows = this.db.prepare(
+      `
+      SELECT id, created_at, media_attachments
+      FROM conversation_messages
+      WHERE phone_number = ? AND media_attachments IS NOT NULL
+      ORDER BY created_at DESC
+      LIMIT ?
+      `
+    ).all(phoneNumber, limit * 2) as Array<{
+      id: string;
+      created_at: number;
+      media_attachments: string;
+    }>;
+
+    // Flatten attachments from messages
+    const results: Array<{
+      attachment: StoredMediaAttachment;
+      messageId: string;
+      createdAt: number;
+    }> = [];
+
+    for (const row of rows) {
+      const attachments = JSON.parse(row.media_attachments) as StoredMediaAttachment[];
+      for (const attachment of attachments) {
+        results.push({
+          attachment,
+          messageId: row.id,
+          createdAt: row.created_at,
+        });
+        if (results.length >= limit) break;
+      }
+      if (results.length >= limit) break;
+    }
+
+    return results;
   }
 
   /** Close the database connection. */

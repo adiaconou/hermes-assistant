@@ -20,11 +20,20 @@ import { addMessage } from '../conversation.js';
 
 const router = Router();
 
-// Google API scopes - Calendar and Gmail
+// Google API scopes - Calendar, Gmail, and Google Workspace
 const SCOPES = [
+  // Calendar
   'https://www.googleapis.com/auth/calendar.readonly',
   'https://www.googleapis.com/auth/calendar.events',
+  // Gmail
   'https://www.googleapis.com/auth/gmail.readonly',
+  // Drive - discover existing files (read-only) + create/modify app-owned files
+  'https://www.googleapis.com/auth/drive.readonly',
+  'https://www.googleapis.com/auth/drive.file',
+  // Sheets - read/write
+  'https://www.googleapis.com/auth/spreadsheets',
+  // Docs - read/write
+  'https://www.googleapis.com/auth/documents',
 ];
 
 // State encryption (same key as credentials for simplicity)
@@ -162,7 +171,7 @@ async function continueAfterAuth(decryptedState: DecryptedState): Promise<void> 
   const { phone, channel } = decryptedState;
 
   // Notify user to continue; orchestration will pick up on next inbound message
-  const response = 'All set! You can ask about your calendar or email now.';
+  const response = 'All set! You can ask about your calendar, email, or Google Drive now.';
   await addMessage(phone, 'assistant', response);
   if (channel === 'whatsapp') {
     await sendWhatsApp(phone, response);
