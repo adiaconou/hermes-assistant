@@ -1,8 +1,31 @@
 /**
- * @fileoverview SQLite memory store.
+ * @fileoverview SQLite memory store for user facts.
  *
- * Stores user facts (semantic memory) in SQLite.
- * Facts are atomic sentences like "Likes black coffee" or "Has a dog named Max".
+ * Stores user facts (semantic memory) in SQLite. Facts are atomic sentences
+ * like "Likes black coffee" or "Has a dog named Max".
+ *
+ * ## Schema
+ *
+ * | Column | Type | Description |
+ * |--------|------|-------------|
+ * | id | TEXT | UUID primary key |
+ * | phone_number | TEXT | User identifier |
+ * | fact | TEXT | The fact text (atomic, third person) |
+ * | category | TEXT | Category (preferences, health, relationships, etc.) |
+ * | confidence | REAL | Confidence score 0.3-1.0 (see ranking.ts for meaning) |
+ * | source_type | TEXT | 'explicit' (user asked) or 'inferred' (extracted) |
+ * | evidence | TEXT | Supporting quote/context (max 120 chars) |
+ * | last_reinforced_at | INTEGER | Timestamp when fact was last confirmed |
+ * | extracted_at | INTEGER | Timestamp when fact was first extracted |
+ *
+ * ## Confidence and Cleanup
+ *
+ * - Facts with confidence < 0.6 are "observations" (tentative)
+ * - Observations older than 180 days are deleted by `deleteStaleObservations()`
+ * - Established facts (≥ 0.6) are never automatically deleted
+ *
+ * @see ./ranking.ts for confidence thresholds and selection logic
+ * @see ./processor.ts for how facts are extracted and stored
  */
 
 import Database from 'better-sqlite3';
@@ -251,8 +274,19 @@ export class SqliteMemoryStore implements MemoryStore {
       .run(id);
   }
 
+  /**
+   * Delete stale observations (low-confidence facts older than 180 days).
+   *
+   * This cleanup prevents the database from accumulating tentative facts
+   * that were never reinforced. Established facts (confidence ≥ 0.6) are
+   * never deleted by this method.
+   *
+   * Should be called periodically (e.g., daily via scheduler).
+   *
+   * @returns Number of facts deleted
+   */
   async deleteStaleObservations(): Promise<number> {
-    const cutoff = Date.now() - 180 * 24 * 60 * 60 * 1000;
+    const cutoff = Date.now() - 180 * 24 * 60 * 60 * 1000; // 180 days
     const result = this.db
       .prepare(
         `DELETE FROM user_facts

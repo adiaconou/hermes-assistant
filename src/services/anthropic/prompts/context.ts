@@ -1,13 +1,34 @@
 /**
  * Context builders for user memory and time.
+ *
+ * This module builds XML context blocks that get injected into agent prompts,
+ * including user profile information and stored memory facts.
+ *
+ * ## Fact Injection Filtering
+ *
+ * By default, all stored facts are eligible for injection. The `MEMORY_INJECTION_THRESHOLD`
+ * config controls the minimum confidence level for a fact to be injected:
+ *
+ * - `0.0` (default): All facts are injected (observations + established facts)
+ * - `0.6`: Only established facts are injected (observations hidden from agents)
+ *
+ * Facts below the threshold remain in the database for:
+ * - Background processor reinforcement (may increase confidence over time)
+ * - Display in admin UI for manual review
+ * - Eventual promotion to established facts if confidence increases
+ *
+ * @see ../../../config.ts for MEMORY_INJECTION_THRESHOLD configuration
+ * @see ../../memory/ranking.ts for confidence thresholds and selection logic
  */
 
 import type { UserConfig } from '../../user-config/index.js';
 import type { UserFact } from '../../memory/types.js';
+import config from '../../../config.js';
 import { getMemoryStore } from '../../memory/index.js';
 import {
   DEFAULT_FACT_CHAR_CAP,
   selectFactsWithCharCap,
+  clampConfidence,
 } from '../../memory/ranking.js';
 
 /**
@@ -37,6 +58,14 @@ export function buildTimeContext(userConfig: UserConfig | null): string {
 
 /**
  * Build a <facts> XML block from stored user facts.
+ *
+ * Filters facts by the configured injection threshold before selection.
+ * Facts below the threshold are excluded from agent prompts but remain
+ * in the database for potential reinforcement.
+ *
+ * @param facts - All facts for the user
+ * @param options - Optional limits for facts count and character budget
+ * @returns XML string with facts, or empty string if no facts pass the filter
  */
 export function buildFactsXml(
   facts: UserFact[],
@@ -44,6 +73,12 @@ export function buildFactsXml(
 ): string {
   const maxFacts = options?.maxFacts ?? Number.POSITIVE_INFINITY;
   const maxChars = options?.maxChars ?? DEFAULT_FACT_CHAR_CAP;
+  const injectionThreshold = config.memory.injectionThreshold;
+
+  // Filter facts by injection threshold (0 = include all)
+  const eligibleFacts = injectionThreshold > 0
+    ? facts.filter((fact) => clampConfidence(fact.confidence) >= injectionThreshold)
+    : facts;
 
   const renderFact = (fact: UserFact) => {
     const normalized = fact.fact.trim().replace(/\s+/g, ' ');
@@ -51,7 +86,7 @@ export function buildFactsXml(
     return `${normalized} (learned ${learned})`;
   };
 
-  const { selected } = selectFactsWithCharCap(facts, renderFact, { maxChars });
+  const { selected } = selectFactsWithCharCap(eligibleFacts, renderFact, { maxChars });
   const limited = selected.slice(0, maxFacts);
 
   if (limited.length === 0) {
@@ -80,16 +115,33 @@ export function buildUserMemoryXml(
 
 /**
  * Build memory XML block from stored facts.
+ *
+ * Loads facts from the memory store and filters by the configured
+ * injection threshold before building the XML block.
+ *
+ * @param phoneNumber - User's phone number
+ * @returns XML string with facts, or empty string if no facts pass the filter
  */
 export async function buildMemoryXml(phoneNumber: string): Promise<string> {
   const memoryStore = getMemoryStore();
-  const facts = await memoryStore.getFacts(phoneNumber);
+  const allFacts = await memoryStore.getFacts(phoneNumber);
+  const injectionThreshold = config.memory.injectionThreshold;
+
+  // Filter facts by injection threshold (0 = include all)
+  const facts = injectionThreshold > 0
+    ? allFacts.filter((fact) => clampConfidence(fact.confidence) >= injectionThreshold)
+    : allFacts;
+
+  const filteredCount = allFacts.length - facts.length;
 
   console.log(JSON.stringify({
     level: 'info',
     message: 'Loading memory for injection',
     phone: phoneNumber.slice(-4).padStart(phoneNumber.length, '*'),
-    factCount: facts.length,
+    totalFacts: allFacts.length,
+    eligibleFacts: facts.length,
+    filteredByThreshold: filteredCount,
+    injectionThreshold,
     timestamp: new Date().toISOString(),
   }));
 
@@ -98,6 +150,7 @@ export async function buildMemoryXml(phoneNumber: string): Promise<string> {
       level: 'info',
       message: 'No facts to inject',
       phone: phoneNumber.slice(-4).padStart(phoneNumber.length, '*'),
+      reason: allFacts.length > 0 ? 'all facts below injection threshold' : 'no facts stored',
       timestamp: new Date().toISOString(),
     }));
     return ''; // No memory to inject
@@ -117,6 +170,7 @@ export async function buildMemoryXml(phoneNumber: string): Promise<string> {
       id: f.id,
       fact: f.fact,
       category: f.category || 'uncategorized',
+      confidence: f.confidence,
     })),
     timestamp: new Date().toISOString(),
   }));

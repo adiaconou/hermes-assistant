@@ -21,6 +21,28 @@
  * - Respects user intent: Users control what gets remembered explicitly
  * - Async processing catches facts that slip through without blocking responses
  * - Keeps conversation agents focused on their primary tasks
+ *
+ * ## Observations vs Established Facts in Extraction
+ *
+ * The extraction prompt presents existing knowledge in two categories:
+ *
+ * - `<established_facts>`: High-confidence facts (≥0.6) - reliable, long-term
+ * - `<recent_observations>`: Low-confidence facts (<0.6) - tentative, recent
+ *
+ * This separation helps the LLM:
+ * 1. Avoid duplicating existing facts
+ * 2. Recognize when to reinforce an observation (bump confidence)
+ * 3. Distinguish between confirmed patterns and single occurrences
+ *
+ * ## Confidence Assignment Guidelines (in prompt)
+ *
+ * The prompt instructs the LLM to assign confidence based on:
+ * - 0.3-0.5: Single observations, weak signals
+ * - 0.6-1.0: Patterns with multiple data points, explicit statements
+ * - 1.0: User explicitly asked to remember something
+ *
+ * @see ./ranking.ts for confidence thresholds and their meanings
+ * @see ./processor.ts for how extracted facts are stored
  */
 
 import type { UserFact } from './types.js';

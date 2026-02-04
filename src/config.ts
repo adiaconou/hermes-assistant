@@ -55,6 +55,13 @@ const config = {
     /** Path to SQLite database file - uses /app/data in production for Railway volume mount */
     sqlitePath: process.env.MEMORY_SQLITE_PATH ||
       (process.env.NODE_ENV === 'production' ? '/app/data/memory.db' : './data/memory.db'),
+    /**
+     * Minimum confidence threshold for injecting facts into agent prompts.
+     * Facts below this threshold are kept in the database but not shown to agents.
+     * Default 0.0 means all facts are injected (current behavior).
+     * Set to 0.6 to only inject established facts (hide observations).
+     */
+    injectionThreshold: parseFloat(process.env.MEMORY_INJECTION_THRESHOLD || '0'),
   },
 
   /** Conversation storage configuration */
