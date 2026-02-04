@@ -43,6 +43,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
+    "@google/generative-ai": "^0.21.0",
     "@types/luxon": "^3.4.2",
     "better-sqlite3": "^12.6.2",
     "chrono-node": "^2.9.0",
