@@ -37,6 +37,12 @@ const config = {
     clientId: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
     redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/auth/google/callback',
+    /** Optional: Shared Drive ID for Hermes folder (defaults to My Drive) */
+    sharedDriveId: process.env.GOOGLE_SHARED_DRIVE_ID,
+    /** Gemini API key for vision/OCR */
+    geminiApiKey: process.env.GEMINI_API_KEY,
+    /** Gemini model to use (default: gemini-2.0-flash) */
+    geminiModel: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
   },
 
   /** Credential storage configuration */
@@ -58,10 +64,9 @@ const config = {
     /**
      * Minimum confidence threshold for injecting facts into agent prompts.
      * Facts below this threshold are kept in the database but not shown to agents.
-     * Default 0.0 means all facts are injected (current behavior).
-     * Set to 0.6 to only inject established facts (hide observations).
+     * Default 0.5 means only facts with moderate confidence or higher are injected.
      */
-    injectionThreshold: parseFloat(process.env.MEMORY_INJECTION_THRESHOLD || '0'),
+    injectionThreshold: parseFloat(process.env.MEMORY_INJECTION_THRESHOLD || '0.5'),
   },
 
   /** Conversation storage configuration */
