@@ -56,7 +56,13 @@ Entry point that configures:
 | Service | Purpose |
 |---------|---------|
 | `scheduler/` | Cron jobs and one-time reminders |
-| `google/` | Calendar and Gmail API clients |
+| `google/calendar.ts` | Google Calendar API client |
+| `google/gmail.ts` | Gmail API client |
+| `google/drive.ts` | Google Drive API client |
+| `google/sheets.ts` | Google Sheets API client |
+| `google/docs.ts` | Google Docs API client |
+| `google/vision.ts` | Gemini Vision API for image analysis |
+| `twilio/media.ts` | Download media from Twilio MMS/WhatsApp |
 | `memory/` | Persistent facts about the user |
 | `conversation/` | Message history per phone number |
 | `credentials/` | OAuth token storage (encrypted) |
@@ -250,16 +256,66 @@ All persistent data uses SQLite:
 
 ### Twilio
 
-- Inbound: POST webhook receives SMS
-- Outbound: REST API sends SMS responses
+- Inbound: POST webhook receives SMS and WhatsApp messages
+- Media: Download attachments (images, PDFs, documents) from MMS/WhatsApp
+- Outbound: REST API sends SMS/WhatsApp responses
 
 ### Google APIs
 
 - **Calendar**: Create, read, update, delete events
 - **Gmail**: Read and search emails
+- **Drive**: File storage in user's "Hermes" folder
+- **Sheets**: Spreadsheet creation and management (expense tracking, contacts, etc.)
+- **Docs**: Document creation and management (meeting notes, drafts, etc.)
 - OAuth 2.0 with refresh token storage
+
+### Google Gemini
+
+- Vision API for image analysis (OCR, document classification, data extraction)
+- Used for analyzing receipts, business cards, screenshots, etc.
 
 ### Anthropic
 
 - Claude API for message processing
 - Tool use for structured actions
+
+---
+
+## Google Workspace Integration
+
+### Hermes Folder
+
+All Drive files are stored in a user's "Hermes" folder:
+
+- Created automatically in My Drive (or Shared Drive if configured)
+- Tagged with `appProperties` to avoid duplicates
+- All write operations are confined to this folder
+
+### Document Processing Flow
+
+When a user sends an image or document via WhatsApp/MMS:
+
+1. **Media Extraction**: Webhook extracts media URL and content type
+2. **Download**: Twilio media downloaded with authentication
+3. **Analysis** (images): Gemini Vision analyzes content
+4. **Storage**: Files saved to Hermes folder
+5. **Integration**: Data can be added to spreadsheets (receipts, contacts)
+
+### Supported File Types
+
+| Type | Extensions | Operations |
+|------|-----------|------------|
+| Images | JPEG, PNG, GIF, WebP | Analyze with Vision, store in Drive |
+| PDF | .pdf | Store in Drive |
+| Word | .doc, .docx | Store in Drive |
+| Google Sheets | - | Create, read, write, append |
+| Google Docs | - | Create, read, append |
+
+### Drive Agent
+
+The `drive-agent` handles all Google Workspace operations:
+
+- File uploads and folder management
+- Spreadsheet creation and data entry
+- Document creation and editing
+- Image analysis and document classification

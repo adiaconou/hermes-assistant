@@ -6,7 +6,26 @@ This file provides guidance for AI agents working with this codebase. It is the 
 
 This is an SMS-based personal assistant that communicates via Twilio and is powered by Anthropic's Claude LLM with MCP (Model Context Protocol) tool integrations. The assistant accesses Google services (Gmail, Calendar) and runs as a persistent service deployable to Railway or other cloud platforms.
 
+## Development Environment
+
+**IMPORTANT: This application must be built and run in WSL (Windows Subsystem for Linux).**
+
+The development server uses ngrok for tunneling, which requires WSL. Even if you're using Claude Code or other tools from a Windows shell, all build and run commands must execute in WSL.
+
+**Why WSL is required:**
+- ngrok tunnel integration works correctly in WSL
+- Native binaries (esbuild, rollup) are compiled for Linux
+- Consistent environment matching production (Railway runs Linux)
+
+**If node_modules was installed from Windows:**
+- Delete it: `rm -rf node_modules`
+- Reinstall from WSL: `npm install`
+
+**Do NOT run `npm install` from Windows** - this will install Windows-specific binaries that won't work.
+
 ## Quick Reference
+
+All commands below must be run **from WSL**:
 
 ```bash
 # Development
