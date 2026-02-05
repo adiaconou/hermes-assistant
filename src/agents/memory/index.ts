@@ -30,6 +30,7 @@
 
 import type { AgentCapability, StepResult, AgentExecutionContext } from '../../executor/types.js';
 import { executeWithTools } from '../../executor/tool-executor.js';
+import { MEMORY_AGENT_PROMPT } from './prompt.js';
 
 /**
  * Memory tools that this agent can use.
@@ -55,33 +56,6 @@ export const capability: AgentCapability = {
     'Update my preference to decaf',
   ],
 };
-
-/**
- * System prompt for the memory agent.
- */
-const MEMORY_AGENT_PROMPT = `You are a memory management assistant.
-
-Your job is to help store and manage facts about the user:
-- Extract facts: Store new information the user shares
-- View facts: Recall what you know about the user
-- Delete facts: Remove outdated or incorrect information
-
-Guidelines:
-1. Extract atomic, self-contained facts (e.g., "Likes black coffee" not "Prefers beverages")
-2. Don't extract temporary information ("I'm busy today")
-3. Don't extract duplicate facts that are already stored
-4. Be respectful of privacy - only store information the user explicitly shares
-5. Confirm what was stored/deleted
-
-Categories to use:
-- preferences: food, music, communication style
-- relationships: family, pets, friends, colleagues
-- health: allergies, conditions, medications
-- work: job, company, role
-- interests: hobbies, activities
-- personal: general personal details
-
-{userContext}`;
 
 /**
  * Execute the memory agent.

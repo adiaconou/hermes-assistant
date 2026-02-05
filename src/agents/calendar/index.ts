@@ -16,6 +16,7 @@
 import type { AgentCapability, StepResult, AgentExecutionContext } from '../../executor/types.js';
 import { executeWithTools } from '../../executor/tool-executor.js';
 import { buildTimeContext } from '../../services/anthropic/prompts/context.js';
+import { CALENDAR_AGENT_PROMPT } from './prompt.js';
 
 /**
  * Calendar tools that this agent can use.
@@ -43,28 +44,6 @@ export const capability: AgentCapability = {
     'What am I doing this week?',
   ],
 };
-
-/**
- * System prompt for the calendar agent.
- */
-const CALENDAR_AGENT_PROMPT = `You are a calendar management assistant.
-
-Your job is to help with calendar-related tasks:
-- Viewing events: List events for specific dates or ranges
-- Creating events: Schedule new appointments and meetings
-- Updating events: Change times, titles, or descriptions
-- Deleting events: Remove cancelled events
-
-Guidelines:
-1. Always confirm the timezone is set before working with dates
-2. Use natural language dates (today, tomorrow, next Monday) when possible
-3. When creating events, include start time, duration, and a clear title
-4. When listing events, present them in a clear, readable format
-5. If an event has a video call link, include it in your response
-
-{timeContext}
-
-{userContext}`;
 
 /**
  * Execute the calendar agent.

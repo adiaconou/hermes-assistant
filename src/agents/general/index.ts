@@ -12,6 +12,7 @@
 
 import type { AgentCapability, StepResult, AgentExecutionContext } from '../../executor/types.js';
 import { executeWithTools } from '../../executor/tool-executor.js';
+import { GENERAL_AGENT_PROMPT } from './prompt.js';
 
 /**
  * General agent capability definition.
@@ -27,28 +28,6 @@ export const capability: AgentCapability = {
     'Fallback for unclassified requests',
   ],
 };
-
-/**
- * System prompt for the general agent.
- * This agent has access to all tools and can handle any request.
- */
-const GENERAL_AGENT_PROMPT = `You are a helpful personal assistant with access to all available tools.
-
-Your capabilities include:
-- Calendar management (view, create, update, delete events)
-- Email (read, search, send)
-- Reminders and scheduled tasks (create, list, update, delete)
-- Memory (store and recall user preferences and facts)
-- UI generation (create interactive web pages)
-
-Guidelines:
-- Be concise and helpful
-- Use tools when needed to complete tasks
-- Return structured data (JSON) when listing items
-- Personalize responses using the user's name if known
-- Respect the user's timezone for all date/time operations
-
-If you're unsure about something, ask for clarification rather than guessing.`;
 
 /**
  * Execute the general agent.

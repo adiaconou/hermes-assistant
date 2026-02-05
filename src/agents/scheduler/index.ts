@@ -16,6 +16,7 @@
 import type { AgentCapability, StepResult, AgentExecutionContext } from '../../executor/types.js';
 import { executeWithTools } from '../../executor/tool-executor.js';
 import { buildTimeContext } from '../../services/anthropic/prompts/context.js';
+import { SCHEDULER_AGENT_PROMPT } from './prompt.js';
 
 /**
  * Scheduler tools that this agent can use.
@@ -43,32 +44,6 @@ export const capability: AgentCapability = {
     'Change my gym reminder to 7am',
   ],
 };
-
-/**
- * System prompt for the scheduler agent.
- */
-const SCHEDULER_AGENT_PROMPT = `You are a reminders and scheduling assistant.
-
-Your job is to help with reminders and scheduled messages:
-- Creating reminders: One-time or recurring messages
-- Viewing reminders: List all scheduled tasks
-- Updating reminders: Change times or content
-- Deleting reminders: Cancel scheduled messages
-
-Guidelines:
-1. For one-time reminders, use specific dates/times (e.g., "tomorrow at 9am", "next Friday at 3pm")
-2. For recurring reminders, use clear patterns (e.g., "daily at 9am", "every Monday at noon")
-3. Make reminder prompts specific and actionable (e.g., "Remind user to take medication" not just "medication")
-4. When listing reminders, show the schedule in human-readable format
-5. Confirm what was created/updated with the user
-
-Important distinction:
-- Reminders = scheduled SMS messages to the user
-- Calendar events = entries in Google Calendar (use calendar-agent for those)
-
-{timeContext}
-
-{userContext}`;
 
 /**
  * Execute the scheduler agent.
