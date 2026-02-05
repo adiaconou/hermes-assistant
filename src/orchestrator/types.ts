@@ -202,8 +202,8 @@ export interface OrchestratorResult {
  * Constraint values from the design doc.
  */
 export const ORCHESTRATOR_LIMITS = {
-  /** C-1: Maximum plan execution time (2 minutes) */
-  maxExecutionTimeMs: 120_000,
+  /** C-1: Maximum plan execution time (5 minutes) */
+  maxExecutionTimeMs: 300_000,
 
   /** C-2: Maximum replan attempts per request */
   maxReplans: 3,
@@ -214,6 +214,6 @@ export const ORCHESTRATOR_LIMITS = {
   /** C-4: Default retries per step */
   maxRetriesPerStep: 2,
 
-  /** C-5: Per-step timeout (60 seconds) */
-  stepTimeoutMs: 60_000,
+  /** C-5: Per-step timeout (2 minutes) */
+  stepTimeoutMs: 120_000,
 } as const;
