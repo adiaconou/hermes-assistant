@@ -259,16 +259,57 @@ describe('createPlan', () => {
       const calls = getCreateCalls();
       expect(calls[0].system).toContain('Memory tasks (store/recall/update/delete user facts)');
     });
+
+    it('should instruct planner to prefer specialized agents for single-domain tasks', async () => {
+      setMockResponses([
+        createTextResponse(JSON.stringify({
+          analysis: 'Calendar request',
+          goal: 'Show calendar events',
+          steps: [{ id: 'step_1', agent: 'calendar-agent', task: 'List events today' }],
+        })),
+      ]);
+
+      await createPlan({
+        ...baseContext,
+        userMessage: 'What is on my calendar today?',
+      }, mockRegistry);
+
+      const calls = getCreateCalls();
+      expect(calls[0].system).toContain('prefer the matching specialized agent');
+      expect(calls[0].system).toContain('greetings, small talk, gratitude');
+    });
   });
 
   describe('error handling', () => {
-    it('should fall back to general-agent on parse error', async () => {
+    it('should attempt a repair pass on parse error', async () => {
       setMockResponses([
         createTextResponse('This is not valid JSON at all!'),
+        createTextResponse(JSON.stringify({
+          analysis: 'Recovered parse',
+          goal: 'Handle calendar request',
+          steps: [{ id: 'step_1', agent: 'calendar-agent', task: 'List calendar events' }],
+        })),
       ]);
 
       const plan = await createPlan(baseContext, mockRegistry);
+      const calls = getCreateCalls();
 
+      expect(calls).toHaveLength(2);
+      expect(plan.steps).toHaveLength(1);
+      expect(plan.steps[0].agent).toBe('calendar-agent');
+      expect(plan.goal).toBe('Handle calendar request');
+    });
+
+    it('should fall back to general-agent when parse and repair both fail', async () => {
+      setMockResponses([
+        createTextResponse('This is not valid JSON at all!'),
+        createTextResponse('Still not valid JSON!'),
+      ]);
+
+      const plan = await createPlan(baseContext, mockRegistry);
+      const calls = getCreateCalls();
+
+      expect(calls).toHaveLength(2);
       expect(plan.steps).toHaveLength(1);
       expect(plan.steps[0].agent).toBe('general-agent');
       expect(plan.goal).toBe('Handle user request');
