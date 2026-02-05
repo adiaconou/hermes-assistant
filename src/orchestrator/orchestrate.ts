@@ -79,6 +79,8 @@ function logStepEvent(
  * @param userFacts User's stored facts/preferences
  * @param userConfig User configuration (name, timezone)
  * @param logger Trace logger for debugging
+ * @param messageId ID of the originating user message (for attaching metadata)
+ * @param mediaContext Pre-formatted media context block for agent prompts
  * @returns OrchestratorResult with response and execution details
  */
 export async function orchestrate(
@@ -90,7 +92,9 @@ export async function orchestrate(
   channel: 'sms' | 'whatsapp',
   logger: TraceLogger,
   mediaAttachments?: MediaAttachment[],
-  storedMedia?: StoredMediaAttachment[]
+  storedMedia?: StoredMediaAttachment[],
+  messageId?: string,
+  mediaContext?: string
 ): Promise<OrchestratorResult> {
   const startTime = Date.now();
   const registry = createAgentRegistry();
@@ -115,6 +119,8 @@ export async function orchestrate(
     channel,
     mediaAttachments,
     storedMedia,
+    messageId,
+    mediaContext,
     stepResults: {},
     errors: [],
   };

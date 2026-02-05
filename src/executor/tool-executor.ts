@@ -89,9 +89,16 @@ export async function executeWithTools(
   const anthropic = getClient();
   const tools = resolveTools(toolNames);
   const memoryXml = buildUserMemoryXml(context.userFacts, { maxFacts: 20, maxChars: 1500 });
-  const systemPromptWithMemory = memoryXml
-    ? `${systemPrompt}\n\n${memoryXml}`
-    : systemPrompt;
+
+  // Build system prompt with memory and media context
+  let fullSystemPrompt = systemPrompt;
+  if (memoryXml) {
+    fullSystemPrompt += `\n\n${memoryXml}`;
+  }
+  if (context.mediaContext) {
+    fullSystemPrompt += `\n\n${context.mediaContext}`;
+  }
+  const systemPromptWithMemory = fullSystemPrompt;
 
   // Build tool context for handlers
   const toolContext: ToolContext = {
@@ -100,6 +107,7 @@ export async function executeWithTools(
     userConfig: context.userConfig,
     mediaAttachments: context.mediaAttachments,
     storedMedia: context.storedMedia,
+    messageId: context.messageId,
   };
 
   // Build initial messages

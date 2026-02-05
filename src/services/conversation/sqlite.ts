@@ -9,7 +9,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { randomUUID } from 'crypto';
-import type { ConversationStore, ConversationMessage, GetHistoryOptions, StoredMediaAttachment } from './types.js';
+import type { ConversationStore, ConversationMessage, GetHistoryOptions, StoredMediaAttachment, MessageMetadataKind } from './types.js';
 
 /**
  * SQLite implementation of conversation store.
@@ -48,6 +48,22 @@ export class SqliteConversationStore implements ConversationStore {
       CREATE INDEX IF NOT EXISTS idx_messages_unprocessed
         ON conversation_messages(memory_processed, created_at)
         WHERE memory_processed = 0;
+
+      -- Message metadata table for storing hidden data (e.g., image analysis)
+      CREATE TABLE IF NOT EXISTS conversation_message_metadata (
+        id TEXT PRIMARY KEY,
+        message_id TEXT NOT NULL,
+        phone_number TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_message_metadata_message
+        ON conversation_message_metadata(message_id);
+
+      CREATE INDEX IF NOT EXISTS idx_message_metadata_phone_kind
+        ON conversation_message_metadata(phone_number, kind, created_at DESC);
     `);
 
     // Migration: add media_attachments column if it doesn't exist
@@ -291,6 +307,66 @@ export class SqliteConversationStore implements ConversationStore {
     }
 
     return results;
+  }
+
+  async addMessageMetadata<T>(
+    messageId: string,
+    phoneNumber: string,
+    kind: MessageMetadataKind,
+    payload: T
+  ): Promise<void> {
+    const id = randomUUID();
+    const createdAt = Date.now();
+    const payloadJson = JSON.stringify(payload);
+
+    this.db
+      .prepare(
+        `INSERT INTO conversation_message_metadata
+         (id, message_id, phone_number, kind, payload_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run(id, messageId, phoneNumber, kind, payloadJson, createdAt);
+  }
+
+  async getMessageMetadata<T>(
+    messageIds: string[],
+    kind?: MessageMetadataKind
+  ): Promise<Map<string, T[]>> {
+    if (messageIds.length === 0) {
+      return new Map();
+    }
+
+    const placeholders = messageIds.map(() => '?').join(', ');
+    const params: (string | number)[] = [...messageIds];
+
+    let query = `
+      SELECT message_id, payload_json
+      FROM conversation_message_metadata
+      WHERE message_id IN (${placeholders})
+    `;
+
+    if (kind) {
+      query += ' AND kind = ?';
+      params.push(kind);
+    }
+
+    query += ' ORDER BY created_at ASC';
+
+    const rows = this.db.prepare(query).all(...params) as Array<{
+      message_id: string;
+      payload_json: string;
+    }>;
+
+    const result = new Map<string, T[]>();
+
+    for (const row of rows) {
+      const payload = JSON.parse(row.payload_json) as T;
+      const existing = result.get(row.message_id) ?? [];
+      existing.push(payload);
+      result.set(row.message_id, existing);
+    }
+
+    return result;
   }
 
   /** Close the database connection. */

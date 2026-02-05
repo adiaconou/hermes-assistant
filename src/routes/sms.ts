@@ -200,7 +200,8 @@ async function processAsyncWork(
   message: string,
   channel: MessageChannel,
   userConfig: UserConfig | null,
-  mediaAttachments?: MediaAttachment[]
+  mediaAttachments?: MediaAttachment[],
+  userMessageId?: string
 ): Promise<void> {
   const startTime = Date.now();
   let storedMedia: StoredMediaAttachment[] = [];
@@ -231,7 +232,7 @@ async function processAsyncWork(
     }
 
     // Always use orchestrator handler
-    const responseText = await handleWithOrchestrator(message, sender, channel, userConfig, mediaAttachments, storedMedia);
+    const responseText = await handleWithOrchestrator(message, sender, channel, userConfig, mediaAttachments, storedMedia, userMessageId);
 
     console.log(JSON.stringify({
       level: 'info',
@@ -349,7 +350,7 @@ export async function handleSmsWebhook(req: Request, res: Response): Promise<voi
     }));
 
     // Store messages in history
-    await addMessage(sender, 'user', message, channel);
+    const userMessage = await addMessage(sender, 'user', message, channel);
     await addMessage(sender, 'assistant', classification.immediateResponse, channel);
 
     // Enforce SMS length limits for TwiML response (WhatsApp is unaffected)
@@ -371,7 +372,7 @@ export async function handleSmsWebhook(req: Request, res: Response): Promise<voi
 
     // If async work needed, spawn background processing (fire and forget)
     if (classification.needsAsyncWork) {
-      processAsyncWork(sender, message, channel, userConfig, mediaAttachments).catch((error) => {
+      processAsyncWork(sender, message, channel, userConfig, mediaAttachments, userMessage.id).catch((error) => {
         console.error(JSON.stringify({
           level: 'error',
           message: 'Unhandled error in async work',
@@ -392,7 +393,7 @@ export async function handleSmsWebhook(req: Request, res: Response): Promise<voi
 
     // Fall back to generic response if classification fails
     const fallbackMessage = "⏳ I'm processing your message and will respond shortly.";
-    await addMessage(sender, 'user', message, channel);
+    const fallbackUserMessage = await addMessage(sender, 'user', message, channel);
     await addMessage(sender, 'assistant', fallbackMessage, channel);
 
     res.type('text/xml');
@@ -403,7 +404,7 @@ export async function handleSmsWebhook(req: Request, res: Response): Promise<voi
     // Try to process with full pipeline even after classification failure
     const configStore = getUserConfigStore();
     configStore.get(sender).then((userConfig) => {
-      processAsyncWork(sender, message, channel, userConfig, mediaAttachments).catch((asyncError) => {
+      processAsyncWork(sender, message, channel, userConfig, mediaAttachments, fallbackUserMessage.id).catch((asyncError) => {
         console.error(JSON.stringify({
           level: 'error',
           message: 'Async fallback processing failed',

@@ -112,6 +112,12 @@ export interface AgentExecutionContext {
   /** Media files uploaded to Google Drive (persistent storage) */
   storedMedia?: StoredMediaAttachment[];
 
+  /** ID of the originating user message (for attaching metadata like image analysis) */
+  messageId?: string;
+
+  /** Pre-formatted media context block with image analysis from conversation history */
+  mediaContext?: string;
+
   /** Trace logger for debugging (optional, only present in development) */
   logger?: TraceLogger;
 }

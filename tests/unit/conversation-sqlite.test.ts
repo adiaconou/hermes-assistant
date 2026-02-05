@@ -306,4 +306,108 @@ describe('SqliteConversationStore', () => {
       await store.markAsProcessed([]);
     });
   });
+
+  describe('addMessageMetadata / getMessageMetadata', () => {
+    it('stores and retrieves image analysis metadata', async () => {
+      const msg = await store.addMessage('+1234567890', 'user', 'Check this image');
+
+      await store.addMessageMetadata(msg.id, '+1234567890', 'image_analysis', {
+        driveFileId: 'abc123',
+        driveUrl: 'https://drive.google.com/file/d/abc123',
+        mimeType: 'image/jpeg',
+        analysis: 'A wall calendar showing February 2026',
+      });
+
+      const metadataMap = await store.getMessageMetadata([msg.id], 'image_analysis');
+
+      expect(metadataMap.size).toBe(1);
+      const items = metadataMap.get(msg.id);
+      expect(items).toBeDefined();
+      expect(items).toHaveLength(1);
+      expect(items![0].analysis).toContain('wall calendar');
+      expect(items![0].driveFileId).toBe('abc123');
+      expect(items![0].mimeType).toBe('image/jpeg');
+    });
+
+    it('returns empty map for messages without metadata', async () => {
+      const msg = await store.addMessage('+1234567890', 'user', 'No image here');
+
+      const metadataMap = await store.getMessageMetadata([msg.id], 'image_analysis');
+
+      expect(metadataMap.size).toBe(0);
+    });
+
+    it('returns empty map for empty message ID array', async () => {
+      const metadataMap = await store.getMessageMetadata([]);
+
+      expect(metadataMap.size).toBe(0);
+    });
+
+    it('handles multiple metadata items for the same message', async () => {
+      const msg = await store.addMessage('+1234567890', 'user', 'Multiple images');
+
+      await store.addMessageMetadata(msg.id, '+1234567890', 'image_analysis', {
+        driveFileId: 'img1',
+        mimeType: 'image/jpeg',
+        analysis: 'First image analysis',
+      });
+
+      await store.addMessageMetadata(msg.id, '+1234567890', 'image_analysis', {
+        driveFileId: 'img2',
+        mimeType: 'image/png',
+        analysis: 'Second image analysis',
+      });
+
+      const metadataMap = await store.getMessageMetadata([msg.id], 'image_analysis');
+
+      expect(metadataMap.size).toBe(1);
+      const items = metadataMap.get(msg.id);
+      expect(items).toHaveLength(2);
+      expect(items![0].driveFileId).toBe('img1');
+      expect(items![1].driveFileId).toBe('img2');
+    });
+
+    it('retrieves metadata for multiple messages', async () => {
+      const msg1 = await store.addMessage('+1234567890', 'user', 'Image 1');
+      const msg2 = await store.addMessage('+1234567890', 'user', 'Image 2');
+      const msg3 = await store.addMessage('+1234567890', 'user', 'No image');
+
+      await store.addMessageMetadata(msg1.id, '+1234567890', 'image_analysis', {
+        driveFileId: 'file1',
+        mimeType: 'image/jpeg',
+        analysis: 'Analysis for image 1',
+      });
+
+      await store.addMessageMetadata(msg2.id, '+1234567890', 'image_analysis', {
+        driveFileId: 'file2',
+        mimeType: 'image/png',
+        analysis: 'Analysis for image 2',
+      });
+
+      const metadataMap = await store.getMessageMetadata([msg1.id, msg2.id, msg3.id], 'image_analysis');
+
+      expect(metadataMap.size).toBe(2);
+      expect(metadataMap.has(msg1.id)).toBe(true);
+      expect(metadataMap.has(msg2.id)).toBe(true);
+      expect(metadataMap.has(msg3.id)).toBe(false);
+    });
+
+    it('filters by metadata kind', async () => {
+      const msg = await store.addMessage('+1234567890', 'user', 'Test');
+
+      await store.addMessageMetadata(msg.id, '+1234567890', 'image_analysis', {
+        driveFileId: 'file1',
+        mimeType: 'image/jpeg',
+        analysis: 'Image analysis',
+      });
+
+      // Query with kind filter
+      const imageMetadata = await store.getMessageMetadata([msg.id], 'image_analysis');
+      expect(imageMetadata.size).toBe(1);
+
+      // Query without kind filter should still return the metadata
+      const allMetadata = await store.getMessageMetadata([msg.id]);
+      expect(allMetadata.size).toBe(1);
+    });
+  });
 });

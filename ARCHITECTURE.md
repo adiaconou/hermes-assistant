@@ -319,3 +319,46 @@ The `drive-agent` handles all Google Workspace operations:
 - Spreadsheet creation and data entry
 - Document creation and editing
 - Image analysis and document classification
+
+### Image Analysis Persistence
+
+Image analysis results are persisted as hidden metadata attached to conversation messages, enabling multi-turn conversations about images without re-analysis.
+
+#### Flow
+
+```
+Turn 1: User sends image
+    ↓
+Store user message (id = msg_123)
+    ↓
+Vision tool → Gemini analyzes → store metadata { message_id: msg_123, analysis, drive_url }
+    ↓
+AI composes response (no raw analysis shown)
+    ↓
+Turn 2: User asks follow-up
+    ↓
+Fetch windowed history + metadata for those message_ids
+    ↓
+Agent prompt: <media_context> injected
+    ↓
+AI answers using stored analysis without re-analyzing
+```
+
+#### Storage
+
+Metadata is stored in `conversation_message_metadata` table:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| message_id | TEXT | ID of the user message with the image |
+| kind | TEXT | Type of metadata (`image_analysis`) |
+| payload_json | TEXT | JSON with driveFileId, driveUrl, mimeType, analysis |
+
+#### Agent Prompt Injection
+
+When building agent prompts, the orchestrator:
+1. Fetches metadata for all messages in the conversation window
+2. Formats it into a `<media_context>` XML block
+3. Injects into the system prompt alongside user memory
+
+This allows agents to answer follow-up questions like "What's on February 14th?" without calling the vision tool again.

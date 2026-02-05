@@ -6,7 +6,7 @@
  */
 
 import { getConversationStore } from './services/conversation/index.js';
-import type { StoredMediaAttachment } from './services/conversation/types.js';
+import type { StoredMediaAttachment, ConversationMessage } from './services/conversation/types.js';
 
 export type Message = {
   role: 'user' | 'assistant';
@@ -32,6 +32,7 @@ export async function getHistory(phoneNumber: string): Promise<Message[]> {
 
 /**
  * Add a message to conversation history.
+ * @returns The created message with generated ID
  */
 export async function addMessage(
   phoneNumber: string,
@@ -39,7 +40,7 @@ export async function addMessage(
   content: string,
   channel: 'sms' | 'whatsapp' = 'sms',
   mediaAttachments?: StoredMediaAttachment[]
-): Promise<void> {
+): Promise<ConversationMessage> {
   const store = getConversationStore();
-  await store.addMessage(phoneNumber, role, content, channel, mediaAttachments);
+  return store.addMessage(phoneNumber, role, content, channel, mediaAttachments);
 }

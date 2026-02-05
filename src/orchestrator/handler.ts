@@ -10,13 +10,15 @@
  * - Keeps the same signature previously used by legacy handlers
  */
 
-import type { ConversationMessage, StoredMediaAttachment } from '../services/conversation/types.js';
+import type { ConversationMessage, StoredMediaAttachment, ImageAnalysisMetadata } from '../services/conversation/types.js';
 import type { UserConfig } from '../services/user-config/types.js';
 import type { MediaAttachment } from './types.js';
 import { getMemoryStore } from '../services/memory/index.js';
 import { getConversationStore } from '../services/conversation/index.js';
 import { orchestrate } from './orchestrate.js';
 import { createTraceLogger } from '../utils/trace-logger.js';
+import { formatMediaContext } from './media-context.js';
+import { getRelevantHistory } from './conversation-window.js';
 
 /**
  * Handle a message using the orchestrator if enabled.
@@ -26,6 +28,7 @@ import { createTraceLogger } from '../utils/trace-logger.js';
  * @param phoneNumber User's phone number (for memory/context lookup)
  * @param channel Message channel (sms or whatsapp)
  * @param userConfig User configuration
+ * @param messageId ID of the originating user message (for attaching metadata)
  * @returns Response text to send back to the user
  */
 export async function handleWithOrchestrator(
@@ -34,7 +37,8 @@ export async function handleWithOrchestrator(
   channel: 'sms' | 'whatsapp',
   userConfig: UserConfig | null,
   mediaAttachments?: MediaAttachment[],
-  storedMedia?: StoredMediaAttachment[]
+  storedMedia?: StoredMediaAttachment[],
+  messageId?: string
 ): Promise<string> {
   // Create trace logger for this request
   const logger = createTraceLogger(phoneNumber);
@@ -63,22 +67,43 @@ export async function handleWithOrchestrator(
       memoryStore.getFacts(phoneNumber),
     ]);
 
+    const windowedHistory = getRelevantHistory(conversationHistory);
+
+    // Fetch image analysis metadata for messages in the window
+    const messageIds = windowedHistory.map(m => m.id);
+    const metadataMap = await conversationStore.getMessageMetadata<ImageAnalysisMetadata>(
+      messageIds,
+      'image_analysis'
+    );
+
+    // Format media context for agent prompts
+    const mediaContext = formatMediaContext(metadataMap, windowedHistory);
+
     logger.log('DEBUG', 'Loading conversation context', {
       'History messages': conversationHistory.length,
+      'Windowed history messages': windowedHistory.length,
       'User facts': userFacts.length,
+      'Media metadata entries': metadataMap.size,
     });
+
+    // Dev-only: log media context details for debugging
+    if (process.env.NODE_ENV !== 'production' && mediaContext) {
+      logger.section('MEDIA CONTEXT', mediaContext);
+    }
 
     // Run orchestrator
     const result = await orchestrate(
       userMessage,
-      conversationHistory,
+      windowedHistory,
       userFacts,
       userConfig,
       phoneNumber,
       channel,
       logger,
       mediaAttachments,
-      storedMedia
+      storedMedia,
+      messageId,
+      mediaContext
     );
 
     if (result.success) {

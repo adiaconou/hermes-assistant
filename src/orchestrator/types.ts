@@ -96,6 +96,12 @@ export interface PlanContext {
   /** Media files uploaded to Google Drive (persistent storage) */
   storedMedia?: StoredMediaAttachment[];
 
+  /** ID of the originating user message (for attaching metadata like image analysis) */
+  messageId?: string;
+
+  /** Pre-formatted media context block with image analysis from conversation history */
+  mediaContext?: string;
+
   /** Results from completed steps, keyed by step ID */
   stepResults: Record<string, StepResult>;
 

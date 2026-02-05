@@ -26,6 +26,8 @@ export interface ToolContext {
   mediaAttachments?: MediaAttachment[];
   /** Media files uploaded to Google Drive (persistent storage) */
   storedMedia?: StoredMediaAttachment[];
+  /** ID of the originating user message (for attaching metadata like image analysis) */
+  messageId?: string;
 }
 
 /**

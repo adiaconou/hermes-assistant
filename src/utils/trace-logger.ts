@@ -258,12 +258,17 @@ ${params.systemPrompt.split('\n').map(line => '  ' + line).join('\n')}
     const level = success ? 'DEBUG' : 'ERROR';
     const status = success ? 'TOOL RESULT' : 'TOOL FAILED';
 
+    const shouldTruncate = name !== 'analyze_image';
     let resultStr: string;
     if (typeof result === 'string') {
-      resultStr = result.length > 1000 ? result.substring(0, 1000) + '...(truncated)' : result;
+      resultStr = shouldTruncate && result.length > 1000
+        ? result.substring(0, 1000) + '...(truncated)'
+        : result;
     } else {
       const json = JSON.stringify(result, null, 2);
-      resultStr = json.length > 1000 ? json.substring(0, 1000) + '...(truncated)' : json;
+      resultStr = shouldTruncate && json.length > 1000
+        ? json.substring(0, 1000) + '...(truncated)'
+        : json;
     }
 
     const entry = `[${this.timestamp()}] ${level} ${status}: ${name} (${durationMs}ms)

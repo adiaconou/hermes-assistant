@@ -3,10 +3,12 @@
  */
 
 import type { ToolDefinition } from './types.js';
+import type { StoredMediaAttachment } from '../services/conversation/types.js';
 import { requirePhoneNumber } from './utils.js';
 import { analyzeImage, isAnalyzableImage, GeminiNotConfiguredError } from '../services/google/vision.js';
 import { downloadTwilioMedia, getMediaErrorMessage, isImageType } from '../services/twilio/media.js';
 import { downloadFile } from '../services/google/drive.js';
+import { getConversationStore } from '../services/conversation/index.js';
 
 export const analyzeImageTool: ToolDefinition = {
   tool: {
@@ -74,9 +76,13 @@ Common analysis prompts:
     try {
       let imageBuffer: Buffer;
       let imageMimeType: string;
+      let storedItem: StoredMediaAttachment | undefined;
+      let source: 'media_url' | 'drive_file_id' | 'storedMedia' | 'mediaAttachments' | 'base64' | 'none' = 'none';
+      const attachmentIndex = attachment_index ?? 0;
 
       // Priority: explicit media_url > drive_file_id > storedMedia > context attachments > base64
       if (media_url) {
+        source = 'media_url';
         // Download from Twilio
         const downloaded = await downloadTwilioMedia(media_url);
         if (!isImageType(downloaded.contentType)) {
@@ -88,10 +94,11 @@ Common analysis prompts:
         imageBuffer = downloaded.buffer;
         imageMimeType = downloaded.contentType;
       } else if (drive_file_id) {
+        source = 'drive_file_id';
         // Download from Google Drive
         imageBuffer = await downloadFile(phoneNumber, drive_file_id);
         // Infer MIME type from storedMedia if available, default to JPEG
-        const storedItem = context.storedMedia?.find(m => m.driveFileId === drive_file_id);
+        storedItem = context.storedMedia?.find(m => m.driveFileId === drive_file_id);
         imageMimeType = storedItem?.mimeType || 'image/jpeg';
         if (!isImageType(imageMimeType)) {
           return {
@@ -100,43 +107,44 @@ Common analysis prompts:
           };
         }
       } else if (context.storedMedia && context.storedMedia.length > 0) {
+        source = 'storedMedia';
         // Use stored media from context (already uploaded to Drive)
-        const idx = attachment_index ?? 0;
-        const storedItem = context.storedMedia[idx];
+        storedItem = context.storedMedia[attachmentIndex];
         if (!storedItem) {
           return {
             success: false,
-            error: `No stored media at index ${idx}. Available indices: 0-${context.storedMedia.length - 1}`,
+            error: `No stored media at index ${attachmentIndex}. Available indices: 0-${context.storedMedia.length - 1}`,
           };
         }
         if (!isImageType(storedItem.mimeType)) {
           return {
             success: false,
-            error: `Stored media at index ${idx} is not an image (${storedItem.mimeType}). Use this tool only for images.`,
+            error: `Stored media at index ${attachmentIndex} is not an image (${storedItem.mimeType}). Use this tool only for images.`,
           };
         }
         imageBuffer = await downloadFile(phoneNumber, storedItem.driveFileId);
         imageMimeType = storedItem.mimeType;
       } else if (context.mediaAttachments && context.mediaAttachments.length > 0) {
+        source = 'mediaAttachments';
         // Use attachment from context (Twilio URL)
-        const idx = attachment_index ?? 0;
-        const attachment = context.mediaAttachments[idx];
+        const attachment = context.mediaAttachments[attachmentIndex];
         if (!attachment) {
           return {
             success: false,
-            error: `No attachment at index ${idx}. Available indices: 0-${context.mediaAttachments.length - 1}`,
+            error: `No attachment at index ${attachmentIndex}. Available indices: 0-${context.mediaAttachments.length - 1}`,
           };
         }
         if (!isImageType(attachment.contentType)) {
           return {
             success: false,
-            error: `Attachment at index ${idx} is not an image (${attachment.contentType}). Use this tool only for images.`,
+            error: `Attachment at index ${attachmentIndex} is not an image (${attachment.contentType}). Use this tool only for images.`,
           };
         }
         const downloaded = await downloadTwilioMedia(attachment.url);
         imageBuffer = downloaded.buffer;
         imageMimeType = downloaded.contentType;
       } else if (image_base64 && mime_type) {
+        source = 'base64';
         // Use provided base64
         if (!isAnalyzableImage(mime_type)) {
           return {
@@ -153,8 +161,43 @@ Common analysis prompts:
         };
       }
 
+      // If we used Twilio media directly, try to map to stored media for Drive linkage
+      if (!storedItem && (source === 'media_url' || source === 'mediaAttachments')) {
+        if (context.storedMedia && context.storedMedia.length > 0) {
+          storedItem = context.storedMedia[attachmentIndex];
+        }
+      }
+
       // Analyze the image
       const analysis = await analyzeImage(imageBuffer, imageMimeType, prompt);
+
+      // Persist analysis metadata for multi-turn conversations
+      if (context.messageId) {
+        try {
+          const driveFileId = storedItem?.driveFileId ?? drive_file_id;
+          const driveUrl = storedItem?.webViewLink;
+          const conversationStore = getConversationStore();
+          await conversationStore.addMessageMetadata(
+            context.messageId,
+            phoneNumber,
+            'image_analysis',
+            {
+              driveFileId,
+              driveUrl,
+              mimeType: imageMimeType,
+              analysis,
+            }
+          );
+        } catch (metadataError) {
+          // Log but don't fail - metadata storage is non-critical
+          console.error(JSON.stringify({
+            level: 'warn',
+            message: 'Failed to persist image analysis metadata',
+            error: metadataError instanceof Error ? metadataError.message : String(metadataError),
+            timestamp: new Date().toISOString(),
+          }));
+        }
+      }
 
       return {
         success: true,
