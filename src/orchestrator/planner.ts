@@ -16,7 +16,7 @@ import type { TextBlock } from '@anthropic-ai/sdk/resources/messages';
 
 import { getClient } from '../services/anthropic/client.js';
 import { buildTimeContext, buildUserContext } from '../services/anthropic/prompts/context.js';
-import { resolveDate } from '../services/date/resolver.js';
+import { resolveDate, resolveDateRange } from '../services/date/resolver.js';
 import type {
   ExecutionPlan,
   PlanStep,
@@ -389,6 +389,15 @@ export function resolveTaskDates(task: string, timezone: string): string {
     const matches = task.match(regex);
     if (matches) {
       for (const match of matches) {
+        const resolvedRange = resolveDateRange(match, { timezone, forwardDate: true });
+        if (resolvedRange) {
+          resolvedTask = resolvedTask.replace(
+            match,
+            `${resolvedRange.start.iso.split('T')[0]} to ${resolvedRange.end.iso.split('T')[0]} (${match})`
+          );
+          continue;
+        }
+
         const resolved = resolveDate(match, { timezone, forwardDate: true });
         if (resolved) {
           // Replace with ISO date and original term

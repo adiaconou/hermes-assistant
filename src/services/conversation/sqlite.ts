@@ -148,7 +148,7 @@ export class SqliteConversationStore implements ConversationStore {
 
     // Order by newest first so LIMIT returns the most recent messages
     // We'll reverse after fetching to return chronological order to callers
-    const orderBy = 'ORDER BY created_at DESC';
+    const orderBy = 'ORDER BY created_at DESC, rowid DESC';
 
     const query = `
       SELECT id, phone_number, role, content, channel, created_at,
@@ -208,7 +208,7 @@ export class SqliteConversationStore implements ConversationStore {
              memory_processed, memory_processed_at, media_attachments
       FROM conversation_messages
       WHERE memory_processed = 0 ${roleFilter}
-      ORDER BY created_at ASC
+      ORDER BY created_at ASC, rowid ASC
       `
     ).all() as Array<{
       id: string;

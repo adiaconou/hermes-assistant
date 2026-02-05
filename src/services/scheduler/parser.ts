@@ -127,8 +127,19 @@ export function parseReminderTime(input: string, timezone: string): number | nul
   }
 
   try {
-    const result = resolveDate(input, { timezone, referenceDate: new Date(), forwardDate: true });
-    return result?.timestamp ?? null;
+    const referenceDate = new Date();
+    const result = resolveDate(input, { timezone, referenceDate, forwardDate: true });
+    if (!result) {
+      return null;
+    }
+
+    // One-time reminders must always be in the future.
+    const nowSeconds = Math.floor(referenceDate.getTime() / 1000);
+    if (result.timestamp <= nowSeconds) {
+      return null;
+    }
+
+    return result.timestamp;
   } catch {
     return null;
   }

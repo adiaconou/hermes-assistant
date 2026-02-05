@@ -399,10 +399,9 @@ describe('resolveTaskDates', () => {
     const task = 'Schedule for next week';
     const resolved = resolveTaskDates(task, timezone);
 
-    // The function tries to resolve but may not modify if resolveDate returns null
-    // This tests that the function doesn't crash
-    expect(typeof resolved).toBe('string');
-    expect(resolved.length).toBeGreaterThan(0);
+    expect(resolved).not.toBe(task);
+    expect(resolved).toContain('(next week)');
+    expect(resolved).toMatch(/\d{4}-\d{2}-\d{2}\s+to\s+\d{4}-\d{2}-\d{2}/);
   });
 
   it('should preserve task structure', () => {

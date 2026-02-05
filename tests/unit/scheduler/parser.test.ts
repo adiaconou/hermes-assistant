@@ -206,6 +206,11 @@ describe('parseReminderTime', () => {
     expect(result).toBeNull();
   });
 
+  it('returns null for explicit past dates', () => {
+    const result = parseReminderTime('January 1, 2020 at 9am', timezone);
+    expect(result).toBeNull();
+  });
+
   it('returns null for unparseable input', () => {
     expect(parseReminderTime('banana', timezone)).toBeNull();
   });

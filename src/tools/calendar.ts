@@ -48,37 +48,54 @@ export const getCalendarEvents: ToolDefinition = {
         return { success: false, error: `Invalid timezone: "${timezone}".` };
       }
 
-      const range = end_date
-        ? null
-        : resolveDateRange(start_date, { timezone, referenceDate: new Date(), forwardDate: true });
-
       let startDate: Date | null = null;
       let endDate: Date | null = null;
+      const now = new Date();
 
-      if (range) {
-        startDate = new Date(range.start.timestamp * 1000);
-        endDate = new Date(range.end.timestamp * 1000);
+      const startRange = resolveDateRange(start_date, {
+        timezone,
+        referenceDate: now,
+        forwardDate: true,
+      });
+
+      if (startRange) {
+        startDate = new Date(startRange.start.timestamp * 1000);
+        endDate = new Date(startRange.end.timestamp * 1000);
       } else {
-        const startResult = resolveDate(start_date, { timezone, referenceDate: new Date(), forwardDate: true });
+        const startResult = resolveDate(start_date, {
+          timezone,
+          referenceDate: now,
+          forwardDate: true,
+        });
         if (!startResult) {
           return { success: false, error: `Could not parse start date: "${start_date}"` };
         }
 
-        if (end_date) {
+        startDate = new Date(startResult.timestamp * 1000);
+        const startLocal = DateTime.fromSeconds(startResult.timestamp, { zone: timezone });
+        endDate = startLocal.endOf('day').toUTC().toJSDate();
+      }
+
+      if (end_date) {
+        const endReference = startDate ?? now;
+        const endRange = resolveDateRange(end_date, {
+          timezone,
+          referenceDate: endReference,
+          forwardDate: true,
+        });
+
+        if (endRange) {
+          endDate = new Date(endRange.end.timestamp * 1000);
+        } else {
           const endResult = resolveDate(end_date, {
             timezone,
-            referenceDate: new Date(startResult.timestamp * 1000),
+            referenceDate: endReference,
             forwardDate: true,
           });
           if (!endResult) {
             return { success: false, error: `Could not parse end date: "${end_date}"` };
           }
-          startDate = new Date(startResult.timestamp * 1000);
           endDate = new Date(endResult.timestamp * 1000);
-        } else {
-          const startLocal = DateTime.fromSeconds(startResult.timestamp, { zone: timezone });
-          startDate = new Date(startResult.timestamp * 1000);
-          endDate = startLocal.endOf('day').toUTC().toJSDate();
         }
       }
 
