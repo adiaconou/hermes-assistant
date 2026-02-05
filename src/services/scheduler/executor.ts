@@ -23,7 +23,13 @@ const JOB_SYSTEM_PROMPT = `You are generating a scheduled message for the user.
 Be concise and helpful. This message will be sent via SMS.
 You have access to read-only tools to gather information (calendar events, etc).
 Generate the content the user requested, then stop.
-Do not ask questions or request more information - just generate the best response you can.`;
+Do not ask questions or request more information - just generate the best response you can.
+
+## Authentication Errors
+
+If any tool returns auth_required: true with an auth_url, you MUST include the exact auth_url in your response so the user can re-authenticate.
+Format: "To access your [calendar/email], tap this link: [paste the exact auth_url here]"
+Never paraphrase or omit the URL - the user needs this link to fix the issue.`;
 
 /**
  * Execute a single scheduled job.
