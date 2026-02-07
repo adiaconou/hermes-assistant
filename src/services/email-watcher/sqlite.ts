@@ -68,6 +68,11 @@ export class EmailSkillStore {
     `);
   }
 
+  getAllSkills(): EmailSkill[] {
+    const rows = this.db.prepare('SELECT * FROM email_skills ORDER BY phone_number, name').all() as EmailSkillRow[];
+    return rows.map(rowToSkill);
+  }
+
   getSkillsForUser(phoneNumber: string, enabledOnly = false): EmailSkill[] {
     const query = enabledOnly
       ? 'SELECT * FROM email_skills WHERE phone_number = ? AND enabled = 1'

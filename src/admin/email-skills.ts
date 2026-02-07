@@ -36,11 +36,8 @@ export async function listSkills(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // No phone filter — get all users with email watcher config, then collect skills
-    const configStore = getUserConfigStore();
-    const users = await configStore.getEmailWatcherUsers();
-    const allSkills = users.flatMap((u) => store.getSkillsForUser(u.phoneNumber));
-
+    // No phone filter — return all skills directly
+    const allSkills = store.getAllSkills();
     res.json({ skills: allSkills });
   } catch (error) {
     console.error('Error listing email skills:', error);
