@@ -176,6 +176,35 @@ describe('error handling', () => {
   });
 });
 
+describe('explicit date handling', () => {
+  const timezone = 'America/Los_Angeles';
+
+  it('accepts explicit past dates with forwardDate=true', () => {
+    // Reference date is afternoon, but we're asking for morning of same day
+    const referenceDate = new Date('2026-01-26T20:00:00Z'); // 12pm PST
+    const result = resolveDate('2026-01-26 9am', { timezone, referenceDate, forwardDate: true });
+    // Should NOT be null because it's an explicit date, even though 9am has passed
+    expect(result).not.toBeNull();
+    expect(result!.components.hour).toBe(9);
+    expect(result!.components.day).toBe(26);
+  });
+
+  it('accepts explicit ISO dates in the past', () => {
+    const referenceDate = new Date('2026-02-04T20:00:00Z');
+    const result = resolveDate('2026-02-04', { timezone, referenceDate, forwardDate: true });
+    expect(result).not.toBeNull();
+  });
+
+  it('still rejects ambiguous past times with forwardDate=true', () => {
+    // "3pm" without a date is ambiguous - should prefer future
+    const referenceDate = new Date('2026-01-26T23:30:00Z'); // 3:30pm PST
+    const result = resolveDate('3pm', { timezone, referenceDate, forwardDate: true });
+    // Should be tomorrow's 3pm, not today's (which has passed)
+    expect(result).not.toBeNull();
+    expect(result!.timestamp).toBeGreaterThan(referenceDate.getTime() / 1000);
+  });
+});
+
 describe('formatInTimezone', () => {
   const date = new Date('2026-01-26T23:30:00Z');
 
@@ -207,5 +236,39 @@ describe('resolveDateRange', () => {
     const result = resolveDateRange('this week', { timezone, referenceDate });
     expect(result).not.toBeNull();
     expect(result!.granularity).toBe('week');
+  });
+
+  it('parses "next week" as the following week range', () => {
+    const result = resolveDateRange('next week', { timezone, referenceDate });
+    expect(result).not.toBeNull();
+    expect(result!.granularity).toBe('week');
+    // Next week should start after this week
+    const thisWeek = resolveDateRange('this week', { timezone, referenceDate });
+    expect(result!.start.timestamp).toBeGreaterThan(thisWeek!.end.timestamp);
+  });
+
+  it('parses "last week" as the previous week range', () => {
+    const result = resolveDateRange('last week', { timezone, referenceDate });
+    expect(result).not.toBeNull();
+    expect(result!.granularity).toBe('week');
+    // Last week should end before this week starts
+    const thisWeek = resolveDateRange('this week', { timezone, referenceDate });
+    expect(result!.end.timestamp).toBeLessThan(thisWeek!.start.timestamp);
+  });
+
+  it('parses "next month" as the following month range', () => {
+    const result = resolveDateRange('next month', { timezone, referenceDate });
+    expect(result).not.toBeNull();
+    expect(result!.granularity).toBe('month');
+    // Should be February 2026
+    expect(result!.start.components.month).toBe(2);
+    expect(result!.start.components.year).toBe(2026);
+  });
+
+  it('parses "yesterday" as a day range', () => {
+    const result = resolveDateRange('yesterday', { timezone, referenceDate });
+    expect(result).not.toBeNull();
+    expect(result!.granularity).toBe('day');
+    expect(result!.start.components.day).toBe(25); // Jan 25
   });
 });

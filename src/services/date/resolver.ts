@@ -1,5 +1,7 @@
 /**
  * @fileoverview Shared date resolution utilities (single dates + ranges).
+ *
+ * Uses chrono-node for natural language parsing with Luxon for timezone handling.
  */
 
 import * as chrono from 'chrono-node';
@@ -31,26 +33,49 @@ export type ResolveDateOptions = {
   forwardDate?: boolean; // Prefer future dates (default: true)
 };
 
-const RANGE_PATTERNS = [
+/**
+ * Patterns that indicate explicit range syntax (from X to Y, between X and Y).
+ * These are handled specially to extract start/end components.
+ */
+const EXPLICIT_RANGE_PATTERNS = [
   /\bfrom\s+.+\s+to\s+.+/i,
   /\bbetween\s+.+\s+and\s+.+/i,
 ];
 
-const PERIOD_PATTERNS = [
-  /^today$/i,
-  /^tomorrow$/i,
-  /^this\s+week$/i,
-  /^this\s+month$/i,
+/**
+ * Period patterns that represent spans of time requiring boundary calculation.
+ * Map pattern to: [granularity, offset from current period]
+ * offset: 0 = this, 1 = next, -1 = last
+ */
+const PERIOD_CONFIG: Array<{
+  pattern: RegExp;
+  granularity: 'day' | 'week' | 'month';
+  offset: number;
+}> = [
+  { pattern: /^today$/i, granularity: 'day', offset: 0 },
+  { pattern: /^tomorrow$/i, granularity: 'day', offset: 1 },
+  { pattern: /^yesterday$/i, granularity: 'day', offset: -1 },
+  { pattern: /^this\s+week$/i, granularity: 'week', offset: 0 },
+  { pattern: /^next\s+week$/i, granularity: 'week', offset: 1 },
+  { pattern: /^last\s+week$/i, granularity: 'week', offset: -1 },
+  { pattern: /^this\s+month$/i, granularity: 'month', offset: 0 },
+  { pattern: /^next\s+month$/i, granularity: 'month', offset: 1 },
+  { pattern: /^last\s+month$/i, granularity: 'month', offset: -1 },
 ];
 
-function isRangeInput(input: string): boolean {
+function isExplicitRangeInput(input: string): boolean {
   const normalized = input.trim().toLowerCase();
-  return RANGE_PATTERNS.some((pattern) => pattern.test(normalized));
+  return EXPLICIT_RANGE_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
-function isPeriodInput(input: string): boolean {
-  const normalized = input.trim().toLowerCase();
-  return PERIOD_PATTERNS.some((pattern) => pattern.test(normalized));
+function matchPeriodConfig(input: string): (typeof PERIOD_CONFIG)[number] | null {
+  const normalized = input.trim();
+  for (const config of PERIOD_CONFIG) {
+    if (config.pattern.test(normalized)) {
+      return config;
+    }
+  }
+  return null;
 }
 
 const WEEKDAY_MAP: Record<string, number> = {
@@ -129,6 +154,14 @@ function toResolvedDate(dateTime: DateTime, timezone: string): ResolvedDate {
 }
 
 /**
+ * Check if chrono parsed an explicit date (year, month, day all specified).
+ * Used to determine whether forwardDate rejection should apply.
+ */
+function isExplicitDate(parsed: chrono.ParsedComponents): boolean {
+  return parsed.isCertain('year') && parsed.isCertain('month') && parsed.isCertain('day');
+}
+
+/**
  * Parse natural language date/time into structured result.
  * Returns null if parsing fails.
  */
@@ -147,7 +180,8 @@ export function resolveDate(
 
   requireValidTimezone(options.timezone);
 
-  if (isRangeInput(trimmed) || isPeriodInput(trimmed)) {
+  // Ranges and periods should use resolveDateRange
+  if (isExplicitRangeInput(trimmed) || matchPeriodConfig(trimmed)) {
     return null;
   }
 
@@ -170,6 +204,11 @@ export function resolveDate(
   );
 
   if (results.length === 0 || !results[0].start) {
+    return null;
+  }
+
+  // If chrono detected a range (has end), this should use resolveDateRange
+  if (results[0].end) {
     return null;
   }
 
@@ -221,8 +260,10 @@ export function resolveDate(
     return null;
   }
 
+  // Only reject past dates for AMBIGUOUS inputs (like "Monday" or "3pm").
+  // Explicit dates (like "2026-02-04" or "January 15, 2026") should be accepted.
   const utcSeconds = localDateTime.toUTC().toSeconds();
-  if (forwardDate && utcSeconds <= referenceUtc.toSeconds()) {
+  if (forwardDate && !isExplicitDate(parsed) && utcSeconds <= referenceUtc.toSeconds()) {
     return null;
   }
 
@@ -230,8 +271,13 @@ export function resolveDate(
 }
 
 /**
- * Parse natural language date ranges like "this week",
+ * Parse natural language date ranges like "this week", "next week",
  * "from 3pm to 5pm", "between Monday and Friday".
+ *
+ * Handles:
+ * - Period patterns: today, tomorrow, yesterday, this/next/last week/month
+ * - Explicit ranges: from X to Y, between X and Y
+ * - Chrono-detected ranges (e.g., "Monday to Friday")
  */
 export function resolveDateRange(
   input: string,
@@ -250,39 +296,36 @@ export function resolveDateRange(
 
   const referenceDate = getReferenceDate(options);
   const referenceLocal = DateTime.fromJSDate(referenceDate, { zone: 'utc' }).setZone(options.timezone);
-  const normalized = trimmed.toLowerCase();
 
-  if (normalized === 'today' || normalized === 'tomorrow') {
-    const base = normalized === 'tomorrow' ? referenceLocal.plus({ days: 1 }) : referenceLocal;
-    const start = base.startOf('day');
-    const end = base.endOf('day');
+  // Check for period patterns (today, this week, next month, etc.)
+  const periodConfig = matchPeriodConfig(trimmed);
+  if (periodConfig) {
+    const { granularity, offset } = periodConfig;
+
+    let base: DateTime;
+    switch (granularity) {
+      case 'day':
+        base = referenceLocal.plus({ days: offset });
+        break;
+      case 'week':
+        base = referenceLocal.plus({ weeks: offset });
+        break;
+      case 'month':
+        base = referenceLocal.plus({ months: offset });
+        break;
+    }
+
+    const start = base.startOf(granularity);
+    const end = base.endOf(granularity);
+
     return {
       start: toResolvedDate(start, options.timezone),
       end: toResolvedDate(end, options.timezone),
-      granularity: 'day',
+      granularity,
     };
   }
 
-  if (normalized === 'this week') {
-    const start = referenceLocal.startOf('week');
-    const end = referenceLocal.endOf('week');
-    return {
-      start: toResolvedDate(start, options.timezone),
-      end: toResolvedDate(end, options.timezone),
-      granularity: 'week',
-    };
-  }
-
-  if (normalized === 'this month') {
-    const start = referenceLocal.startOf('month');
-    const end = referenceLocal.endOf('month');
-    return {
-      start: toResolvedDate(start, options.timezone),
-      end: toResolvedDate(end, options.timezone),
-      granularity: 'month',
-    };
-  }
-
+  // Check for explicit range patterns (from X to Y, between X and Y)
   const fromMatch = trimmed.match(/\bfrom\s+(.+)\s+to\s+(.+)/i);
   const betweenMatch = trimmed.match(/\bbetween\s+(.+)\s+and\s+(.+)/i);
   const rangeMatch = fromMatch || betweenMatch;
@@ -310,6 +353,27 @@ export function resolveDateRange(
       end,
       granularity: 'custom',
     };
+  }
+
+  // Let chrono try to parse it as a range
+  const offsetMinutes = referenceLocal.offset;
+  const results = chrono.parse(
+    trimmed,
+    { instant: referenceDate, timezone: offsetMinutes },
+    { forwardDate: options.forwardDate ?? true }
+  );
+
+  if (results.length > 0 && results[0].end) {
+    const startDt = DateTime.fromJSDate(results[0].start.date(), { zone: 'utc' }).setZone(options.timezone);
+    const endDt = DateTime.fromJSDate(results[0].end.date(), { zone: 'utc' }).setZone(options.timezone);
+
+    if (startDt.isValid && endDt.isValid && endDt > startDt) {
+      return {
+        start: toResolvedDate(startDt, options.timezone),
+        end: toResolvedDate(endDt, options.timezone),
+        granularity: 'custom',
+      };
+    }
   }
 
   return null;
