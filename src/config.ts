@@ -92,6 +92,16 @@ const config = {
     logVerbose: process.env.MEMORY_LOG_VERBOSE === 'true',
   },
 
+  /** Email watcher configuration */
+  emailWatcher: {
+    enabled: process.env.EMAIL_WATCHER_ENABLED !== 'false',
+    intervalMs: parseInt(process.env.EMAIL_WATCHER_INTERVAL_MS || '60000', 10),
+    modelId: process.env.EMAIL_WATCHER_MODEL_ID || 'claude-haiku-4-5-20251001',
+    batchSize: parseInt(process.env.EMAIL_WATCHER_BATCH_SIZE || '20', 10),
+    maxNotificationsPerHour: parseInt(process.env.EMAIL_WATCHER_MAX_NOTIFICATIONS_PER_HOUR || '10', 10),
+    confidenceThreshold: parseFloat(process.env.EMAIL_WATCHER_CONFIDENCE_THRESHOLD || '0.6'),
+  },
+
   /** Base URL for generating short links */
   baseUrl: process.env.BASE_URL || 'http://localhost:3000',
 
@@ -168,6 +178,15 @@ export function validateConfig(): void {
   }
   if (config.ui.pageTtlDays < 1) {
     errors.push(`PAGE_TTL_DAYS must be >= 1, got ${config.ui.pageTtlDays}`);
+  }
+  if (config.emailWatcher.intervalMs < 10000) {
+    errors.push(`EMAIL_WATCHER_INTERVAL_MS must be >= 10000, got ${config.emailWatcher.intervalMs}`);
+  }
+  if (config.emailWatcher.batchSize < 1 || config.emailWatcher.batchSize > 100) {
+    errors.push(`EMAIL_WATCHER_BATCH_SIZE must be 1-100, got ${config.emailWatcher.batchSize}`);
+  }
+  if (config.emailWatcher.confidenceThreshold < 0 || config.emailWatcher.confidenceThreshold > 1) {
+    errors.push(`EMAIL_WATCHER_CONFIDENCE_THRESHOLD must be 0-1, got ${config.emailWatcher.confidenceThreshold}`);
   }
 
   if (errors.length > 0) {

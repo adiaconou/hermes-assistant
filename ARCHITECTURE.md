@@ -12,12 +12,13 @@ System design for Hermes Assistant — an SMS/WhatsApp personal assistant powere
 6. [Tool Registry](#tool-registry)
 7. [Memory System](#memory-system)
 8. [Scheduler System](#scheduler-system)
-9. [Date Resolution](#date-resolution)
-10. [Data Storage](#data-storage)
-11. [External Integrations](#external-integrations)
-12. [UI Generation](#ui-generation)
-13. [Media Handling](#media-handling)
-14. [File Structure](#file-structure)
+9. [Email Watcher System](#email-watcher-system)
+10. [Date Resolution](#date-resolution)
+11. [Data Storage](#data-storage)
+12. [External Integrations](#external-integrations)
+13. [UI Generation](#ui-generation)
+14. [Media Handling](#media-handling)
+15. [File Structure](#file-structure)
 
 ---
 
@@ -31,6 +32,7 @@ Hermes is a multi-agent assistant that receives messages via Twilio (SMS/WhatsAp
 - **Agent orchestration**: An LLM planner decomposes requests into steps and delegates to specialized agents
 - **Tool isolation**: Each agent has access to only the tools it needs (except general-agent which has all)
 - **Background memory**: Facts are extracted from conversations asynchronously, not during real-time interactions
+- **Background email watching**: Incoming emails are polled, classified against user-defined skills, and actioned automatically
 - **Timezone-first**: All date/time operations use IANA timezones with DST-safe handling
 
 ---
@@ -38,41 +40,41 @@ Hermes is a multi-agent assistant that receives messages via Twilio (SMS/WhatsAp
 ## High-Level Architecture
 
 ```
-                         ┌────────────────────────────────┐
-                         │        Hermes Assistant         │
-                         └────────────────────────────────┘
-                                        │
-        ┌───────────────────────────────┼──────────────────────────────┐
-        │                               │                              │
-        ▼                               ▼                              ▼
- ┌──────────────┐              ┌──────────────┐              ┌──────────────┐
- │    Twilio    │              │  Scheduler   │              │   Memory     │
- │   Webhooks   │              │   Poller     │              │  Processor   │
- │ (SMS/WA In)  │              │ (30s loop)   │              │ (5min loop)  │
- └──────┬───────┘              └──────┬───────┘              └──────┬───────┘
-        │                             │                             │
-        ▼                             ▼                             ▼
- ┌─────────────────────────────────────────────────────────────────────────┐
- │                         Express Server (index.ts)                       │
- │  Routes: /webhook/sms  /auth/google  /pages/*  /health  /admin/memory  │
- └─────────┬───────────────────────────────────────────────────────────────┘
-           │
-           ▼
- ┌─────────────────────────────────────────────────────────────────────────┐
- │                        Message Processing Pipeline                      │
- │                                                                         │
- │  Classifier ──▶ Orchestrator ──▶ Agents ──▶ Response Composer           │
- │  (fast path)    (planner)       (execute)   (synthesize reply)          │
- └─────────────────────────────────────────────────────────────────────────┘
-           │                            │
-           ▼                            ▼
- ┌──────────────────┐      ┌──────────────────────────────┐
- │   SQLite DBs     │      │      External Services       │
- │  - credentials   │      │  Google Calendar/Gmail/Drive  │
- │  - conversation  │      │  Google Sheets/Docs/Vision    │
- │  - memory        │      │  Anthropic Claude API         │
- │  - scheduler     │      │  Twilio SMS/WhatsApp          │
- └──────────────────┘      └──────────────────────────────┘
+                              ┌────────────────────────────────┐
+                              │        Hermes Assistant         │
+                              └────────────────────────────────┘
+                                             │
+     ┌──────────────────┬────────────────────┼────────────────────┐
+     │                  │                    │                    │
+     ▼                  ▼                    ▼                    ▼
+┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+│    Twilio    │ │  Scheduler   │ │   Memory     │ │ Email Watcher│
+│   Webhooks   │ │   Poller     │ │  Processor   │ │   Poller     │
+│ (SMS/WA In)  │ │ (30s loop)   │ │ (5min loop)  │ │ (60s loop)   │
+└──────┬───────┘ └──────┬───────┘ └──────┬───────┘ └──────┬───────┘
+       │                │                │                │
+       ▼                ▼                ▼                ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              Express Server (index.ts)                          │
+│  Routes: /webhook/sms  /auth/google  /pages/*  /health  /admin/*               │
+└─────────┬──────────────────────────────────────────────────────────┬────────────┘
+          │                                                          │
+          ▼                                                          ▼
+┌─────────────────────────────────────────────────────┐  ┌────────────────────────┐
+│               Message Processing Pipeline            │  │  Email Classification  │
+│                                                      │  │                        │
+│  Classifier ──▶ Orchestrator ──▶ Agents ──▶ Compose  │  │  Classify ──▶ Actions  │
+│  (fast path)    (planner)       (execute)   (reply)  │  │  (Haiku)    (tools/SMS)│
+└──────────────────────────┬───────────────────────────┘  └──────────┬─────────────┘
+                           │                                         │
+                           ▼                                         ▼
+                ┌──────────────────┐      ┌──────────────────────────────┐
+                │   SQLite DBs     │      │      External Services       │
+                │  - credentials   │      │  Google Calendar/Gmail/Drive  │
+                │  - conversation  │      │  Google Sheets/Docs/Vision    │
+                │  - memory        │      │  Anthropic Claude API         │
+                │                  │      │  Twilio SMS/WhatsApp          │
+                └──────────────────┘      └──────────────────────────────┘
 ```
 
 ---
@@ -180,7 +182,7 @@ Agents are registered in `src/agents/index.ts` and looked up via `src/executor/r
 |-------|-------|---------|
 | **calendar-agent** | `get_calendar_events`, `create_calendar_event`, `update_calendar_event`, `delete_calendar_event`, `resolve_date` | Google Calendar CRUD |
 | **scheduler-agent** | `create_scheduled_job`, `list_scheduled_jobs`, `update_scheduled_job`, `delete_scheduled_job`, `resolve_date` | Reminders and recurring jobs |
-| **email-agent** | `get_emails`, `read_email`, `get_email_thread` | Gmail search and read (read-only) |
+| **email-agent** | `get_emails`, `read_email`, `get_email_thread`, `create_email_skill`, `list_email_skills`, `update_email_skill`, `delete_email_skill`, `toggle_email_watcher`, `test_email_skill` | Gmail search/read + email skill management |
 | **memory-agent** | `extract_memory`, `list_memories`, `update_memory`, `remove_memory` | Explicit user fact management |
 | **drive-agent** | `upload_to_drive`, `list_drive_files`, `create_drive_folder`, `read_drive_file`, `search_drive`, `get_hermes_folder`, `create_spreadsheet`, `read_spreadsheet`, `write_spreadsheet`, `append_to_spreadsheet`, `find_spreadsheet`, `create_document`, `read_document`, `append_to_document`, `find_document`, `analyze_image` | Google Drive, Sheets, Docs, and Vision |
 | **ui-agent** | `generate_ui` | Generate interactive HTML pages (no network access) |
@@ -218,6 +220,7 @@ ToolDefinition = { tool: Tool (Anthropic schema), handler: ToolHandler }
 |----------|-------|-------|
 | **Calendar** | get/create/update/delete events, resolve_date | Full CRUD via Google Calendar API |
 | **Email** | get_emails, read_email, get_email_thread | Read-only Gmail access |
+| **Email Skills** | create/list/update/delete email skills, toggle watcher, test skill | Email watcher skill management |
 | **Memory** | extract/list/update/remove memory | User fact management |
 | **Scheduler** | create/list/update/delete scheduled jobs | Reminders and recurring tasks |
 | **Drive** | upload, list, create folder, read, search, get Hermes folder | Google Drive file management |
@@ -314,6 +317,98 @@ The parser (`src/services/scheduler/parser.ts`) converts natural language to:
 
 ---
 
+## Email Watcher System
+
+The email watcher is a background service that monitors incoming emails via Gmail polling, classifies them against user-defined **skills**, and executes actions (logging to spreadsheets or sending notifications). Skills are data, not code — users can create new processing behaviors at runtime via SMS.
+
+### Background Processes
+
+| Process | Interval | Purpose |
+|---------|----------|---------|
+| Scheduler poller | 30 seconds | Find and execute due scheduled jobs |
+| Memory processor | 5 minutes | Extract facts from unprocessed conversations |
+| Email watcher poller | 60 seconds | Monitor incoming emails, classify against skills, execute actions |
+
+### Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| **Poller** | `index.ts` | `startEmailWatcher()` / `stopEmailWatcher()` lifecycle, iterates users |
+| **Sync** | `sync.ts` | Gmail `history.list` incremental fetch, email normalization |
+| **Classifier** | `classifier.ts` | Haiku LLM call to match emails against active skills |
+| **Actions** | `actions.ts` | Action router: `execute_with_tools` or `notify` |
+| **Skills** | `skills.ts` | Load/seed per-user default skills, manage definitions |
+| **Prompt** | `prompt.ts` | Classifier prompt construction from active skills |
+| **SQLite Store** | `sqlite.ts` | CRUD for `email_skills` table |
+| **Types** | `types.ts` | `IncomingEmail`, `EmailSkill`, `ClassificationResult`, etc. |
+
+### Two-Phase Processing
+
+| Phase | What Happens | LLM Cost |
+|-------|--------------|----------|
+| **Classify** | Haiku classifies email against all active skills, extracts data | 1 call per batch (up to 5 emails) |
+| **Execute** | For each matched skill above confidence threshold, run action | 1 call per `execute_with_tools` match; 0 for `notify` |
+
+Most emails (~90%) match no skills and stop at Phase 1.
+
+### Gmail Sync
+
+Uses Gmail's `history.list` API with `historyId` as an incremental cursor:
+
+1. **First run**: Call `users.getProfile()` to get current `historyId` — establishes baseline, no processing
+2. **Subsequent runs**: Fetch history changes since last `historyId`, filter to INBOX `messageAdded` events
+3. **Normalization**: Prefer `text/plain` body, strip HTML/base64, collapse whitespace, truncate to 5000 chars
+
+If `historyId` expires (~30 days of inactivity), the watcher resets from `users.getProfile()` and notifies the user.
+
+### Skill System
+
+Skills define what emails to watch for and what to do when they match:
+
+```
+EmailSkill {
+  name, description, matchCriteria, extractFields[],
+  actionType: 'execute_with_tools' | 'notify',
+  actionPrompt, tools[], enabled
+}
+```
+
+Three default skills are seeded per-user when the watcher is initialized:
+
+| Skill | Matches | Action |
+|-------|---------|--------|
+| **tax-tracker** | W-2, 1099, IRS correspondence, property tax | Append to per-year "Tax Documents" spreadsheet |
+| **expense-tracker** | Receipts, invoices, purchase confirmations | Append to per-year "Expenses" spreadsheet |
+| **invite-detector** | Calendar invitations, meeting requests | Send SMS notification |
+
+Users can create additional skills at runtime via SMS (e.g., "Start tracking job application emails in a spreadsheet"). Skills flow through the email-agent's `create_email_skill` tool.
+
+### Action Types
+
+| Type | Execution | Example |
+|------|-----------|---------|
+| `execute_with_tools` | Calls `executeWithTools()` with the skill's action prompt + drive-agent tools | Append row to spreadsheet |
+| `notify` | Sends SMS/WhatsApp with classifier-generated summary | "New calendar invite from..." |
+
+When an email matches multiple skills, all `execute_with_tools` actions run sequentially, then notification summaries are merged into a single SMS per email.
+
+### Notification Throttling
+
+Max 10 SMS notifications per user per hour (configurable). Tracked via in-memory counter. Excess notifications are silently dropped with a log warning.
+
+### Configuration
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `EMAIL_WATCHER_ENABLED` | `true` | Enable/disable the email watcher |
+| `EMAIL_WATCHER_INTERVAL_MS` | `60000` | Polling interval in milliseconds |
+| `EMAIL_WATCHER_MODEL_ID` | `claude-haiku-4-5-20251001` | Classifier model |
+| `EMAIL_WATCHER_BATCH_SIZE` | `20` | Max emails to process per poll cycle |
+| `EMAIL_WATCHER_MAX_NOTIFICATIONS_PER_HOUR` | `10` | SMS notification throttle per user |
+| `EMAIL_WATCHER_CONFIDENCE_THRESHOLD` | `0.6` | Minimum confidence for skill match + action execution |
+
+---
+
 ## Date Resolution
 
 The date resolver (`src/services/date/resolver.ts`) converts natural language dates to structured results.
@@ -352,7 +447,8 @@ All persistent data uses **SQLite** via `better-sqlite3`. Three separate databas
 |-------|-------------|
 | `credentials` | `phone_number` (PK), encrypted OAuth tokens |
 | `scheduled_jobs` | `id`, `phone_number`, `prompt`, `cron_expression`, `timezone`, `next_run_at`, `is_recurring`, `channel` |
-| `user_config` | `phone_number` (PK), `name`, `timezone` |
+| `user_config` | `phone_number` (PK), `name`, `timezone`, `email_watcher_history_id`, `email_watcher_enabled` |
+| `email_skills` | `id`, `phone_number`, `name`, `match_criteria`, `extract_fields` (JSON), `action_type`, `action_prompt`, `tools` (JSON), `enabled`, `created_at`, `updated_at` — UNIQUE(`phone_number`, `name`) |
 
 ### `data/conversation.db`
 
@@ -410,6 +506,7 @@ Used for image analysis via `@google/generative-ai`:
 | Agent execution | claude-opus-4-5 | 2048 |
 | Response composition | claude-opus-4-5 | 512 |
 | Memory extraction | claude-opus-4-5 | 1024 |
+| Email classification | claude-haiku-4-5 | 2048 |
 
 ---
 
@@ -466,7 +563,8 @@ src/
 │
 ├── admin/
 │   ├── index.ts                # Admin route registration
-│   └── memory.ts               # Admin memory management UI
+│   ├── memory.ts               # Admin memory management UI
+│   └── email-skills.ts         # Admin email skills API handlers
 │
 ├── orchestrator/
 │   ├── orchestrate.ts          # Main orchestration loop
@@ -508,6 +606,7 @@ src/
 │   ├── ui.ts                   # UI generation tool
 │   ├── user-config.ts          # User config tools
 │   ├── maps.ts                 # Maps link formatting
+│   ├── email-skills.ts         # Email skill management tools
 │   └── utils.ts                # Shared tool utilities
 │
 ├── services/
@@ -561,6 +660,16 @@ src/
 │   │   ├── index.ts            # Store initialization
 │   │   ├── sqlite.ts           # SQLite store
 │   │   └── types.ts            # UserConfig
+│   │
+│   ├── email-watcher/          # Email watcher service
+│   │   ├── index.ts            # Start/stop lifecycle (createIntervalPoller)
+│   │   ├── sync.ts             # Gmail history sync (incremental fetch)
+│   │   ├── classifier.ts       # LLM classification against active skills
+│   │   ├── actions.ts          # Action router (execute_with_tools, notify)
+│   │   ├── skills.ts           # Load/seed per-user default skills
+│   │   ├── prompt.ts           # Classifier prompt construction
+│   │   ├── sqlite.ts           # EmailSkillStore (email_skills table)
+│   │   └── types.ts            # IncomingEmail, EmailSkill, ClassificationResult
 │   │
 │   ├── date/                   # Date resolution
 │   │   ├── index.ts            # Re-exports

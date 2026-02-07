@@ -17,6 +17,7 @@ import { getCredentialStore } from '../services/credentials/index.js';
 import { sendSms, sendWhatsApp } from '../twilio.js';
 // Legacy generateResponse removed; auth flow response generation will be added later if needed.
 import { addMessage } from '../conversation.js';
+import { initEmailWatcherState } from '../services/email-watcher/skills.js';
 
 const router = Router();
 
@@ -272,6 +273,9 @@ router.get('/auth/google/callback', async (req, res) => {
       refreshToken: tokens.refresh_token,
       expiresAt: tokens.expiry_date || Date.now() + 3600000,
     });
+
+    // Initialize email watcher for new users
+    await initEmailWatcherState(decrypted.phone);
 
     console.log(JSON.stringify({
       level: 'info',

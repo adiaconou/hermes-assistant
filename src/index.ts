@@ -25,6 +25,7 @@ import { initScheduler, stopScheduler } from './services/scheduler/index.js';
 import { closeConversationStore } from './services/conversation/index.js';
 import { startMemoryProcessor, stopMemoryProcessor } from './services/memory/processor.js';
 import { closeMemoryStore } from './services/memory/index.js';
+import { startEmailWatcher, stopEmailWatcher } from './services/email-watcher/index.js';
 
 const app = express();
 
@@ -88,6 +89,9 @@ const server = app.listen(config.port, () => {
 
   // Start the memory processor
   startMemoryProcessor();
+
+  // Start the email watcher
+  startEmailWatcher();
 });
 
 let isShuttingDown = false;
@@ -109,6 +113,7 @@ function shutdown(signal: string) {
 
   stopScheduler();
   stopMemoryProcessor();
+  stopEmailWatcher();
   closeConversationStore();
   closeMemoryStore();
   db.close();

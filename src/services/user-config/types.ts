@@ -12,6 +12,8 @@ export interface UserConfig {
   phoneNumber: string;
   name?: string;
   timezone?: string; // IANA timezone (e.g., "America/Los_Angeles")
+  emailWatcherHistoryId?: string;
+  emailWatcherEnabled?: boolean;
   createdAt: number; // Unix timestamp in milliseconds
   updatedAt: number; // Unix timestamp in milliseconds
 }
@@ -37,4 +39,10 @@ export interface UserConfigStore {
    * No-op if config doesn't exist.
    */
   delete(phoneNumber: string): Promise<void>;
+
+  /** Get all users with email watcher enabled and Google credentials */
+  getEmailWatcherUsers(): Promise<UserConfig[]>;
+
+  /** Update email watcher historyId cursor */
+  updateEmailWatcherState(phoneNumber: string, historyId: string): Promise<void>;
 }

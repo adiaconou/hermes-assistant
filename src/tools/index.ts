@@ -17,6 +17,11 @@ import { uploadToDrive, listDriveFiles, createDriveFolder, readDriveFile, search
 import { createSpreadsheetTool, readSpreadsheet, writeSpreadsheet, appendToSpreadsheet, findSpreadsheetTool } from './sheets.js';
 import { createDocumentTool, readDocument, appendToDocument, findDocumentTool } from './docs.js';
 import { analyzeImageTool } from './vision.js';
+// Email skill management
+import {
+  createEmailSkill, listEmailSkills, updateEmailSkill,
+  deleteEmailSkill, toggleEmailWatcher, testEmailSkill,
+} from './email-skills.js';
 
 /**
  * All tool definitions.
@@ -69,6 +74,13 @@ const allTools: ToolDefinition[] = [
   findDocumentTool,
   // Vision
   analyzeImageTool,
+  // Email skill management
+  createEmailSkill,
+  listEmailSkills,
+  updateEmailSkill,
+  deleteEmailSkill,
+  toggleEmailWatcher,
+  testEmailSkill,
 ];
 
 /**

@@ -40,16 +40,27 @@ export class SqliteUserConfigStore implements UserConfigStore {
         updated_at INTEGER NOT NULL
       )
     `);
+
+    // Idempotent column additions for email watcher
+    try {
+      this.db.exec('ALTER TABLE user_config ADD COLUMN email_watcher_history_id TEXT');
+    } catch { /* column already exists */ }
+    try {
+      this.db.exec('ALTER TABLE user_config ADD COLUMN email_watcher_enabled INTEGER DEFAULT 0');
+    } catch { /* column already exists */ }
   }
 
   async get(phoneNumber: string): Promise<UserConfig | null> {
     const row = this.db
       .prepare(
-        `SELECT phone_number, name, timezone, created_at, updated_at
+        `SELECT phone_number, name, timezone, email_watcher_history_id,
+                email_watcher_enabled, created_at, updated_at
          FROM user_config WHERE phone_number = ?`
       )
       .get(phoneNumber) as
-      | { phone_number: string; name: string | null; timezone: string | null; created_at: number; updated_at: number }
+      | { phone_number: string; name: string | null; timezone: string | null;
+          email_watcher_history_id: string | null; email_watcher_enabled: number | null;
+          created_at: number; updated_at: number }
       | undefined;
 
     if (!row) {
@@ -60,6 +71,8 @@ export class SqliteUserConfigStore implements UserConfigStore {
       phoneNumber: row.phone_number,
       name: row.name ?? undefined,
       timezone: row.timezone ?? undefined,
+      emailWatcherHistoryId: row.email_watcher_history_id ?? undefined,
+      emailWatcherEnabled: row.email_watcher_enabled === 1,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -85,6 +98,14 @@ export class SqliteUserConfigStore implements UserConfigStore {
         updates.push('timezone = ?');
         values.push(config.timezone ?? null);
       }
+      if (config.emailWatcherHistoryId !== undefined) {
+        updates.push('email_watcher_history_id = ?');
+        values.push(config.emailWatcherHistoryId ?? null);
+      }
+      if (config.emailWatcherEnabled !== undefined) {
+        updates.push('email_watcher_enabled = ?');
+        values.push(config.emailWatcherEnabled ? 1 : 0);
+      }
       updates.push('updated_at = ?');
       values.push(now);
       values.push(phoneNumber);
@@ -96,13 +117,16 @@ export class SqliteUserConfigStore implements UserConfigStore {
       // Insert new record
       this.db
         .prepare(
-          `INSERT INTO user_config (phone_number, name, timezone, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?)`
+          `INSERT INTO user_config (phone_number, name, timezone, email_watcher_history_id,
+           email_watcher_enabled, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           phoneNumber,
           config.name ?? null,
           config.timezone ?? null,
+          config.emailWatcherHistoryId ?? null,
+          config.emailWatcherEnabled ? 1 : 0,
           now,
           now
         );
@@ -113,6 +137,38 @@ export class SqliteUserConfigStore implements UserConfigStore {
     this.db
       .prepare(`DELETE FROM user_config WHERE phone_number = ?`)
       .run(phoneNumber);
+  }
+
+  async getEmailWatcherUsers(): Promise<UserConfig[]> {
+    const rows = this.db
+      .prepare(
+        `SELECT uc.phone_number, uc.name, uc.timezone, uc.email_watcher_history_id,
+                uc.email_watcher_enabled, uc.created_at, uc.updated_at
+         FROM user_config uc
+         INNER JOIN credentials c ON c.phone_number = uc.phone_number AND c.provider = 'google'
+         WHERE uc.email_watcher_enabled = 1`
+      )
+      .all() as Array<{
+        phone_number: string; name: string | null; timezone: string | null;
+        email_watcher_history_id: string | null; email_watcher_enabled: number | null;
+        created_at: number; updated_at: number;
+      }>;
+
+    return rows.map(row => ({
+      phoneNumber: row.phone_number,
+      name: row.name ?? undefined,
+      timezone: row.timezone ?? undefined,
+      emailWatcherHistoryId: row.email_watcher_history_id ?? undefined,
+      emailWatcherEnabled: row.email_watcher_enabled === 1,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }));
+  }
+
+  async updateEmailWatcherState(phoneNumber: string, historyId: string): Promise<void> {
+    this.db
+      .prepare('UPDATE user_config SET email_watcher_history_id = ?, updated_at = ? WHERE phone_number = ?')
+      .run(historyId, Date.now(), phoneNumber);
   }
 
   /** Close the database connection. */
