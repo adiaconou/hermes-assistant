@@ -96,7 +96,7 @@ const config = {
   emailWatcher: {
     enabled: process.env.EMAIL_WATCHER_ENABLED !== 'false',
     intervalMs: parseInt(process.env.EMAIL_WATCHER_INTERVAL_MS || '60000', 10),
-    modelId: process.env.EMAIL_WATCHER_MODEL_ID || 'claude-haiku-4-5-20251001',
+    modelId: process.env.EMAIL_WATCHER_MODEL_ID || 'claude-sonnet-4-5-20250929',
     batchSize: parseInt(process.env.EMAIL_WATCHER_BATCH_SIZE || '20', 10),
     maxNotificationsPerHour: parseInt(process.env.EMAIL_WATCHER_MAX_NOTIFICATIONS_PER_HOUR || '10', 10),
     confidenceThreshold: parseFloat(process.env.EMAIL_WATCHER_CONFIDENCE_THRESHOLD || '0.6'),
