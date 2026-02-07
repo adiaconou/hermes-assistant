@@ -1,254 +1,375 @@
 # Architecture
 
-This document describes the system design of Hermes Assistant.
+System design for Hermes Assistant — an SMS/WhatsApp personal assistant powered by Claude and Google Workspace.
 
-## System Overview
+## Table of Contents
 
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Twilio    │────▶│   Express   │────▶│   Claude    │
-│  (SMS In)   │     │   Server    │     │    LLM      │
-└─────────────┘     └─────────────┘     └─────────────┘
-                           │                   │
-                           │              Tool Calls
-                           ▼                   ▼
-                    ┌─────────────┐     ┌─────────────┐
-                    │   SQLite    │     │   Google    │
-                    │  Database   │     │   APIs      │
-                    └─────────────┘     └─────────────┘
-                           │
-                    ┌──────┴──────┐
-                    ▼             ▼
-             ┌───────────┐ ┌───────────┐
-             │ Scheduler │ │  Memory   │
-             │  Poller   │ │ Processor │
-             └───────────┘ └───────────┘
-```
-
-## Request Flow
-
-1. **Inbound SMS**: Twilio sends POST to `/webhook/sms` with message body and sender phone
-2. **Conversation Load**: System loads conversation history and user config for the phone number
-3. **LLM Processing**: Claude receives the message with system prompt, tools, and context
-4. **Tool Execution**: Claude may call tools (calendar, email, scheduler, memory, etc.)
-5. **Response**: Final response sent back via Twilio SMS
-
-**Memory routing note:** The classifier prompt directs memory-intent messages (remember/recall/forget/update, “what do you know/remember about me”) to the async path, and the planner biases to `memory-agent` for those tasks. General-agent remains a fallback if no specialized agent fits.
-
-## Core Components
-
-### Express Server (`src/index.ts`)
-
-Entry point that configures:
-- Routes for SMS webhook, OAuth callbacks, and UI pages
-- Scheduler poller startup
-- Health check endpoint
-
-### LLM Integration (`src/llm/`)
-
-- **client.ts**: Anthropic SDK wrapper
-- **index.ts**: Message processing with tool loop
-- **prompts.ts**: System prompt construction with time/user context
-- **tools/**: Tool definitions (calendar, email, scheduler, memory, user-config, ui)
-
-### Services (`src/services/`)
-
-| Service | Purpose |
-|---------|---------|
-| `scheduler/` | Cron jobs and one-time reminders |
-| `google/calendar.ts` | Google Calendar API client |
-| `google/gmail.ts` | Gmail API client |
-| `google/drive.ts` | Google Drive API client |
-| `google/sheets.ts` | Google Sheets API client |
-| `google/docs.ts` | Google Docs API client |
-| `google/vision.ts` | Gemini Vision API for image analysis |
-| `twilio/media.ts` | Download media from Twilio MMS/WhatsApp |
-| `memory/` | Persistent facts about the user |
-| `conversation/` | Message history per phone number |
-| `credentials/` | OAuth token storage (encrypted) |
-| `user-config/` | User preferences (timezone, etc.) |
-
-### Scheduler System
-
-The scheduler handles both recurring jobs (cron expressions) and one-time reminders:
-
-- **Poller** (`poller.ts`): Runs every 30 seconds, finds due jobs
-- **Executor** (`executor.ts`): Runs job through LLM, sends SMS response
-- **Parser** (`parser.ts`): Converts natural language to cron or timestamp
+1. [System Overview](#system-overview)
+2. [High-Level Architecture](#high-level-architecture)
+3. [Request Processing Flow](#request-processing-flow)
+4. [Orchestrator](#orchestrator)
+5. [Agent System](#agent-system)
+6. [Tool Registry](#tool-registry)
+7. [Memory System](#memory-system)
+8. [Scheduler System](#scheduler-system)
+9. [Date Resolution](#date-resolution)
+10. [Data Storage](#data-storage)
+11. [External Integrations](#external-integrations)
+12. [UI Generation](#ui-generation)
+13. [Media Handling](#media-handling)
+14. [File Structure](#file-structure)
 
 ---
 
-## Timezone Handling
+## System Overview
 
-Timezone handling is critical for reminders and calendar events. The system stores and uses IANA timezone identifiers (e.g., `America/Los_Angeles`).
+Hermes is a multi-agent assistant that receives messages via Twilio (SMS/WhatsApp), plans and executes tasks using specialized agents, and replies via SMS. It integrates with Google Calendar, Gmail, Drive, Sheets, Docs, and Gemini Vision.
+
+### Key Design Principles
+
+- **Two-phase response**: Fast synchronous classification (<5s) + asynchronous deep processing
+- **Agent orchestration**: An LLM planner decomposes requests into steps and delegates to specialized agents
+- **Tool isolation**: Each agent has access to only the tools it needs (except general-agent which has all)
+- **Background memory**: Facts are extracted from conversations asynchronously, not during real-time interactions
+- **Timezone-first**: All date/time operations use IANA timezones with DST-safe handling
+
+---
+
+## High-Level Architecture
+
+```
+                         ┌────────────────────────────────┐
+                         │        Hermes Assistant         │
+                         └────────────────────────────────┘
+                                        │
+        ┌───────────────────────────────┼──────────────────────────────┐
+        │                               │                              │
+        ▼                               ▼                              ▼
+ ┌──────────────┐              ┌──────────────┐              ┌──────────────┐
+ │    Twilio    │              │  Scheduler   │              │   Memory     │
+ │   Webhooks   │              │   Poller     │              │  Processor   │
+ │ (SMS/WA In)  │              │ (30s loop)   │              │ (5min loop)  │
+ └──────┬───────┘              └──────┬───────┘              └──────┬───────┘
+        │                             │                             │
+        ▼                             ▼                             ▼
+ ┌─────────────────────────────────────────────────────────────────────────┐
+ │                         Express Server (index.ts)                       │
+ │  Routes: /webhook/sms  /auth/google  /pages/*  /health  /admin/memory  │
+ └─────────┬───────────────────────────────────────────────────────────────┘
+           │
+           ▼
+ ┌─────────────────────────────────────────────────────────────────────────┐
+ │                        Message Processing Pipeline                      │
+ │                                                                         │
+ │  Classifier ──▶ Orchestrator ──▶ Agents ──▶ Response Composer           │
+ │  (fast path)    (planner)       (execute)   (synthesize reply)          │
+ └─────────────────────────────────────────────────────────────────────────┘
+           │                            │
+           ▼                            ▼
+ ┌──────────────────┐      ┌──────────────────────────────┐
+ │   SQLite DBs     │      │      External Services       │
+ │  - credentials   │      │  Google Calendar/Gmail/Drive  │
+ │  - conversation  │      │  Google Sheets/Docs/Vision    │
+ │  - memory        │      │  Anthropic Claude API         │
+ │  - scheduler     │      │  Twilio SMS/WhatsApp          │
+ └──────────────────┘      └──────────────────────────────┘
+```
+
+---
+
+## Request Processing Flow
+
+### Two-Phase Processing
+
+| Phase | Duration | What Happens |
+|-------|----------|--------------|
+| **Sync** | <5s | Validate Twilio signature → Classifier LLM call (512 tokens, no tools) → Return TwiML with immediate reply |
+| **Async** | Up to 5 min | Upload media → Create plan → Execute agents → Compose response → Send SMS/WhatsApp |
+
+### Classification
+
+The classifier (`src/services/anthropic/classification.ts`) is a fast LLM call that determines routing:
+
+- Uses Claude with max 512 tokens, no tools enabled
+- Only considers last 4 conversation messages
+- Returns `{needsAsyncWork: boolean, immediateResponse: string}`
+- Simple requests (greetings, thanks) get a direct reply; everything else spawns async work
+
+### Sequence: Inbound Message
+
+```
+User ──SMS──▶ Twilio ──POST──▶ /webhook/sms
+                                    │
+                         classifyMessage() → fast reply via TwiML
+                                    │
+                             needsAsyncWork?
+                                    │ yes
+                                    ▼
+                         handleWithOrchestrator()
+                                    │
+                    ┌───────────────┼───────────────┐
+                    ▼               ▼               ▼
+               createPlan()    executeStep()   synthesizeResponse()
+                    │               │               │
+                    ▼               ▼               ▼
+             LLM: choose      Agent + tools    LLM: compose
+              agents           (loop)          user reply
+                                                    │
+                                                    ▼
+                                           Twilio sendSms()
+```
+
+---
+
+## Orchestrator
+
+The orchestrator (`src/orchestrator/`) is the central coordination system.
+
+### Components
+
+| Component | File | Responsibility |
+|-----------|------|----------------|
+| **orchestrate()** | `orchestrate.ts` | Main loop: plan → execute → replan → compose |
+| **createPlan()** | `planner.ts` | LLM call to decompose request into agent steps |
+| **executeStep()** | `executor.ts` | Routes a step to the correct agent via the router |
+| **replan()** | `replanner.ts` | Adjusts plan when steps fail (up to 3 replans) |
+| **synthesizeResponse()** | `response-composer.ts` | LLM call to produce the final user-facing reply |
+| **handler.ts** | `handler.ts` | Integration layer between SMS route and orchestrator |
+| **conversation-window.ts** | `conversation-window.ts` | Sliding window filter for conversation history |
+
+### Execution Flow
+
+1. **Plan**: LLM analyzes the request, selects agents, resolves dates, outputs JSON plan
+2. **Execute**: Steps run sequentially; each step calls an agent via the router
+3. **Replan**: If a step fails (after retries), the LLM creates a revised plan
+4. **Compose**: All step results are synthesized into a single SMS-friendly response
+
+### Limits
+
+| Constraint | Value | Purpose |
+|------------|-------|---------|
+| Max execution time | 5 minutes | Prevent runaway requests |
+| Max replans | 3 | Avoid infinite replan loops |
+| Max total steps | 10 | Cap plan complexity |
+| Max retries per step | 2 | Retry before replanning |
+| Per-step timeout | 2 minutes | Prevent stuck agents |
+
+### Conversation Window
+
+History is filtered through a sliding window before being passed to the planner:
+
+| Filter | Default | Purpose |
+|--------|---------|---------|
+| Max age | 24 hours | Only recent context |
+| Max messages | 20 | Cap history length |
+| Max tokens | 4000 | Fit within prompt budget |
+
+Token estimation uses ~3.3 chars/token (closer to Claude's actual tokenization than the common 4 chars/token).
+
+---
+
+## Agent System
+
+### Agent Registry
+
+Agents are registered in `src/agents/index.ts` and looked up via `src/executor/registry.ts`. The planner selects agents by name; the router dispatches execution.
+
+### Agents
+
+| Agent | Tools | Purpose |
+|-------|-------|---------|
+| **calendar-agent** | `get_calendar_events`, `create_calendar_event`, `update_calendar_event`, `delete_calendar_event`, `resolve_date` | Google Calendar CRUD |
+| **scheduler-agent** | `create_scheduled_job`, `list_scheduled_jobs`, `update_scheduled_job`, `delete_scheduled_job`, `resolve_date` | Reminders and recurring jobs |
+| **email-agent** | `get_emails`, `read_email`, `get_email_thread` | Gmail search and read (read-only) |
+| **memory-agent** | `extract_memory`, `list_memories`, `update_memory`, `remove_memory` | Explicit user fact management |
+| **drive-agent** | `upload_to_drive`, `list_drive_files`, `create_drive_folder`, `read_drive_file`, `search_drive`, `get_hermes_folder`, `create_spreadsheet`, `read_spreadsheet`, `write_spreadsheet`, `append_to_spreadsheet`, `find_spreadsheet`, `create_document`, `read_document`, `append_to_document`, `find_document`, `analyze_image` | Google Drive, Sheets, Docs, and Vision |
+| **ui-agent** | `generate_ui` | Generate interactive HTML pages (no network access) |
+| **general-agent** | `*` (all tools) | Fallback for anything that doesn't fit a specialized agent |
+
+### Agent Execution
+
+All agents share the same execution engine (`src/executor/tool-executor.ts`):
+
+1. Build agent-specific system prompt with context (time, user config, previous results)
+2. Call Claude with the agent's allowed tools
+3. Handle tool call loop (up to 10 iterations)
+4. Return `StepResult` with success/failure, output, and tool calls made
+
+### Agent Selection
+
+The planner LLM chooses agents based on:
+- Agent descriptions and examples (injected into the planning prompt)
+- Rules in the planning prompt (e.g., "use specialized agents over general-agent")
+- Data flow rules (e.g., "fetch data with one agent, then pass to ui-agent to render")
+
+---
+
+## Tool Registry
+
+All tools are defined in `src/tools/index.ts` with a consistent pattern:
+
+```
+ToolDefinition = { tool: Tool (Anthropic schema), handler: ToolHandler }
+```
+
+### Tool Categories
+
+| Category | Tools | Notes |
+|----------|-------|-------|
+| **Calendar** | get/create/update/delete events, resolve_date | Full CRUD via Google Calendar API |
+| **Email** | get_emails, read_email, get_email_thread | Read-only Gmail access |
+| **Memory** | extract/list/update/remove memory | User fact management |
+| **Scheduler** | create/list/update/delete scheduled jobs | Reminders and recurring tasks |
+| **Drive** | upload, list, create folder, read, search, get Hermes folder | Google Drive file management |
+| **Sheets** | create/read/write/append/find spreadsheet | Google Sheets operations |
+| **Docs** | create/read/append/find document | Google Docs operations |
+| **Vision** | analyze_image | Gemini Vision for OCR and image analysis |
+| **UI** | generate_ui | HTML page generation |
+| **Config** | set_user_config, delete_user_data | User preferences |
+| **Maps** | format_maps_link | Google Maps link formatting |
+
+### Read-Only Tools
+
+A subset of tools is designated read-only for use in scheduled job execution:
+`get_calendar_events`, `resolve_date`, `get_emails`, `read_email`, `get_email_thread`, `format_maps_link`
+
+---
+
+## Memory System
+
+### Two-Track Memory
+
+| Track | When | How |
+|-------|------|-----|
+| **Explicit** | User says "remember that..." | memory-agent invoked via orchestrator |
+| **Background** | Every 5 minutes | Async processor extracts facts from unprocessed conversations |
+
+### Background Processor (`src/services/memory/processor.ts`)
+
+1. Polls for unprocessed conversation messages (FIFO, per-user capped)
+2. Groups messages by phone number
+3. For each user: loads existing facts, builds extraction prompt, calls Claude
+4. Parses extracted facts, deduplicates, stores new ones
+5. Reinforces existing facts (bumps confidence +0.1) when re-mentioned
+6. Marks messages as processed (failed batches retry next cycle)
+
+### Confidence Model
+
+| Score | Meaning |
+|-------|---------|
+| 0.3 | Weak single inference |
+| 0.4–0.5 | Single observation |
+| 0.6 | Emerging pattern (threshold for "established fact") |
+| 0.7–0.8 | Solid pattern |
+| 0.9 | Repeatedly confirmed |
+| 1.0 | Explicit user request |
+
+**Established facts** (≥0.6) are prioritized in prompt injection and never auto-deleted.
+**Observations** (<0.6) may be deleted after 180 days if not reinforced.
+
+### Fact Injection
+
+Facts are injected into agent prompts via `ranking.ts`:
+1. Sort by confidence (descending), then recency
+2. Add established facts first, then fill remaining space with observations
+3. Cap at 4000 characters total
 
 ### Storage
 
-User timezone is stored in the `user_config` SQLite table:
+SQLite table `user_facts` in `data/memory.db`:
+- `id`, `phone_number`, `fact`, `category`, `confidence`, `source_type`, `evidence`, `last_reinforced_at`, `extracted_at`
 
-```sql
-CREATE TABLE user_config (
-  phoneNumber TEXT PRIMARY KEY,
-  timezone TEXT,  -- IANA format: "America/New_York"
-  ...
-)
+---
+
+## Scheduler System
+
+### Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| **Poller** | `poller.ts` | Runs every 30 seconds, finds due jobs |
+| **Executor** | `executor.ts` | Runs the job's prompt through Claude with read-only tools, sends SMS |
+| **SQLite Store** | `sqlite.ts` | CRUD for scheduled_jobs table |
+| **Parser** | `parser.ts` | Converts natural language schedules to cron expressions or timestamps |
+
+### Job Types
+
+| Type | Storage | After Run |
+|------|---------|-----------|
+| **One-time** | `nextRunAt` timestamp | Deleted |
+| **Recurring** | `cronExpression` + `timezone` | Updated with next run time |
+
+### Cron Handling
+
+Uses `croner` library with timezone support for DST-safe recurring schedules:
+```
+"every weekday at 8am" → cron: "0 8 * * 1-5" + timezone: "America/Los_Angeles"
 ```
 
-Scheduled jobs also store the timezone they were created with:
+### Schedule Parser
 
-```sql
-CREATE TABLE scheduled_jobs (
-  ...
-  timezone TEXT NOT NULL,  -- IANA format
-  cronExpression TEXT,     -- For recurring: "0 9 * * *"
-  nextRunAt INTEGER,       -- Unix timestamp (UTC)
-  ...
-)
-```
+The parser (`src/services/scheduler/parser.ts`) converts natural language to:
+- **Recurring**: detected by keywords like "daily", "every week", etc. → cron expression
+- **One-time**: anything else (e.g., "tomorrow at 9am") → Unix timestamp via `resolveDate()`
 
-### Setting User Timezone
+---
 
-```
-User: "I'm in Pacific time"
-Tool: set_user_config({ timezone: "America/Los_Angeles" })
-Result: { success: true, timezone: "America/Los_Angeles" }
-```
+## Date Resolution
 
-The tool validates IANA timezone strings using `Intl.DateTimeFormat` before storing.
+The date resolver (`src/services/date/resolver.ts`) converts natural language dates to structured results.
 
-### Creating Reminders
+### Libraries
 
-When a user creates a reminder, the flow is:
+- **chrono-node**: Natural language date parsing
+- **Luxon**: Timezone-aware date math and formatting
 
-1. **Check timezone exists**: Fails if user hasn't set timezone
-2. **Detect schedule type**: Recurring ("daily at 9am") vs one-time ("tomorrow at 3pm")
-3. **Parse the schedule**: Convert to cron expression or UTC timestamp
-4. **Store with timezone**: Save the job with the user's current timezone
+### Functions
 
-#### One-Time Reminders
+| Function | Purpose |
+|----------|---------|
+| `resolveDate()` | Single date/time → `{timestamp, iso, formatted, components}` |
+| `resolveDateRange()` | Ranges and periods → `{start, end, granularity}` |
+| `isValidTimezone()` | Validate IANA timezone string |
+| `formatInTimezone()` | Format a date in the user's timezone |
 
-```
-User: "Remind me tomorrow at 9am to call mom"
-Tool: create_scheduled_job({
-        schedule: "tomorrow at 9am",
-        message: "Time to call mom!"
-      })
-Result: {
-  id: "job_abc123",
-  type: "one-time",
-  nextRunAt: 1737900000,           // UTC timestamp
-  nextRunFormatted: "Sunday, January 26 at 9:00 AM PST"
-}
-```
+### Period Support
 
-**Internal flow:**
-1. Fetch user timezone from config (`America/Los_Angeles`)
-2. Parse "tomorrow at 9am" with chrono-node using timezone context
-3. Convert local time (Jan 26, 9:00 AM PST) to UTC timestamp
-4. Store job with timezone for execution context
+`resolveDateRange` handles: today, tomorrow, yesterday, this/next/last week, this/next/last month, explicit ranges ("from X to Y", "between X and Y"), and chrono-detected ranges.
 
-#### Recurring Reminders
+### Forward-Date Behavior
 
-```
-User: "Remind me every weekday at 8am to check my calendar"
-Tool: create_scheduled_job({
-        schedule: "every weekday at 8am",
-        message: "Check your calendar for today"
-      })
-Result: {
-  id: "job_xyz789",
-  type: "recurring",
-  cronExpression: "0 8 * * 1-5",   // Local time in cron
-  nextRunAt: 1737903600,
-  nextRunFormatted: "Monday, January 27 at 8:00 AM PST"
-}
-```
-
-**Internal flow:**
-1. Parse natural language to cron expression: `"every weekday at 8am"` → `"0 8 * * 1-5"`
-2. Calculate next run using croner library with timezone
-3. Store cron expression + timezone (croner handles DST on each execution)
-
-### Executing Reminders
-
-When a job's `nextRunAt` timestamp is reached:
-
-```
-Poller: Finds job_abc123 is due (nextRunAt <= now)
-Executor: Loads job and user timezone
-LLM Context: "Current time: Sunday, January 26, 2026 9:00 AM PST (America/Los_Angeles)"
-LLM Prompt: "Time to call mom!"
-LLM Response: "Good morning! This is your reminder to call mom. Have a great chat!"
-Result: SMS sent to user, job deleted (one-time) or nextRunAt updated (recurring)
-```
-
-For recurring jobs, the next run is calculated using croner with the stored timezone, which handles DST transitions automatically.
-
-### Calendar Events
-
-Calendar events use the `resolve_date` tool to convert natural language to ISO 8601:
-
-```
-User: "Schedule a meeting Sunday at 3pm"
-Tool: resolve_date({ dateString: "Sunday at 3pm", timezone: "America/Los_Angeles" })
-Result: "2026-01-26T15:00:00-08:00"
-```
-
-The ISO 8601 format includes the timezone offset, which Google Calendar interprets correctly.
-
-### LLM Context
-
-Every request includes timezone-aware context in the system prompt:
-
-```
-Current time: Saturday, January 25, 2026 2:30 PM PST (America/Los_Angeles)
-```
-
-If the user hasn't set a timezone:
-
-```
-Current time: 2026-01-25T22:30:00.000Z (UTC - user timezone unknown)
-```
-
-The LLM is instructed to ask for timezone if it's missing and needed.
-
-### DST Handling
-
-Daylight Saving Time is handled automatically by:
-
-- **Intl.DateTimeFormat**: Correctly calculates offsets at any point in time
-- **croner library**: Handles DST transitions for recurring jobs
-- **zonedTimeToUtcTimestamp**: Iterative algorithm handles DST gaps/overlaps
-
-Edge cases tested:
-- Spring forward (March): 2:30 AM doesn't exist
-- Fall back (November): 1:30 AM occurs twice
-
-### Summary
-
-| Component | Timezone Usage |
-|-----------|----------------|
-| User config | Stores IANA timezone |
-| Job creation | Parses local time, converts to UTC timestamp |
-| Job storage | Stores timezone + cron/timestamp |
-| Job execution | Formats time context in user's timezone |
-| Next run calc | Uses croner with timezone for DST handling |
-| Calendar | ISO 8601 with offset for Google API |
-| LLM context | Always includes formatted local time |
+By default, ambiguous inputs (like "Monday" or "3pm") resolve to future dates. Explicit dates (like "2026-02-04") are accepted even if in the past.
 
 ---
 
 ## Data Storage
 
-All persistent data uses SQLite:
+All persistent data uses **SQLite** via `better-sqlite3`. Three separate database files:
 
-| Table | Purpose |
-|-------|---------|
-| `user_config` | Timezone, preferences per phone |
-| `scheduled_jobs` | Reminders and recurring jobs |
-| `conversations` | Message history |
-| `credentials` | Encrypted OAuth tokens |
-| `memories` | Facts about users |
+### `data/credentials.db`
+
+| Table | Key Columns |
+|-------|-------------|
+| `credentials` | `phone_number` (PK), encrypted OAuth tokens |
+| `scheduled_jobs` | `id`, `phone_number`, `prompt`, `cron_expression`, `timezone`, `next_run_at`, `is_recurring`, `channel` |
+| `user_config` | `phone_number` (PK), `name`, `timezone` |
+
+### `data/conversation.db`
+
+| Table | Key Columns |
+|-------|-------------|
+| `conversation_messages` | `id`, `phone_number`, `role`, `content`, `channel`, `created_at`, `memory_processed`, `media_attachments` |
+| `conversation_message_metadata` | `id`, `message_id` (FK), `phone_number`, `kind`, `payload_json` |
+
+### `data/memory.db`
+
+| Table | Key Columns |
+|-------|-------------|
+| `user_facts` | `id`, `phone_number`, `fact`, `category`, `confidence`, `source_type`, `evidence`, `last_reinforced_at`, `extracted_at` |
+
+### Production Storage
+
+On Railway, databases are stored at `/app/data/` via a persistent volume mount (configured in `railway.toml`).
 
 ---
 
@@ -256,109 +377,225 @@ All persistent data uses SQLite:
 
 ### Twilio
 
-- Inbound: POST webhook receives SMS and WhatsApp messages
-- Media: Download attachments (images, PDFs, documents) from MMS/WhatsApp
-- Outbound: REST API sends SMS/WhatsApp responses
+| Direction | Method | Purpose |
+|-----------|--------|---------|
+| Inbound | POST webhook | Receive SMS/WhatsApp messages |
+| Media | GET (authenticated) | Download MMS/WhatsApp attachments |
+| Outbound | REST API | Send SMS/WhatsApp responses |
 
-### Google APIs
+### Google APIs (OAuth2)
 
-- **Calendar**: Create, read, update, delete events
-- **Gmail**: Read and search emails
-- **Drive**: File storage in user's "Hermes" folder
-- **Sheets**: Spreadsheet creation and management (expense tracking, contacts, etc.)
-- **Docs**: Document creation and management (meeting notes, drafts, etc.)
-- OAuth 2.0 with refresh token storage
+| API | Scope | Operations |
+|-----|-------|------------|
+| Calendar | `calendar.events` | CRUD events |
+| Gmail | `gmail.readonly` | Search and read emails |
+| Drive | `drive.file` | Upload files, manage Hermes folder |
+| Sheets | `spreadsheets` | Create and update spreadsheets |
+| Docs | `documents` | Create and update documents |
 
 ### Google Gemini
 
-- Vision API for image analysis (OCR, document classification, data extraction)
-- Used for analyzing receipts, business cards, screenshots, etc.
+Used for image analysis via `@google/generative-ai`:
+- Model: `gemini-2.5-flash` (configurable)
+- OCR for receipts and documents
+- Content classification and data extraction
 
-### Anthropic
+### Anthropic Claude
 
-- Claude API for message processing
-- Tool use for structured actions
+| Use | Model | Max Tokens |
+|-----|-------|------------|
+| Classification | claude-opus-4-5 | 512 |
+| Planning | claude-opus-4-5 | 1024 |
+| Plan repair | claude-opus-4-5 | 1024 |
+| Agent execution | claude-opus-4-5 | 2048 |
+| Response composition | claude-opus-4-5 | 512 |
+| Memory extraction | claude-opus-4-5 | 1024 |
 
 ---
 
-## Google Workspace Integration
+## UI Generation
 
-### Hermes Folder
+The UI agent generates self-contained HTML/CSS/JS pages for rich interactions (lists, forms, calculators, dashboards).
 
-All Drive files are stored in a user's "Hermes" folder:
+### Flow
 
-- Created automatically in My Drive (or Shared Drive if configured)
-- Tagged with `appProperties` to avoid duplicates
-- All write operations are confined to this folder
+1. Agent generates HTML via the `generate_ui` tool
+2. HTML is validated by `src/services/ui/validator.ts`
+3. Page is stored locally (`data/pages/`) with a short URL
+4. Short URL is sent to the user via SMS
 
-### Document Processing Flow
+### Constraint
 
-When a user sends an image or document via WhatsApp/MMS:
+The ui-agent has **no network access** — it can only render data passed to it from previous agent steps. For live data (calendar events, emails), a two-step plan is needed: fetch with a data agent, then render with ui-agent.
 
-1. **Media Extraction**: Webhook extracts media URL and content type
-2. **Download**: Twilio media downloaded with authentication
-3. **Analysis** (images): Gemini Vision analyzes content
-4. **Storage**: Files saved to Hermes folder
-5. **Integration**: Data can be added to spreadsheets (receipts, contacts)
+### Storage Providers
 
-### Supported File Types
+- **Local** (default): Files on disk at `data/pages/`
+- **S3** (optional): AWS S3 bucket for production
 
-| Type | Extensions | Operations |
-|------|-----------|------------|
-| Images | JPEG, PNG, GIF, WebP | Analyze with Vision, store in Drive |
-| PDF | .pdf | Store in Drive |
-| Word | .doc, .docx | Store in Drive |
-| Google Sheets | - | Create, read, write, append |
-| Google Docs | - | Create, read, append |
+---
 
-### Drive Agent
+## Media Handling
 
-The `drive-agent` handles all Google Workspace operations:
+### Inbound Media Flow
 
-- File uploads and folder management
-- Spreadsheet creation and data entry
-- Document creation and editing
-- Image analysis and document classification
+1. Twilio webhook includes `MediaUrl0` for MMS/WhatsApp images
+2. Media service downloads from Twilio (authenticated)
+3. File is uploaded to Google Drive (Hermes folder)
+4. Metadata stored in `conversation_messages.media_attachments`
+5. Drive agent can analyze images via Gemini Vision
+6. Analysis stored as message metadata (`conversation_message_metadata`)
+7. Future turns can reference the analysis without re-analyzing
 
-### Image Analysis Persistence
+---
 
-Image analysis results are persisted as hidden metadata attached to conversation messages, enabling multi-turn conversations about images without re-analysis.
-
-#### Flow
+## File Structure
 
 ```
-Turn 1: User sends image
-    ↓
-Store user message (id = msg_123)
-    ↓
-Vision tool → Gemini analyzes → store metadata { message_id: msg_123, analysis, drive_url }
-    ↓
-AI composes response (no raw analysis shown)
-    ↓
-Turn 2: User asks follow-up
-    ↓
-Fetch windowed history + metadata for those message_ids
-    ↓
-Agent prompt: <media_context> injected
-    ↓
-AI answers using stored analysis without re-analyzing
+src/
+├── index.ts                    # Express server, startup, graceful shutdown
+├── config.ts                   # All env var loading and validation
+├── conversation.ts             # Legacy conversation helper
+├── twilio.ts                   # Twilio SDK wrapper
+│
+├── routes/
+│   ├── sms.ts                  # SMS/WhatsApp webhook (two-phase handler)
+│   ├── auth.ts                 # Google OAuth callback
+│   ├── health.ts               # GET /health
+│   └── pages.ts                # Serve generated UI pages
+│
+├── admin/
+│   ├── index.ts                # Admin route registration
+│   └── memory.ts               # Admin memory management UI
+│
+├── orchestrator/
+│   ├── orchestrate.ts          # Main orchestration loop
+│   ├── planner.ts              # LLM plan creation + date resolution
+│   ├── executor.ts             # Step execution + replan detection
+│   ├── replanner.ts            # Dynamic replanning
+│   ├── response-composer.ts    # Final response synthesis
+│   ├── handler.ts              # SMS ↔ orchestrator integration
+│   ├── conversation-window.ts  # History sliding window
+│   └── types.ts                # Plan/step/context types + limits
+│
+├── executor/
+│   ├── registry.ts             # Agent capability registry
+│   ├── router.ts               # Agent dispatch by name
+│   ├── tool-executor.ts        # Shared LLM + tool loop engine
+│   └── types.ts                # StepResult, AgentCapability, etc.
+│
+├── agents/
+│   ├── index.ts                # Agent array + re-exports
+│   ├── calendar/               # Calendar agent (index.ts, prompt.ts)
+│   ├── scheduler/              # Scheduler agent
+│   ├── email/                  # Email agent
+│   ├── memory/                 # Memory agent
+│   ├── drive/                  # Drive/Sheets/Docs/Vision agent
+│   ├── ui/                     # UI generation agent
+│   └── general/                # Fallback general agent
+│
+├── tools/
+│   ├── index.ts                # Tool registry, TOOLS array, executeTool()
+│   ├── types.ts                # ToolDefinition, ToolHandler, ToolContext
+│   ├── calendar.ts             # Calendar tool definitions + handlers
+│   ├── scheduler.ts            # Scheduler tool definitions + handlers
+│   ├── email.ts                # Email tool definitions + handlers
+│   ├── memory.ts               # Memory tool definitions + handlers
+│   ├── drive.ts                # Drive tool definitions + handlers
+│   ├── sheets.ts               # Sheets tool definitions + handlers
+│   ├── docs.ts                 # Docs tool definitions + handlers
+│   ├── vision.ts               # Vision/image analysis tool
+│   ├── ui.ts                   # UI generation tool
+│   ├── user-config.ts          # User config tools
+│   ├── maps.ts                 # Maps link formatting
+│   └── utils.ts                # Shared tool utilities
+│
+├── services/
+│   ├── anthropic/              # Claude API
+│   │   ├── client.ts           # SDK wrapper
+│   │   ├── classification.ts   # Fast message classifier
+│   │   ├── types.ts            # ClassificationResult, etc.
+│   │   └── prompts/            # Prompt templates
+│   │       ├── system.ts       # System prompt builder
+│   │       ├── classification.ts # Classification prompt
+│   │       ├── context.ts      # Time/user context builders
+│   │       └── index.ts        # Prompt exports
+│   │
+│   ├── google/                 # Google API clients
+│   │   ├── auth.ts             # OAuth2 flow
+│   │   ├── calendar.ts         # Calendar API
+│   │   ├── gmail.ts            # Gmail API
+│   │   ├── drive.ts            # Drive API
+│   │   ├── sheets.ts           # Sheets API
+│   │   ├── docs.ts             # Docs API
+│   │   └── vision.ts           # Gemini Vision API
+│   │
+│   ├── scheduler/              # Job scheduling
+│   │   ├── index.ts            # Init + exports
+│   │   ├── poller.ts           # 30-second polling loop
+│   │   ├── executor.ts         # Job execution (LLM + send SMS)
+│   │   ├── parser.ts           # Natural language → cron/timestamp
+│   │   ├── sqlite.ts           # Job CRUD
+│   │   └── types.ts            # ScheduledJob, CreateJobInput
+│   │
+│   ├── memory/                 # User memory
+│   │   ├── index.ts            # Store initialization
+│   │   ├── sqlite.ts           # SQLite store (user_facts table)
+│   │   ├── processor.ts        # Background extraction processor
+│   │   ├── ranking.ts          # Confidence sorting + char-cap selection
+│   │   ├── prompts.ts          # Extraction prompt builder
+│   │   └── types.ts            # UserFact, MemoryStore
+│   │
+│   ├── conversation/           # Message history
+│   │   ├── index.ts            # Store initialization
+│   │   ├── sqlite.ts           # SQLite store (messages + metadata)
+│   │   └── types.ts            # ConversationMessage, etc.
+│   │
+│   ├── credentials/            # OAuth token storage
+│   │   ├── index.ts            # Factory (sqlite vs memory)
+│   │   ├── sqlite.ts           # Encrypted token storage
+│   │   ├── memory.ts           # In-memory store (tests)
+│   │   └── types.ts            # CredentialStore interface
+│   │
+│   ├── user-config/            # User preferences
+│   │   ├── index.ts            # Store initialization
+│   │   ├── sqlite.ts           # SQLite store
+│   │   └── types.ts            # UserConfig
+│   │
+│   ├── date/                   # Date resolution
+│   │   ├── index.ts            # Re-exports
+│   │   └── resolver.ts         # chrono-node + Luxon resolver
+│   │
+│   ├── media/                  # Media handling
+│   │   ├── index.ts            # Exports
+│   │   └── upload.ts           # Twilio download + Drive upload
+│   │
+│   ├── ui/                     # UI page generation
+│   │   ├── index.ts            # Exports
+│   │   ├── generator.ts        # HTML generation
+│   │   ├── validator.ts        # HTML validation
+│   │   ├── provider-factory.ts # Storage provider selection
+│   │   └── providers/          # Local storage, memory shortener
+│   │
+│   └── twilio/
+│       └── media.ts            # Twilio media download
+│
+└── utils/
+    └── trace-logger.ts         # Request tracing and debug logging
+
+tests/
+├── setup.ts                    # Global test setup
+├── mocks/                      # Anthropic, Twilio, Google Calendar mocks
+├── fixtures/                   # Webhook payloads
+├── helpers/                    # Test app factory, mock HTTP
+├── unit/                       # Unit tests (by feature)
+│   ├── date/
+│   ├── tools/
+│   ├── agents/
+│   ├── orchestrator/
+│   ├── executor/
+│   ├── scheduler/
+│   ├── services/
+│   └── admin/
+└── integration/                # Integration tests (webhook, calendar, LLM)
 ```
-
-#### Storage
-
-Metadata is stored in `conversation_message_metadata` table:
-
-| Column | Type | Description |
-|--------|------|-------------|
-| message_id | TEXT | ID of the user message with the image |
-| kind | TEXT | Type of metadata (`image_analysis`) |
-| payload_json | TEXT | JSON with driveFileId, driveUrl, mimeType, analysis |
-
-#### Agent Prompt Injection
-
-When building agent prompts, the orchestrator:
-1. Fetches metadata for all messages in the conversation window
-2. Formats it into a `<media_context>` XML block
-3. Injects into the system prompt alongside user memory
-
-This allows agents to answer follow-up questions like "What's on February 14th?" without calling the vision tool again.

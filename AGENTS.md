@@ -1,44 +1,47 @@
 # AGENTS.md
 
-This file provides guidance for AI agents working with this codebase. It is the canonical source of project rules and conventions.
+Canonical instructions for AI agents working with this codebase.
 
 ## Project Overview
 
-This is an SMS-based personal assistant that communicates via Twilio and is powered by Anthropic's Claude LLM with MCP (Model Context Protocol) tool integrations. The assistant accesses Google services (Gmail, Calendar) and runs as a persistent service deployable to Railway or other cloud platforms.
+Hermes Assistant is an SMS/WhatsApp personal assistant powered by Anthropic Claude. It uses a multi-agent orchestration pattern to handle requests via Twilio, integrating with Google Workspace (Calendar, Gmail, Drive, Sheets, Docs) and Gemini Vision.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for full system design.
 
 ## Development Environment
 
-**IMPORTANT: This application must be built and run in WSL (Windows Subsystem for Linux).**
+**This application must be built and run in WSL (Windows Subsystem for Linux).**
 
-The development server uses ngrok for tunneling, which requires WSL. Even if you're using Claude Code or other tools from a Windows shell, all build and run commands must execute in WSL.
-
-**Why WSL is required:**
-- ngrok tunnel integration works correctly in WSL
+- ngrok tunnel integration requires WSL
 - Native binaries (esbuild, rollup) are compiled for Linux
-- Consistent environment matching production (Railway runs Linux)
+- Production environment (Railway) runs Linux
 
 **If node_modules was installed from Windows:**
-- Delete it: `rm -rf node_modules`
-- Reinstall from WSL: `npm install`
-
-**Do NOT run `npm install` from Windows** - this will install Windows-specific binaries that won't work.
+```bash
+rm -rf node_modules && npm install  # from WSL
+```
 
 ## Quick Reference
 
-All commands below must be run **from WSL**:
+All commands must be run **from WSL**:
 
 ```bash
 # Development
 npm run dev              # Hot reload + ngrok tunnel
-npm run dev:server       # Server only
+npm run dev:server       # Server only (no tunnel)
 
 # Build & Run
-npm run build            # Compile TypeScript
+npm run build            # Compile TypeScript + copy views
 npm start                # Run production build
 
 # Quality
-npm test                 # Run tests
-npm run lint             # Lint code
+npm test                 # Run all tests (vitest)
+npm run test:unit        # Unit tests only
+npm run test:integration # Integration tests only
+npm run lint             # ESLint
+
+# Utility
+npm run sms              # Send test SMS via script
 ```
 
 ## TypeScript Configuration
@@ -51,151 +54,110 @@ npm run lint             # Lint code
 
 ## Deployment
 
-**Target platform:** Railway
+**Platform:** Railway
 
-**Option 1 - GitHub integration:**
-- Connect GitHub repo to Railway (auto-deploy on push)
-
-**Option 2 - CLI:**
 ```bash
+# Option 1: GitHub integration (auto-deploy on push)
+# Option 2: CLI
 railway init && railway up
 ```
 
-Configuration is in `railway.toml`.
+Configuration: `railway.toml` (nixpacks builder, /health healthcheck, persistent volume at /app/data)
 
-## Claude Code Tool Usage
+---
 
-When using Claude Code specifically:
-- **Use TodoWrite** for multi-step tasks to track progress
-- **Prefer Edit over Write** for modifying existing files
-- **Use Task tool with Explore agent** for codebase searches and questions
-- **Use Task tool with Plan agent** for designing implementation approaches
-
-## Architecture
-
-The project follows a phased implementation approach:
-
-### Phase 1: SMS Echo MVP ✓ Complete
-- Express server with webhook endpoint (`POST /webhook/sms`)
-- Receives SMS from Twilio, returns TwiML response
-- No LLM, no MCP tools - just proves the SMS pipeline works
-- Deployed to Railway for 24/7 availability
-
-### Phase 2+: Full Assistant (Future)
-- LLM integration via Anthropic Claude API
-- MCP tool framework for extensible capabilities
-- Google OAuth flow (SMS-friendly with auth links)
-- Event-driven automation (email/calendar watchers, reminders, daily briefings)
-- Automation rules engine with quiet hours support
-- Persistent storage (SQLite for tasks, rules, tokens)
-
-### Key Components (Future)
-- **Message Router**: Routes inbound SMS to handler, outbound notifications to Twilio
-- **Message Handler**: Processes SMS requests with LLM
-- **Scheduler**: Cron-like job scheduling for reminders and periodic tasks
-- **Event Listener**: Polls/webhooks for external events (Gmail, Calendar)
-- **Automation Rules**: User-defined trigger → action rules
-- **Auth Manager**: Handles OAuth flows via SMS-sent links
-
-### File Organization
+## Architecture at a Glance
 
 ```
-hermes-assistant/
-├── src/
-│   ├── index.ts          # Express server entry point
-│   ├── config.ts         # Environment configuration
-│   └── routes/
-│       └── sms.ts        # SMS webhook handler
-├── dist/                 # Compiled output
-├── docs/                 # Requirements and specifications
-└── *.md                  # Documentation
+Twilio SMS/WA → Classifier (fast) → Orchestrator → Agent(s) → Response → SMS back
+                                         ↓
+                                    Plan → Execute → Replan → Compose
 ```
 
-## Configuration
+### 7 Agents
 
-Environment variables are defined in `.env.example`. Key variables:
-- Twilio credentials (account SID, auth token, phone numbers)
-- Anthropic API key
-- Google OAuth credentials
-- Server configuration (port, base URL)
+| Agent | Purpose | Tools |
+|-------|---------|-------|
+| `calendar-agent` | Google Calendar CRUD | get/create/update/delete events, resolve_date |
+| `scheduler-agent` | Reminders and recurring tasks | create/list/update/delete jobs, resolve_date |
+| `email-agent` | Gmail search and read | get_emails, read_email, get_email_thread |
+| `memory-agent` | Explicit fact management | extract/list/update/remove memory |
+| `drive-agent` | Drive, Sheets, Docs, Vision | 16 tools (files, spreadsheets, documents, image analysis) |
+| `ui-agent` | Interactive HTML pages | generate_ui (no network access) |
+| `general-agent` | Catch-all fallback | all tools |
 
-## Important Constraints
+### 3 Background Processes
 
-- **SMS Delivery**: Response must be sent via TwiML in webhook response (< 160 chars per SMS)
-- **Security**: All OAuth tokens must be encrypted at rest
-- **Authentication**: Phone number verification for user authentication
-- **Rate Limiting**: Consider Twilio and Google API limits
-- **Cost Management**: Twilio charges per SMS (~$0.016/round-trip)
+| Process | Interval | Purpose |
+|---------|----------|---------|
+| Scheduler poller | 30 seconds | Execute due reminders/jobs |
+| Memory processor | 5 minutes | Extract facts from conversations |
+| Stale cleanup | Per memory cycle | Delete old low-confidence observations |
+
+### 3 SQLite Databases
+
+| Database | Tables |
+|----------|--------|
+| `credentials.db` | credentials, scheduled_jobs, user_config |
+| `conversation.db` | conversation_messages, conversation_message_metadata |
+| `memory.db` | user_facts |
 
 ---
 
 ## Coding Guidelines
 
 ### Design Principles
-- **Avoid over-engineering** - Keep solutions simple and focused on immediate requirements
-- **Only implement what's needed** - Don't build Phase 2 features while working on Phase 1
-- **No premature abstractions** - Three instances of similar code is better than one wrong abstraction
-- **Prefer explicit over clever** - Code should be immediately understandable
-- **Refactor later, not sooner** - Working simple code beats elegant complex code
-- **Don't design for hypothetical future requirements**
-
-### Code Quality
-- **Document why, not what** - Comments should explain decisions and context
-- **Single responsibility** - Functions and modules should do one thing well
-- **Fail fast and loud** - Throw errors early; don't let bad state propagate
-- **Keep error handling simple** - Roll up exception categories (e.g., "Twilio failed" instead of granular error types)
+- **Avoid over-engineering** — Keep solutions simple and focused on immediate requirements
+- **Only implement what's needed** — Don't build features speculatively
+- **No premature abstractions** — Three similar lines of code beats one wrong abstraction
+- **Prefer explicit over clever** — Code should be immediately understandable
+- **Refactor later, not sooner** — Working simple code beats elegant complex code
 
 ### TypeScript Practices
-- **Use strict mode** (already enabled in tsconfig)
+- **Strict mode** enabled in tsconfig
 - **Prefer `type` over `interface`** unless you need extension/merging
-- **Avoid `any`** - Use `unknown` if you truly don't know the type
-- **No type assertions unless absolutely necessary** - `as` casts hide type errors
+- **Avoid `any`** — Use `unknown` if you truly don't know the type
+- **No type assertions unless absolutely necessary** — `as` casts hide type errors
 
-### Dependencies
-- **Minimize dependencies** - Evaluate if you really need a library
-- **Prefer standard library** - Use built-in Node.js features when possible
-- **Vet security** - Check npm audit and consider maintenance status
+### Code Quality
+- **Document why, not what** — Comments explain decisions, not mechanics
+- **Single responsibility** — Functions and modules do one thing well
+- **Fail fast and loud** — Throw errors early; don't let bad state propagate
+- **Keep error handling simple** — Roll up exception categories
 
 ### Security
-- **Never log sensitive data** - No tokens, credentials, API keys, or full phone numbers
-- **Use environment variables** - All secrets via `.env` (never committed)
-- **Encrypt tokens at rest** - When storage is added, encrypt OAuth tokens
-- **Validate external input** - Never trust data from Twilio webhooks or user SMS
+- **Never log sensitive data** — No tokens, credentials, API keys, or full phone numbers
+- **Use environment variables** — All secrets via `.env` (never committed)
+- **Encrypt tokens at rest** — OAuth tokens encrypted with CREDENTIAL_ENCRYPTION_KEY
+- **Validate external input** — Never trust data from Twilio webhooks or user SMS
 
-### Testing Requirements
+### Dependencies
+- **Minimize dependencies** — Evaluate if you really need a library
+- **Prefer standard library** — Use built-in Node.js features when possible
 
-**MANDATORY:** Every code change must include appropriate tests and all tests must pass.
+---
 
-#### What to Test
-- **Unit tests for major code paths** - Test the main functionality and key branches
-- **Unit tests for major error modes** - Test error handling, edge cases, and failure scenarios
-- **Integration tests for key workflows** - Test end-to-end behavior of important features
-- **Mock external services** - Never call real Twilio, Anthropic, or Google APIs in tests
+## Testing Requirements
 
-#### Testing Workflow
-1. **Write tests alongside code changes** - New features and bug fixes require new tests
-2. **Run unit and integration tests after every change**: `npm run test:unit` and `npm run test:integration`
-3. **All tests must pass** - Never consider work complete with failing tests
-4. **If tests fail, keep working** - Debug and fix until all tests pass
-5. **Don't skip or disable tests** - Fix the code or the test, never skip
+**Every code change must include appropriate tests and all tests must pass.**
 
-#### Test Quality
-- Tests should be readable and document expected behavior
-- Each test should verify one specific behavior
-- Use descriptive test names that explain what's being tested
-- Prefer explicit assertions over clever test abstractions
+### What to Test
+- Unit tests for major code paths and key branches
+- Unit tests for error handling and edge cases
+- Integration tests for key workflows
+- **Mock external services** — Never call real Twilio, Anthropic, or Google APIs in tests
 
-### Logging
-- **Structured logging** - Use JSON format for production logs
-- **Include context** - Request IDs, user identifiers (hashed phone numbers)
-- **Log errors with stack traces** - But sanitize sensitive data first
-- **Different levels** - Debug (development), Info (production), Error (always)
+### Testing Stack
+- **Framework**: Vitest
+- **HTTP testing**: Supertest
+- **Mocking**: Vitest mocks + custom mocks in `tests/mocks/`
+- **Config**: `vitest.config.ts` (aliases `@anthropic-ai/sdk` to mock)
 
-### Code Organization
-- **Flat structure initially** - Don't create deep hierarchies until complexity demands it
-- **Group by feature, not type** - `sms/` instead of `controllers/`, `services/`, `models/`
-- **Configuration in one place** - Centralize env var loading and validation
-- **Keep routes thin** - Handlers should delegate to business logic functions
+### Testing Workflow
+1. Write tests alongside code changes
+2. Run: `npm run test:unit` and `npm run test:integration`
+3. All tests must pass — never skip or disable tests
+4. If tests fail, debug and fix until all pass
 
 ---
 
@@ -203,88 +165,96 @@ Environment variables are defined in `.env.example`. Key variables:
 
 ### After Making Code Changes
 
-**CRITICAL:** All code changes require tests and verification.
-
-1. **Write/update tests** - Add unit and integration tests for new code paths and error modes
-2. **Run unit and integration tests**: `npm run test:unit` and `npm run test:integration`
-3. **If tests fail** - Debug, fix, and re-run until all pass. Do not proceed with failing tests.
-4. **Repeat** - Continue iterating until all tests pass
+1. Write/update tests for new code paths and error modes
+2. Run `npm run test:unit` and `npm run test:integration`
+3. Fix failures before proceeding
+4. Check if architecture docs need updating
 
 ### Architecture Documentation Maintenance
 
-**MANDATORY:** When making code changes, always include a task to check if architecture documentation needs updating.
-
 | Document | Update When |
 |----------|-------------|
-| `MEMORY.md` | Any change to memory system: storage, extraction, prompts, context injection, processor, or memory agent |
-| `ARCHITECTURE.md` | Any change to system design: new services, request flow, data models, external integrations, or component interactions |
+| `ARCHITECTURE.md` | System design changes: new services, request flow, data models, integrations, components |
 
-**Task List Requirement:** Every task list for code changes MUST include:
-- "Check if MEMORY.md needs updating" (for memory-related changes)
-- "Check if ARCHITECTURE.md needs updating" (for architecture-related changes)
-
-These documents are the source of truth for understanding the system. Outdated documentation causes confusion and bugs.
+**Every task list for code changes should include:** "Check if ARCHITECTURE.md needs updating"
 
 ### Before Committing
 
-1. **Verify unit and integration tests pass**: `npm run test:unit` and `npm run test:integration` (run again to confirm)
-2. **Run linter**: `npm run lint`
-3. **Build to verify**: `npm run build`
-4. **Update architecture docs**: If you changed memory or system architecture, update `MEMORY.md` or `ARCHITECTURE.md`
-5. **Update other docs**: If you changed behavior, update relevant docs
+1. Verify tests pass: `npm run test:unit && npm run test:integration`
+2. Run linter: `npm run lint`
+3. Build to verify: `npm run build`
+4. Update architecture docs if applicable
 
-### Testing
+---
 
-**IMPORTANT:** Never pollute production with test data!
+## Adding New Agents
 
-```bash
-# Run all tests
-npm test
+To add a new specialized agent:
 
-# For manual testing with dev server
-npm run dev
-```
+1. Create `src/agents/<name>/index.ts` — export `capability` and `executor`
+2. Create `src/agents/<name>/prompt.ts` — agent system prompt
+3. Define tools in `src/tools/<name>.ts` if needed
+4. Register tools in `src/tools/index.ts`
+5. Import and add to the `AGENTS` array in `src/agents/index.ts` (before general-agent)
+6. Write tests in `tests/unit/agents/<name>/`
 
-**Always mock external services** (Twilio, Anthropic, Google) in tests.
+The agent will automatically be available to the planner and router.
 
-### Common Development Tasks
+## Adding New Tools
 
-#### Adding a New Endpoint
+1. Create a `ToolDefinition` in the appropriate `src/tools/*.ts` file
+2. Add it to `allTools` array in `src/tools/index.ts`
+3. Add the tool name to the relevant agent's tool list in `src/agents/*/index.ts`
+4. If it's safe for scheduled execution, add to `READ_ONLY_TOOLS`
 
-1. Create handler in `src/routes/` or appropriate feature directory
-2. Register route in `src/index.ts`
-3. Add types if needed
-4. **Write unit tests** for handler logic (success and error cases)
-5. **Write integration tests** for the endpoint
-6. **Run `npm test`** and fix any failures
-7. Document if public API
+---
 
-#### Adding Storage Features (Phase 2+)
+## Configuration
 
-1. Update schema/types
-2. Add migration if using SQLite
-3. Implement storage logic
-4. **Write unit tests** for storage operations
-5. **Write integration tests** for data flows
-6. **Run `npm test`** and fix any failures
+### Required Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `ANTHROPIC_API_KEY` | Claude API access |
+| `TWILIO_ACCOUNT_SID` | Twilio account |
+| `TWILIO_AUTH_TOKEN` | Twilio authentication |
+| `TWILIO_PHONE_NUMBER` | Outbound SMS number |
+| `GOOGLE_CLIENT_ID` | Google OAuth |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth |
+| `CREDENTIAL_ENCRYPTION_KEY` | 64-char hex string for encrypting OAuth tokens |
+
+### Optional Environment Variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `PORT` | 3000 | HTTP server port |
+| `NODE_ENV` | development | Runtime environment |
+| `BASE_URL` | http://localhost:3000 | For generating short links |
+| `GOOGLE_REDIRECT_URI` | http://localhost:3000/auth/google/callback | OAuth redirect |
+| `GEMINI_API_KEY` | — | Gemini Vision API |
+| `GEMINI_MODEL` | gemini-2.5-flash | Vision model |
+| `MEMORY_INJECTION_THRESHOLD` | 0.5 | Min confidence for fact injection |
+| `MEMORY_PROCESSOR_INTERVAL_MS` | 300000 | Background extraction interval |
+| `MEMORY_PROCESSOR_BATCH_SIZE` | 100 | Max messages per extraction run |
+| `MEMORY_PROCESSOR_PER_USER_BATCH_SIZE` | 25 | Max messages per user per run |
+| `MEMORY_MODEL_ID` | claude-opus-4-5-20251101 | Model for memory extraction |
+| `UI_STORAGE_PROVIDER` | local | UI page storage (local or s3) |
+| `PAGE_TTL_DAYS` | 7 | UI page expiry |
 
 ---
 
 ## Git Workflow
 
-### Commit Message Convention
+### Commit Messages
 
 Include issue ID in parentheses when applicable:
-
 ```bash
 git commit -m "Fix auth validation bug (hermes-assistant-abc)"
 ```
 
 ### Beads Integration
 
-This project uses [beads](https://github.com/steveyegge/beads) for issue tracking.
-
-**Common commands:**
+This project uses [beads](https://github.com/steveyegge/beads) for issue tracking:
 ```bash
 bd list              # List issues
 bd ready             # Show issues ready to work
@@ -293,46 +263,23 @@ bd close <id>        # Close issue
 bd sync              # Sync with git remote
 ```
 
-**Auto-sync provides batching** - bd automatically exports to JSONL after CRUD operations (30-second debounce).
-
-**At end of session**, always run:
-```bash
-bd sync
-```
-
-This immediately exports, commits, and pushes issue changes.
-
 ### Session Close Protocol
 
-Before ending a session, complete this checklist:
-
 ```bash
-[ ] git status              # Check what changed
-[ ] git add <files>         # Stage code changes
-[ ] bd sync                 # Commit beads changes
-[ ] git commit -m "..."     # Commit code
-[ ] bd sync                 # Commit any new beads changes
-[ ] git push                # Push to remote
+git status              # Check what changed
+git add <files>         # Stage code changes
+bd sync                 # Commit beads changes
+git commit -m "..."     # Commit code
+bd sync                 # Commit any new beads changes
+git push                # Push to remote
 ```
 
-Work is not done until pushed.
-
 ---
 
-## Phase 1 Checklist ✓
+## Claude Code Tool Usage
 
-- [x] Express server with `/webhook/sms` endpoint
-- [x] Health check endpoint (`GET /health`)
-- [x] Parse Twilio webhook body (From, To, Body)
-- [x] Return TwiML response with echo message
-- [x] Deploy to Railway
-- [x] Configure Twilio webhook URL
-
----
-
-## Documentation
-
-- `AGENTS.md` - This file (canonical agent instructions, including Claude Code usage)
-- `ARCHITECTURE.md` - System design, request flow, timezone handling
-- `README.md` - Quick start and project overview
-- `docs/` - Feature specs and implementation plans
+When using Claude Code specifically:
+- **Use TodoWrite** for multi-step tasks to track progress
+- **Prefer Edit over Write** for modifying existing files
+- **Use Task tool with Explore agent** for codebase searches
+- **Use Task tool with Plan agent** for designing implementation approaches

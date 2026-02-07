@@ -59,7 +59,11 @@
       "Bash(\"/c/Program Files/nodejs/npm\" run build)",
       "Bash(cmd.exe /c \"npm run build\")",
       "Bash(cmd.exe /c \"npm run test:unit -- memory-sqlite\")",
-      "Bash(cmd.exe /c \"npm run build 2>&1\")"
+      "Bash(cmd.exe /c \"npm run build 2>&1\")",
+      "Bash(npm run test:run:*)",
+      "Bash(powershell:*)",
+      "Bash(wc:*)",
+      "Bash(comm:*)"
     ]
   }
 }
