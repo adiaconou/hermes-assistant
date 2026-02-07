@@ -198,7 +198,7 @@ Explain what succeeded and what didn't.
         (block): block is ToolUseBlock => block.type === 'tool_use'
       );
 
-      // Execute all tool calls in parallel
+      // Execute all tool calls in parallel, isolating individual failures
       const toolResults: ToolResultBlockParam[] = await Promise.all(
         toolUseBlocks.map(async (toolUse) => {
           logger?.log('DEBUG', 'Composition tool call', {
@@ -206,17 +206,32 @@ Explain what succeeded and what didn't.
             input: toolUse.input,
           });
 
-          const result = await executeTool(
-            toolUse.name,
-            toolUse.input as Record<string, unknown>,
-            toolContext
-          );
+          try {
+            const result = await executeTool(
+              toolUse.name,
+              toolUse.input as Record<string, unknown>,
+              toolContext
+            );
 
-          return {
-            type: 'tool_result' as const,
-            tool_use_id: toolUse.id,
-            content: result,
-          };
+            return {
+              type: 'tool_result' as const,
+              tool_use_id: toolUse.id,
+              content: result,
+            };
+          } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            logger?.log('ERROR', 'Composition tool call failed', {
+              tool: toolUse.name,
+              error: errorMsg,
+            });
+
+            return {
+              type: 'tool_result' as const,
+              tool_use_id: toolUse.id,
+              content: JSON.stringify({ success: false, error: errorMsg }),
+              is_error: true as const,
+            };
+          }
         })
       );
 

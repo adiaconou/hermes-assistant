@@ -12,7 +12,10 @@ import express from 'express';
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
-import config from './config.js';
+import config, { validateConfig } from './config.js';
+
+// Fail fast if critical configuration is missing
+validateConfig();
 import smsRouter from './routes/sms.js';
 import pagesRouter from './routes/pages.js';
 import authRouter from './routes/auth.js';

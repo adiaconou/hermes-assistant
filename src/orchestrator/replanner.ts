@@ -127,10 +127,15 @@ function parseReplanResponse(text: string): {
       timestamp: new Date().toISOString(),
     }));
 
-    // Return empty plan on parse failure
+    // Return a general-agent fallback so the user gets some response
     return {
-      analysis: 'Could not parse replan response',
-      steps: [],
+      analysis: 'Could not parse replan response, falling back to general agent',
+      steps: [{
+        id: 'step_fallback',
+        agent: 'general-agent',
+        task: 'Summarize what was accomplished so far and let the user know if anything failed.',
+        status: 'pending',
+      }],
     };
   }
 }

@@ -30,6 +30,7 @@
 
 import type { AgentCapability, StepResult, AgentExecutionContext } from '../../executor/types.js';
 import { executeWithTools } from '../../executor/tool-executor.js';
+import { applyAgentContext } from '../context.js';
 import { MEMORY_AGENT_PROMPT } from './prompt.js';
 
 /**
@@ -68,12 +69,7 @@ export async function executor(
   task: string,
   context: AgentExecutionContext
 ): Promise<StepResult> {
-  const userContext = context.userConfig?.name
-    ? `User: ${context.userConfig.name}`
-    : '';
-
-  const systemPrompt = MEMORY_AGENT_PROMPT
-    .replace('{userContext}', userContext);
+  const systemPrompt = applyAgentContext(MEMORY_AGENT_PROMPT, context.userConfig);
 
   return executeWithTools(
     systemPrompt,

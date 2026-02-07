@@ -125,7 +125,7 @@ type ParsedPlanResponse = {
   steps: Array<{ id: string; agent: string; task: string }>;
 };
 
-function createGeneralFallbackPlan(userMessage: string, reason: string): ParsedPlanResponse {
+function createGeneralFallbackPlan(userMessage: string, reason: string, timezone?: string): ParsedPlanResponse {
   console.warn(JSON.stringify({
     level: 'warn',
     message: 'Falling back to general-agent plan',
@@ -133,13 +133,19 @@ function createGeneralFallbackPlan(userMessage: string, reason: string): ParsedP
     timestamp: new Date().toISOString(),
   }));
 
+  // Resolve relative dates even in fallback plans so the general-agent
+  // doesn't have to interpret "tomorrow", "next week", etc.
+  const resolvedMessage = timezone
+    ? resolveTaskDates(userMessage, timezone)
+    : userMessage;
+
   return {
     analysis: 'Could not parse planner output, defaulting to general agent',
     goal: 'Handle user request',
     steps: [{
       id: 'step_1',
       agent: 'general-agent',
-      task: `Handle the user request directly: "${userMessage}"`,
+      task: `Handle the user request directly: "${resolvedMessage}"`,
     }],
   };
 }
@@ -310,7 +316,7 @@ export async function createPlan(
     parsed = await repairPlanResponse(anthropic, context.userMessage, responseText, logger);
   }
   if (!parsed) {
-    parsed = createGeneralFallbackPlan(context.userMessage, 'planning_parse_failed_after_repair');
+    parsed = createGeneralFallbackPlan(context.userMessage, 'planning_parse_failed_after_repair', context.userConfig?.timezone);
   }
 
   // Convert to PlanSteps

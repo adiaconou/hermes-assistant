@@ -26,30 +26,24 @@ import type { TraceLogger } from '../utils/trace-logger.js';
 const STEP_TIMEOUT_MS = ORCHESTRATOR_LIMITS.stepTimeoutMs;
 
 /**
- * Wrap a promise with a timeout while preventing unhandled rejections
- * from the original promise after the timeout fires.
+ * Wrap a promise with a timeout.
+ * Uses Promise.race to cleanly settle on whichever completes first,
+ * and always clears the timer to avoid resource leaks.
  */
 async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    let timedOut = false;
+  let timer: ReturnType<typeof setTimeout>;
 
-    const timer = setTimeout(() => {
-      timedOut = true;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
       reject(new Error(`Step execution timeout after ${ms}ms`));
     }, ms);
-
-    promise
-      .then(result => {
-        if (timedOut) return;
-        clearTimeout(timer);
-        resolve(result);
-      })
-      .catch(error => {
-        if (timedOut) return;
-        clearTimeout(timer);
-        reject(error);
-      });
   });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timer!);
+  }
 }
 
 /**

@@ -24,9 +24,17 @@ function escapeXml(text: string): string {
 
 /**
  * Truncate text with ellipsis if it exceeds max length.
+ * Logs a warning when truncation occurs so it's visible in debugging.
  */
 function truncateText(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text;
+  console.log(JSON.stringify({
+    level: 'warn',
+    message: 'Media analysis truncated',
+    originalLength: text.length,
+    maxLength,
+    timestamp: new Date().toISOString(),
+  }));
   return text.slice(0, maxLength - 3) + '...';
 }
 

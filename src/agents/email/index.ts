@@ -12,7 +12,7 @@
 
 import type { AgentCapability, StepResult, AgentExecutionContext } from '../../executor/types.js';
 import { executeWithTools } from '../../executor/tool-executor.js';
-import { buildTimeContext } from '../../services/anthropic/prompts/context.js';
+import { applyAgentContext } from '../context.js';
 import { EMAIL_AGENT_PROMPT } from './prompt.js';
 
 /**
@@ -53,17 +53,7 @@ export async function executor(
   task: string,
   context: AgentExecutionContext
 ): Promise<StepResult> {
-  const timeContext = context.userConfig
-    ? `Current time: ${buildTimeContext(context.userConfig)}`
-    : '';
-
-  const userContext = context.userConfig?.name
-    ? `User: ${context.userConfig.name}`
-    : '';
-
-  const systemPrompt = EMAIL_AGENT_PROMPT
-    .replace('{timeContext}', timeContext)
-    .replace('{userContext}', userContext);
+  const systemPrompt = applyAgentContext(EMAIL_AGENT_PROMPT, context.userConfig);
 
   return executeWithTools(
     systemPrompt,

@@ -44,6 +44,48 @@ async function sendResponse(
 const router = Router();
 
 /**
+ * Simple per-phone-number rate limiter.
+ * Tracks message timestamps per sender and rejects if too many arrive
+ * in the window. Stale entries are cleaned up periodically.
+ */
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
+const RATE_LIMIT_MAX = 20; // max messages per window per phone number
+
+const rateLimitMap = new Map<string, number[]>();
+
+/** Periodic cleanup of stale rate limit entries (every 5 minutes). */
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, timestamps] of rateLimitMap) {
+    const fresh = timestamps.filter(t => now - t < RATE_LIMIT_WINDOW_MS);
+    if (fresh.length === 0) {
+      rateLimitMap.delete(key);
+    } else {
+      rateLimitMap.set(key, fresh);
+    }
+  }
+}, 5 * 60_000);
+
+/**
+ * Check if a phone number is rate limited.
+ * Returns true if the request should be allowed, false if rate-limited.
+ */
+function checkRateLimit(phoneNumber: string): boolean {
+  const now = Date.now();
+  const timestamps = rateLimitMap.get(phoneNumber) || [];
+  const fresh = timestamps.filter(t => now - t < RATE_LIMIT_WINDOW_MS);
+
+  if (fresh.length >= RATE_LIMIT_MAX) {
+    rateLimitMap.set(phoneNumber, fresh);
+    return false;
+  }
+
+  fresh.push(now);
+  rateLimitMap.set(phoneNumber, fresh);
+  return true;
+}
+
+/**
  * Twilio sends these fields (among others) in the webhook POST body.
  * See: https://www.twilio.com/docs/messaging/guides/webhook-request
  */
@@ -307,6 +349,18 @@ export async function handleSmsWebhook(req: Request, res: Response): Promise<voi
 
   const channel = detectChannel(From || '');
   const sender = stripPrefix(From || '');
+
+  // Per-phone rate limiting
+  if (!checkRateLimit(sender)) {
+    console.log(JSON.stringify({
+      level: 'warn',
+      message: 'Rate limited',
+      from: sanitizePhone(sender),
+      timestamp: new Date().toISOString(),
+    }));
+    res.status(429).send('Rate limited');
+    return;
+  }
 
   // Extract media attachments
   const mediaAttachments = extractMediaAttachments(webhookBody);

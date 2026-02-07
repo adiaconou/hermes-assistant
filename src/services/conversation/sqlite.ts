@@ -200,17 +200,26 @@ export class SqliteConversationStore implements ConversationStore {
     const perUserLimit = options?.perUserLimit ?? 25;
     const includeAssistant = options?.includeAssistant ?? false;
 
-    // FIFO across all users, optionally including assistant role, with per-user cap
+    // Use a window function to apply per-user cap in SQL rather than
+    // loading all rows and filtering in JS. This scales with table size.
     const roleFilter = includeAssistant ? '' : `AND role = 'user'`;
     const rows = this.db.prepare(
       `
+      WITH ranked AS (
+        SELECT id, phone_number, role, content, channel, created_at,
+               memory_processed, memory_processed_at, media_attachments,
+               ROW_NUMBER() OVER (PARTITION BY phone_number ORDER BY created_at ASC, rowid ASC) AS rn
+        FROM conversation_messages
+        WHERE memory_processed = 0 ${roleFilter}
+      )
       SELECT id, phone_number, role, content, channel, created_at,
              memory_processed, memory_processed_at, media_attachments
-      FROM conversation_messages
-      WHERE memory_processed = 0 ${roleFilter}
-      ORDER BY created_at ASC, rowid ASC
+      FROM ranked
+      WHERE rn <= ?
+      ORDER BY created_at ASC, rn ASC
+      LIMIT ?
       `
-    ).all() as Array<{
+    ).all(perUserLimit, limit) as Array<{
       id: string;
       phone_number: string;
       role: string;
@@ -222,18 +231,7 @@ export class SqliteConversationStore implements ConversationStore {
       media_attachments: string | null;
     }>;
 
-    // Apply per-user limit in-memory to maintain FIFO ordering
-    const byUserCount = new Map<string, number>();
-    const limited: typeof rows = [];
-    for (const row of rows) {
-      const count = byUserCount.get(row.phone_number) ?? 0;
-      if (count >= perUserLimit) continue;
-      if (limited.length >= limit) break;
-      byUserCount.set(row.phone_number, count + 1);
-      limited.push(row);
-    }
-
-    return limited.map((row) => ({
+    return rows.map((row) => ({
       id: row.id,
       phoneNumber: row.phone_number,
       role: row.role as 'user' | 'assistant',

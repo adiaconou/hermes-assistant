@@ -6,8 +6,7 @@
  */
 
 import { google, gmail_v1 } from 'googleapis';
-import config from '../../config.js';
-import { getCredentialStore } from '../credentials/index.js';
+import { getAuthenticatedClient, isInsufficientScopesError, handleScopeError } from './auth.js';
 import { AuthRequiredError } from './calendar.js';
 
 /**
@@ -31,72 +30,15 @@ export interface EmailDetail extends Email {
 }
 
 /**
- * Create an OAuth2 client with stored credentials.
- */
-function createOAuth2Client() {
-  return new google.auth.OAuth2(
-    config.google.clientId,
-    config.google.clientSecret,
-    config.google.redirectUri
-  );
-}
-
-/**
- * Refresh an expired access token using the refresh token.
- */
-async function refreshAccessToken(
-  refreshToken: string
-): Promise<{ accessToken: string; expiresAt: number }> {
-  const oauth2Client = createOAuth2Client();
-  oauth2Client.setCredentials({ refresh_token: refreshToken });
-
-  const { credentials } = await oauth2Client.refreshAccessToken();
-
-  if (!credentials.access_token) {
-    throw new Error('Failed to refresh access token');
-  }
-
-  return {
-    accessToken: credentials.access_token,
-    expiresAt: credentials.expiry_date || Date.now() + 3600000,
-  };
-}
-
-/**
- * Check if an error is due to insufficient OAuth scopes.
- * This happens when user authenticated before Gmail was added.
- */
-function isInsufficientScopesError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.includes('insufficient authentication scopes') ||
-         message.includes('Insufficient Permission');
-}
-
-/**
  * Handle Gmail API errors, converting scope errors to AuthRequiredError.
- * Deletes credentials if scopes are insufficient so user can re-auth.
  */
 async function handleGmailApiError(
   error: unknown,
   phoneNumber: string
 ): Promise<never> {
   if (isInsufficientScopesError(error)) {
-    console.log(JSON.stringify({
-      level: 'warn',
-      message: 'Gmail scope missing, removing credentials for re-auth',
-      phone: phoneNumber.slice(-4).padStart(phoneNumber.length, '*'),
-      error: error instanceof Error ? error.message : 'Unknown error',
-      timestamp: new Date().toISOString(),
-    }));
-
-    // Delete credentials so user can re-authenticate with Gmail scope
-    const store = getCredentialStore();
-    await store.delete(phoneNumber, 'google');
-
-    throw new AuthRequiredError(phoneNumber);
+    return handleScopeError(error, phoneNumber, 'Gmail');
   }
-
-  // Re-throw other errors as-is
   throw error;
 }
 
@@ -106,47 +48,7 @@ async function handleGmailApiError(
  * @throws AuthRequiredError if no credentials exist
  */
 async function getGmailClient(phoneNumber: string): Promise<gmail_v1.Gmail> {
-  const store = getCredentialStore();
-  let creds = await store.get(phoneNumber, 'google');
-
-  if (!creds) {
-    throw new AuthRequiredError(phoneNumber);
-  }
-
-  // Refresh if token expires in < 5 minutes
-  const REFRESH_THRESHOLD_MS = 5 * 60 * 1000;
-  if (creds.expiresAt < Date.now() + REFRESH_THRESHOLD_MS) {
-    try {
-      const refreshed = await refreshAccessToken(creds.refreshToken);
-      creds = {
-        ...creds,
-        accessToken: refreshed.accessToken,
-        expiresAt: refreshed.expiresAt,
-      };
-      await store.set(phoneNumber, 'google', creds);
-
-      console.log(JSON.stringify({
-        level: 'info',
-        message: 'Refreshed Google access token',
-        phone: phoneNumber.slice(-4).padStart(phoneNumber.length, '*'),
-        timestamp: new Date().toISOString(),
-      }));
-    } catch (error) {
-      console.log(JSON.stringify({
-        level: 'warn',
-        message: 'Token refresh failed, removing credentials',
-        phone: phoneNumber.slice(-4).padStart(phoneNumber.length, '*'),
-        error: error instanceof Error ? error.message : 'Unknown error',
-        timestamp: new Date().toISOString(),
-      }));
-      await store.delete(phoneNumber, 'google');
-      throw new AuthRequiredError(phoneNumber);
-    }
-  }
-
-  const oauth2Client = createOAuth2Client();
-  oauth2Client.setCredentials({ access_token: creds.accessToken });
-
+  const oauth2Client = await getAuthenticatedClient(phoneNumber, 'Gmail');
   return google.gmail({ version: 'v1', auth: oauth2Client });
 }
 

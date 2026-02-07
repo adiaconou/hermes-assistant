@@ -122,7 +122,7 @@ describe('getRelevantHistory', () => {
       const result = getRelevantHistory(messages, {
         maxAgeHours: 24,
         maxMessages: 20,
-        maxTokens: 500, // Only ~500 tokens
+        maxTokens: 700, // ~700 tokens: each 1000-char msg is ~304 tokens at 3.3 chars/token
       });
 
       // Should keep most recent messages that fit
@@ -133,7 +133,7 @@ describe('getRelevantHistory', () => {
 
     it('should return empty if first message exceeds budget', () => {
       const messages = [
-        createMessage('A'.repeat(20000), 'user', 1), // ~5000 tokens
+        createMessage('A'.repeat(20000), 'user', 1), // ~6061 tokens at 3.3 chars/token
       ];
 
       const result = getRelevantHistory(messages, {
@@ -245,8 +245,8 @@ describe('getWindowStats', () => {
 
     const stats = getWindowStats(messages);
 
-    // 100 chars / 4 = 25 tokens
-    expect(stats.totalTokens).toBe(25);
+    // 100 chars / 3.3 = 30.3 → ceil = 31 tokens
+    expect(stats.totalTokens).toBe(31);
   });
 
   it('should track oldest and newest timestamps', () => {

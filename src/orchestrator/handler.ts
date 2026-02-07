@@ -62,10 +62,30 @@ export async function handleWithOrchestrator(
       getMemoryStore(),
     ];
 
-    const [conversationHistory, userFacts] = await Promise.all([
+    const [historyResult, factsResult] = await Promise.allSettled([
       conversationStore.getHistory(phoneNumber, { limit: 50 }),
       memoryStore.getFacts(phoneNumber),
     ]);
+
+    const conversationHistory = historyResult.status === 'fulfilled' ? historyResult.value : [];
+    const userFacts = factsResult.status === 'fulfilled' ? factsResult.value : [];
+
+    if (historyResult.status === 'rejected') {
+      console.error(JSON.stringify({
+        level: 'warn',
+        message: 'Failed to load conversation history, continuing with empty history',
+        error: historyResult.reason instanceof Error ? historyResult.reason.message : String(historyResult.reason),
+        timestamp: new Date().toISOString(),
+      }));
+    }
+    if (factsResult.status === 'rejected') {
+      console.error(JSON.stringify({
+        level: 'warn',
+        message: 'Failed to load user facts, continuing without memory',
+        error: factsResult.reason instanceof Error ? factsResult.reason.message : String(factsResult.reason),
+        timestamp: new Date().toISOString(),
+      }));
+    }
 
     const windowedHistory = getRelevantHistory(conversationHistory);
 

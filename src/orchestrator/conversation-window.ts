@@ -14,10 +14,11 @@ import { DEFAULT_CONVERSATION_WINDOW } from './types.js';
 
 /**
  * Estimate token count for a message.
- * Uses simple 4-chars-per-token heuristic (good enough for planning).
+ * Uses ~3.3 chars-per-token which is closer to Claude's actual tokenization
+ * than the commonly-cited 4 chars/token (which underestimates by ~30%).
  */
 function estimateTokens(content: string): number {
-  return Math.ceil(content.length / 4);
+  return Math.ceil(content.length / 3.3);
 }
 
 /**

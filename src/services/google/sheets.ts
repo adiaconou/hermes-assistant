@@ -6,8 +6,7 @@
  */
 
 import { google, sheets_v4 } from 'googleapis';
-import config from '../../config.js';
-import { getCredentialStore } from '../credentials/index.js';
+import { getAuthenticatedClient, withRetry } from './auth.js';
 import { AuthRequiredError } from './calendar.js';
 import { getOrCreateHermesFolder, moveToHermesFolder } from './drive.js';
 
@@ -46,135 +45,6 @@ export interface AppendResult {
 }
 
 /**
- * Retry configuration for Google API calls.
- */
-const MAX_RETRIES = 2;
-const RETRY_DELAY_MS = 1000;
-
-/**
- * Check if an error is retryable (429 or 5xx).
- */
-function isRetryableError(error: unknown): boolean {
-  if (error && typeof error === 'object' && 'code' in error) {
-    const code = (error as { code: number }).code;
-    return code === 429 || (code >= 500 && code < 600);
-  }
-  return false;
-}
-
-/**
- * Check if an error is due to insufficient OAuth scopes.
- * This happens when user authenticated before Sheets scopes were added.
- */
-function isInsufficientScopesError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.includes('insufficient authentication scopes') ||
-         message.includes('Insufficient Permission');
-}
-
-/**
- * Handle Sheets API errors, converting scope errors to AuthRequiredError.
- * Deletes credentials if scopes are insufficient so user can re-auth.
- */
-async function handleSheetsApiError(
-  error: unknown,
-  phoneNumber: string
-): Promise<never> {
-  if (isInsufficientScopesError(error)) {
-    console.log(JSON.stringify({
-      level: 'warn',
-      message: 'Sheets scope missing, removing credentials for re-auth',
-      phone: phoneNumber.slice(-4).padStart(phoneNumber.length, '*'),
-      error: error instanceof Error ? error.message : 'Unknown error',
-      timestamp: new Date().toISOString(),
-    }));
-
-    // Delete credentials so user can re-authenticate with Sheets scopes
-    const store = getCredentialStore();
-    await store.delete(phoneNumber, 'google');
-
-    throw new AuthRequiredError(phoneNumber);
-  }
-
-  // Re-throw other errors as-is
-  throw error;
-}
-
-/**
- * Sleep for a specified duration.
- */
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-/**
- * Execute a function with retry logic and optional scope error handling.
- */
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  phoneNumber?: string
-): Promise<T> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      // Check for scope errors immediately (don't retry these)
-      if (phoneNumber && isInsufficientScopesError(error)) {
-        await handleSheetsApiError(error, phoneNumber);
-      }
-
-      lastError = error;
-      if (attempt < MAX_RETRIES && isRetryableError(error)) {
-        console.log(JSON.stringify({
-          level: 'warn',
-          message: 'Retrying Google Sheets API call',
-          attempt: attempt + 1,
-          maxRetries: MAX_RETRIES,
-          timestamp: new Date().toISOString(),
-        }));
-        await sleep(RETRY_DELAY_MS * (attempt + 1));
-      } else {
-        throw error;
-      }
-    }
-  }
-  throw lastError;
-}
-
-/**
- * Create an OAuth2 client with stored credentials.
- */
-function createOAuth2Client() {
-  return new google.auth.OAuth2(
-    config.google.clientId,
-    config.google.clientSecret,
-    config.google.redirectUri
-  );
-}
-
-/**
- * Refresh an expired access token using the refresh token.
- */
-async function refreshAccessToken(
-  refreshToken: string
-): Promise<{ accessToken: string; expiresAt: number }> {
-  const oauth2Client = createOAuth2Client();
-  oauth2Client.setCredentials({ refresh_token: refreshToken });
-
-  const { credentials } = await oauth2Client.refreshAccessToken();
-
-  if (!credentials.access_token) {
-    throw new Error('Failed to refresh access token');
-  }
-
-  return {
-    accessToken: credentials.access_token,
-    expiresAt: credentials.expiry_date || Date.now() + 3600000,
-  };
-}
-
-/**
  * Get an authenticated Sheets client for a phone number.
  * Automatically refreshes token if expired.
  * @throws AuthRequiredError if no credentials exist
@@ -182,47 +52,7 @@ async function refreshAccessToken(
 async function getSheetsClient(
   phoneNumber: string
 ): Promise<sheets_v4.Sheets> {
-  const store = getCredentialStore();
-  let creds = await store.get(phoneNumber, 'google');
-
-  if (!creds) {
-    throw new AuthRequiredError(phoneNumber);
-  }
-
-  // Refresh if token expires in < 5 minutes
-  const REFRESH_THRESHOLD_MS = 5 * 60 * 1000;
-  if (creds.expiresAt < Date.now() + REFRESH_THRESHOLD_MS) {
-    try {
-      const refreshed = await refreshAccessToken(creds.refreshToken);
-      creds = {
-        ...creds,
-        accessToken: refreshed.accessToken,
-        expiresAt: refreshed.expiresAt,
-      };
-      await store.set(phoneNumber, 'google', creds);
-
-      console.log(JSON.stringify({
-        level: 'info',
-        message: 'Refreshed Google access token for Sheets',
-        phone: phoneNumber.slice(-4).padStart(phoneNumber.length, '*'),
-        timestamp: new Date().toISOString(),
-      }));
-    } catch (error) {
-      console.log(JSON.stringify({
-        level: 'warn',
-        message: 'Token refresh failed, removing credentials',
-        phone: phoneNumber.slice(-4).padStart(phoneNumber.length, '*'),
-        error: error instanceof Error ? error.message : 'Unknown error',
-        timestamp: new Date().toISOString(),
-      }));
-      await store.delete(phoneNumber, 'google');
-      throw new AuthRequiredError(phoneNumber);
-    }
-  }
-
-  const oauth2Client = createOAuth2Client();
-  oauth2Client.setCredentials({ access_token: creds.accessToken });
-
+  const oauth2Client = await getAuthenticatedClient(phoneNumber, 'Sheets');
   return google.sheets({ version: 'v4', auth: oauth2Client });
 }
 

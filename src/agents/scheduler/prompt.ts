@@ -52,13 +52,6 @@ Think of it this way:
 
 5. Always confirm what was created/updated/deleted
 
-## Authentication
-
-If users need to authenticate to create reminders, they can visit:
-{baseUrl}/auth?phone={phoneNumber}
-
-(The orchestrator will provide the actual URL if needed)
-
 {timeContext}
 
 {userContext}`;

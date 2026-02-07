@@ -22,7 +22,6 @@ import type {
 } from './types.js';
 import { ORCHESTRATOR_LIMITS } from './types.js';
 import { createAgentRegistry } from '../executor/registry.js';
-import { getRelevantHistory } from './conversation-window.js';
 import { createPlan } from './planner.js';
 import { executeStep, shouldReplan } from './executor.js';
 import { replan, canReplan } from './replanner.js';
@@ -110,9 +109,10 @@ export async function orchestrate(
   }));
 
   // Build initial context
+  // Note: conversationHistory is already windowed by the handler before calling orchestrate
   const context: PlanContext = {
     userMessage,
-    conversationHistory: getRelevantHistory(conversationHistory),
+    conversationHistory,
     userFacts,
     userConfig,
     phoneNumber,

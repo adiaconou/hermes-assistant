@@ -15,6 +15,7 @@ import {
   getCredentialStore,
   resetCredentialStore
 } from '../../src/services/credentials/index.js';
+import { clearClientCache } from '../../src/services/google/auth.js';
 
 // Import after mocks are set up
 import { listEvents, createEvent, updateEvent, deleteEvent, AuthRequiredError } from '../../src/services/google/calendar.js';
@@ -30,6 +31,7 @@ describe('Calendar Service', () => {
   beforeEach(() => {
     clearMockState();
     resetCredentialStore();
+    clearClientCache();
     vi.clearAllMocks();
   });
 

@@ -95,6 +95,8 @@ export async function executeJob(
       : `I hit an error running your scheduled task: ${execResult.error ?? 'unknown error'}`;
 
     // Send the response via appropriate channel (stored in job)
+    // Important: we only delete/update the job AFTER send succeeds,
+    // so a send failure doesn't lose the reminder.
     if (job.channel === 'whatsapp') {
       await sendWhatsApp(job.phoneNumber, response);
     } else {
@@ -112,7 +114,7 @@ export async function executeJob(
       });
       logJobSuccess(job, Date.now() - startTime, nextRunAt);
     } else {
-      // One-time reminder: delete after execution
+      // One-time reminder: delete only after successful send
       deleteJob(db, job.id);
       logOneTimeComplete(job, Date.now() - startTime);
     }
@@ -122,8 +124,8 @@ export async function executeJob(
   } catch (error) {
     logJobError(job, error as Error, Date.now() - startTime);
 
-    // For recurring jobs, update next_run_at so job continues on schedule
-    // For one-time jobs, delete them even on failure (they won't retry)
+    // For recurring jobs, advance to next run so they don't fire again immediately.
+    // For one-time jobs, keep them in the DB so they can retry next cycle.
     try {
       if (job.isRecurring) {
         const nextRunAt = calculateNextRun(job.cronExpression, job.timezone);
@@ -133,8 +135,12 @@ export async function executeJob(
           lastRunAt: nowSeconds,
         });
       } else {
-        // One-time reminder: delete even on failure
-        deleteJob(db, job.id);
+        // Push one-time job's next_run_at forward by 5 minutes for retry
+        const retryAt = Math.floor(Date.now() / 1000) + 300;
+        await updateJob(db, job.id, {
+          nextRunAt: retryAt,
+          lastRunAt: Math.floor(Date.now() / 1000),
+        });
       }
     } catch (updateError) {
       console.error(JSON.stringify({

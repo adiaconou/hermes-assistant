@@ -15,6 +15,7 @@ import {
   getCredentialStore,
   resetCredentialStore,
 } from '../../src/services/credentials/index.js';
+import { clearClientCache } from '../../src/services/google/auth.js';
 
 // Import after mocks are set up
 import { listEmails, getEmail, getThread } from '../../src/services/google/gmail.js';
@@ -31,6 +32,7 @@ describe('Gmail Service', () => {
   beforeEach(() => {
     clearMockState();
     resetCredentialStore();
+    clearClientCache();
     vi.clearAllMocks();
   });
 

@@ -125,4 +125,60 @@ const config = {
   },
 };
 
+/**
+ * Validate critical configuration at startup.
+ * Throws if required values are missing or invalid.
+ */
+export function validateConfig(): void {
+  const errors: string[] = [];
+
+  // Required API keys
+  if (!config.anthropicApiKey) {
+    errors.push('ANTHROPIC_API_KEY is required');
+  }
+
+  // Twilio (required for SMS)
+  if (!config.twilio.accountSid) errors.push('TWILIO_ACCOUNT_SID is required');
+  if (!config.twilio.authToken) errors.push('TWILIO_AUTH_TOKEN is required');
+  if (!config.twilio.phoneNumber) errors.push('TWILIO_PHONE_NUMBER is required');
+
+  // Google OAuth (required for calendar/email/drive)
+  if (!config.google.clientId) errors.push('GOOGLE_CLIENT_ID is required');
+  if (!config.google.clientSecret) errors.push('GOOGLE_CLIENT_SECRET is required');
+
+  // Encryption key validation
+  if (!config.credentials.encryptionKey) {
+    errors.push('CREDENTIAL_ENCRYPTION_KEY is required');
+  } else if (!/^[0-9a-fA-F]{64}$/.test(config.credentials.encryptionKey)) {
+    errors.push('CREDENTIAL_ENCRYPTION_KEY must be a 64-character hex string (32 bytes)');
+  }
+
+  // Numeric bounds
+  if (config.port < 1 || config.port > 65535) {
+    errors.push(`PORT must be 1-65535, got ${config.port}`);
+  }
+  if (config.memoryProcessor.intervalMs < 1000) {
+    errors.push(`MEMORY_PROCESSOR_INTERVAL_MS must be >= 1000, got ${config.memoryProcessor.intervalMs}`);
+  }
+  if (config.memoryProcessor.batchSize < 1) {
+    errors.push(`MEMORY_PROCESSOR_BATCH_SIZE must be >= 1, got ${config.memoryProcessor.batchSize}`);
+  }
+  if (config.memory.injectionThreshold < 0 || config.memory.injectionThreshold > 1) {
+    errors.push(`MEMORY_INJECTION_THRESHOLD must be 0-1, got ${config.memory.injectionThreshold}`);
+  }
+  if (config.ui.pageTtlDays < 1) {
+    errors.push(`PAGE_TTL_DAYS must be >= 1, got ${config.ui.pageTtlDays}`);
+  }
+
+  if (errors.length > 0) {
+    console.error(JSON.stringify({
+      level: 'fatal',
+      message: 'Configuration validation failed',
+      errors,
+      timestamp: new Date().toISOString(),
+    }));
+    throw new Error(`Configuration validation failed:\n  - ${errors.join('\n  - ')}`);
+  }
+}
+
 export default config;
