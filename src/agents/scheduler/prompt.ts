@@ -50,7 +50,7 @@ Think of it this way:
    - "Daily at 8:00 AM: Take vitamins"
    - "One-time on Feb 5 at 5:00 PM: Call mom"
 
-5. Always confirm what was created/updated/deleted
+5. Confirm briefly with the key details (content, time, one-time vs recurring)
 
 {timeContext}
 

@@ -37,9 +37,7 @@ When listing events:
 - Indicate if there are no events
 
 When creating/updating events:
-- Confirm what was created/changed
-- Include the event time in the user's timezone
-- Provide any relevant links (video call, etc.)
+- Confirm with event title, date/time, and any video call link. Skip preamble.
 
 {timeContext}
 

@@ -21,10 +21,9 @@ import type { TraceLogger } from '../utils/trace-logger.js';
 /**
  * Composition prompt template.
  */
-const COMPOSITION_PROMPT = `You are composing a final response for a personal assistant.
+const COMPOSITION_PROMPT = `You are composing a final text message response for a personal assistant.
 
-The user's request has been processed. Create a friendly, conversational response
-that summarizes what was done.
+The user's request has been processed. Write a warm, direct reply.
 
 <user_request>
 {request}
@@ -43,17 +42,24 @@ that summarizes what was done.
 {dataPriority}
 
 <rules>
-1. Be conversational and friendly
-2. Response should be concise but complete - aim for under 1500 characters when possible
-3. Don't mention internal steps or technical details
-4. If there were partial failures, acknowledge what succeeded and what didn't
-5. If there's a URL or link in the results, include it prominently
-6. Use the user's name if available
-7. CRITICAL: If the user asked for specific numbers, amounts, prices, dates, or quantities, you MUST include ALL of them in your response. Never summarize numerical data away.
-8. When mentioning a physical address or location from the results, use the format_maps_link tool and include its "text" field (Label: URL). Avoid markdown; use plain URLs.
+1. TONE: Warm and casual, like texting a friend. Have personality but don't be wordy.
+2. LEAD WITH THE OUTCOME: Start with what was done or found. No preamble.
+3. KEEP INFORMATIONAL CONTENT: Details, lists, specifics about what changed — include all of this. This is the valuable part.
+4. CUT THE FLUFF:
+   - No filler openers ("Got it!", "Sure thing!", "Absolutely!", "One sec...")
+   - No repeating back what the user asked ("You asked me to...")
+   - No closing offers ("Let me know if you need anything else!", "Want me to...")
+   - No process narration ("I went ahead and...", "I searched for...")
+5. Aim for under 800 characters. Informational details are worth the space; filler is not.
+6. Don't mention internal steps or technical details
+7. If there were partial failures, acknowledge what succeeded and what didn't
+8. If there's a URL or link in the results, include it prominently
+9. Use the user's name if available, but not every time
+10. CRITICAL: If the user asked for specific numbers, amounts, prices, dates, or quantities, you MUST include ALL of them in your response. Never summarize numerical data away.
+11. When mentioning a physical address or location from the results, use the format_maps_link tool and include its "text" field (Label: URL). Avoid markdown; use plain URLs.
 </rules>
 
-Write ONLY the final response message (no JSON, no explanation).`;
+Write ONLY the final text message. No JSON, no explanation.`;
 
 /**
  * Format step results for the composition prompt.
@@ -158,7 +164,7 @@ Explain what succeeded and what didn't.
     // Log LLM request
     logger?.llmRequest('composition', {
       model: 'claude-opus-4-5-20251101',
-      maxTokens: 512,
+      maxTokens: 350,
       systemPrompt: promptWithMemory + systemAddition,
       messages: [{ role: 'user', content: 'Compose the final response.' }],
       tools: tools.map(t => ({ name: t.name })),
@@ -171,7 +177,7 @@ Explain what succeeded and what didn't.
     let llmStartTime = Date.now();
     let response = await anthropic.messages.create({
       model: 'claude-opus-4-5-20251101',
-      max_tokens: 512,
+      max_tokens: 350,
       system: promptWithMemory + systemAddition,
       tools,
       messages,
@@ -241,7 +247,7 @@ Explain what succeeded and what didn't.
 
       logger?.llmRequest(`composition: tool iteration ${toolIterations}`, {
         model: 'claude-opus-4-5-20251101',
-        maxTokens: 512,
+        maxTokens: 350,
         systemPrompt: '(same as initial)',
         messages: [{ role: 'user', content: '(continuing with tool results)' }],
       });
@@ -249,7 +255,7 @@ Explain what succeeded and what didn't.
       llmStartTime = Date.now();
       response = await anthropic.messages.create({
         model: 'claude-opus-4-5-20251101',
-        max_tokens: 512,
+        max_tokens: 350,
         system: promptWithMemory + systemAddition,
         tools,
         messages,

@@ -30,7 +30,7 @@ You have access to the full tool suite:
 
 ## Guidelines
 
-1. **Be concise**: Give helpful responses without unnecessary verbosity
+1. **Be direct**: Lead with the answer or outcome. Include useful details, skip filler and pleasantries
 2. **Use tools**: Don't guess - use tools to get accurate information
 3. **Personalize**: Use the user's name if known
 4. **Respect timezone**: All date/time operations should use the user's timezone
@@ -47,6 +47,6 @@ The planner routes requests here when:
 ## Response Format
 
 - For data queries: Return structured, readable information
-- For actions: Confirm what was done
-- For conversations: Be friendly and helpful
-- For errors: Explain what went wrong and suggest alternatives`;
+- For actions: Confirm what was done with relevant details. Skip preamble.
+- For conversations: Be friendly and warm
+- For errors: Explain what went wrong and suggest one alternative`;

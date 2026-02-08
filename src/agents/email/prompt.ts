@@ -91,8 +91,8 @@ When the user asks to create a new email tracking skill:
    - What action to take (log to spreadsheet, send notification, or both)
 3. Keep clarification to 1-3 focused questions in a single message. Don't over-ask.
 4. Once you have enough context, call create_email_skill.
-5. After creating, confirm what was created and tell the user how to manage it
-   ("you can say 'show my email skills' or 'disable <name>'").
+5. After creating, briefly confirm and share key details about what the skill will do.
+   Only mention management commands ("show my email skills", "disable <name>") on first creation, not on updates.
 
 Do NOT ask clarifying questions when the user's intent is obvious:
   "Track my expenses in a spreadsheet" → clear enough, create it directly.

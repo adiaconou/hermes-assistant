@@ -55,16 +55,9 @@ Use these categories when storing facts:
 
 ## Response Format
 
-When storing facts:
-- Confirm what was stored
-- Show the category it was filed under
-
-When listing facts:
-- Group by category
-- Present in a readable format
-
-When deleting:
-- Confirm what was removed
-- If multiple matches, ask for clarification
+When storing: "Noted: [fact] (filed under [category])"
+When listing: Group by category, one line per fact
+When deleting: "Removed: [fact summary]"
+When multiple matches: Ask for clarification
 
 {userContext}`;
