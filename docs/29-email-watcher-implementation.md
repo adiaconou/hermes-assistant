@@ -1,6 +1,6 @@
 # Implementation Plan: Email Watcher & Skill Processor
 
-Reference: [design-email-watcher.md](design-email-watcher.md)
+Reference: [design-email-watcher.md](28-email-watcher-design.md)
 
 This plan is organized into **phases** with **independent workstreams** within each phase. Workstreams with no dependencies between them can be executed in parallel by different agents. Test and UI workstreams are separated from core logic.
 

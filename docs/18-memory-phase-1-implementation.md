@@ -2,7 +2,7 @@
 
 **Version**: 1.0
 **Date**: 2026-01-23
-**Reference**: [Memory PRD](memory-prd.md)
+**Reference**: [Memory PRD](17-memory-prd.md)
 
 ---
 
@@ -27,7 +27,7 @@ This document provides a detailed, step-by-step implementation plan for Phase 1 
 ## Prerequisites
 
 Before starting, ensure you're familiar with:
-- [Memory PRD](memory-prd.md) - Product requirements
+- [Memory PRD](17-memory-prd.md) - Product requirements
 - [AGENTS.md](../AGENTS.md) - Project coding guidelines
 - Existing `user-config` service pattern (`src/services/user-config/`)
 
@@ -1164,7 +1164,7 @@ Not part of Phase 1, but keep in mind:
 
 ## References
 
-- [Memory PRD](memory-prd.md) - Product requirements
+- [Memory PRD](17-memory-prd.md) - Product requirements
 - [AGENTS.md](../AGENTS.md) - Coding guidelines
 - [Letta Documentation](https://docs.letta.com/guides/agents/memory-blocks) - Memory block inspiration
 - Existing `user-config` service - Implementation reference

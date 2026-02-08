@@ -1,6 +1,6 @@
 # Orchestrator Implementation Plan
 
-This document provides a step-by-step implementation plan for the orchestrator system defined in [orchestrator-design.md](orchestrator-design.md).
+This document provides a step-by-step implementation plan for the orchestrator system defined in [orchestrator-design.md](09-orchestrator-design.md).
 
 ## Overview
 
@@ -25,8 +25,8 @@ Before starting implementation, ensure these foundations are in place:
 - [ ] Tool registry with existing tools
 
 ### Recommended Reading
-- [orchestrator-design.md](orchestrator-design.md) - Full design specification
-- [agent-design.md](agent-design.md) - Agent structure and conventions
+- [orchestrator-design.md](09-orchestrator-design.md) - Full design specification
+- [agent-design.md](08-agent-architecture.md) - Agent structure and conventions
 
 ---
 

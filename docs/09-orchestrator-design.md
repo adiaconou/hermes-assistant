@@ -2,7 +2,7 @@
 
 This document describes the design for an orchestrator agent that plans, delegates, tracks, and dynamically adjusts execution of complex user requests.
 
-> **Related Document:** See [agent-design.md](agent-design.md) for:
+> **Related Document:** See [agent-design.md](08-agent-architecture.md) for:
 > - Current architecture limitations and motivation for multi-agent design
 > - Agent definitions (prompts, tools, token budgets)
 > - Implementation phases and timeline
