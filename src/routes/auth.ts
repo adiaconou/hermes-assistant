@@ -227,7 +227,7 @@ router.get('/auth/google', handleGoogleAuth);
  * GET /auth/google/callback
  * Handles OAuth callback from Google.
  */
-router.get('/auth/google/callback', async (req, res) => {
+export async function handleGoogleCallback(req: Request, res: Response): Promise<void> {
   const { code, state, error } = req.query as {
     code?: string;
     state?: string;
@@ -307,6 +307,18 @@ router.get('/auth/google/callback', async (req, res) => {
     }));
     res.status(500).send(errorHtml('😔 Failed to connect Google account. Please try again.'));
   }
+}
+
+router.get('/auth/google/callback', (req, res) => {
+  handleGoogleCallback(req, res).catch((error) => {
+    console.log(JSON.stringify({
+      level: 'error',
+      message: 'Unhandled OAuth callback error',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString(),
+    }));
+    res.status(500).send(errorHtml('😔 Failed to connect Google account. Please try again.'));
+  });
 });
 
 

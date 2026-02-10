@@ -8,11 +8,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createMockReqRes } from '../helpers/mock-http.js';
 import { handleSmsWebhook } from '../../src/routes/sms.js';
 import { healthHandler } from '../../src/routes/health.js';
-import { createSmsPayload, createWhatsAppPayload, toFormData } from '../fixtures/webhook-payloads.js';
+import { createSmsPayload, createWhatsAppPayload } from '../fixtures/webhook-payloads.js';
 import {
   setMockResponses,
   createTextResponse,
   clearMockState,
+  mockCreate,
 } from '../mocks/anthropic.js';
 import { getSentMessages, clearSentMessages } from '../mocks/twilio.js';
 import { getExpectedTwilioSignature } from 'twilio/lib/webhooks/webhooks.js';
@@ -237,6 +238,74 @@ describe('POST /webhook/sms', () => {
       expect(res.statusCode).toBe(200);
       expect(res.headers['content-type']).toContain('text/xml');
       expect(res.text).toContain('<Message>Hello!</Message>');
+    });
+
+    it('returns 403 when Twilio signature is invalid', async () => {
+      const payload = createSmsPayload('Hi');
+
+      const { req, res } = createMockReqRes({
+        method: 'POST',
+        url: '/webhook/sms',
+        headers: { 'x-twilio-signature': 'invalid-signature' },
+        body: payload,
+      });
+
+      await handleSmsWebhook(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(res.text).toBe('Forbidden');
+      expect(getSentMessages()).toHaveLength(0);
+    });
+
+    it('returns 429 after exceeding per-sender rate limit window', async () => {
+      const sender = `+1555${Date.now().toString().slice(-7)}`;
+      const responses = Array.from({ length: 25 }, () =>
+        createTextResponse('{"needsAsyncWork": false, "immediateResponse": "ok"}')
+      );
+      setMockResponses(responses);
+
+      for (let i = 0; i < 20; i++) {
+        const payload = createSmsPayload(`msg-${i}`, sender);
+        const { req, res } = createMockReqRes({
+          method: 'POST',
+          url: '/webhook/sms',
+          headers: { 'x-twilio-signature': signPayload(payload) },
+          body: payload,
+        });
+        await handleSmsWebhook(req, res);
+        expect(res.statusCode).toBe(200);
+      }
+
+      const payload = createSmsPayload('limit-hit', sender);
+      const { req, res } = createMockReqRes({
+        method: 'POST',
+        url: '/webhook/sms',
+        headers: { 'x-twilio-signature': signPayload(payload) },
+        body: payload,
+      });
+
+      await handleSmsWebhook(req, res);
+
+      expect(res.statusCode).toBe(429);
+      expect(res.text).toBe('Rate limited');
+    });
+
+    it('returns fallback TwiML when classification call throws', async () => {
+      mockCreate.mockRejectedValueOnce(new Error('Classifier down'));
+
+      const payload = createSmsPayload('Trigger failure', '+15557654321');
+      const { req, res } = createMockReqRes({
+        method: 'POST',
+        url: '/webhook/sms',
+        headers: { 'x-twilio-signature': signPayload(payload) },
+        body: payload,
+      });
+
+      await handleSmsWebhook(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toContain('text/xml');
+      expect(res.text).toContain('processing your message and will respond shortly');
     });
   });
 });

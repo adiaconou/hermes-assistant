@@ -16,6 +16,7 @@ import {
 
 // Import from the new location
 import { classifyMessage } from '../../src/services/anthropic/index.js';
+import config from '../../src/config.js';
 
 // Type for message history
 interface Message {
@@ -112,7 +113,7 @@ describe('classifyMessage', () => {
     const result = await classifyMessage('Test', []);
 
     expect(result.needsAsyncWork).toBe(true);
-    expect(result.immediateResponse).toBeDefined();
+    expect(result.immediateResponse).toBe("✨ Let me work on that for you!");
   });
 
   it('should use fast model for classification', async () => {
@@ -124,7 +125,8 @@ describe('classifyMessage', () => {
 
     const calls = getCreateCalls();
     expect(calls.length).toBe(1);
-    // Classification should use a fast model
-    expect(calls[0].model).toContain('claude');
+    expect(calls[0].model).toBe(config.models.classifier);
+    expect(calls[0].max_tokens).toBe(512);
+    expect(calls[0].tools).toBeUndefined();
   });
 });

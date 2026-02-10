@@ -2,12 +2,13 @@
  * Unit tests for the async memory processor.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   setMockResponses,
   createTextResponse,
   clearMockState,
   getCreateCalls,
+  mockCreate,
 } from '../mocks/anthropic.js';
 
 // Mock the stores before importing processor
@@ -451,16 +452,20 @@ describe('Memory Processor', () => {
     it('handles LLM errors without marking messages as processed', async () => {
       convHelpers.addTestMessage('+1234567890', 'user', 'Test message');
 
-      // Make the mock throw an error
-      const originalCreate = vi.fn().mockRejectedValue(new Error('API Error'));
-      vi.doMock('@anthropic-ai/sdk', () => ({
-        default: class {
-          messages = { create: originalCreate };
-        },
-      }));
+      mockCreate
+        .mockRejectedValueOnce(new Error('API Error'))
+        .mockRejectedValueOnce(new Error('API Error'));
 
-      // Note: This test would need a different approach since we can't easily
-      // change the mock after module load. Skipping complex error simulation.
+      const result = await processUnprocessedMessages();
+
+      expect(result.messagesProcessed).toBe(0);
+      expect(result.factsExtracted).toBe(0);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0].error).toContain('API Error');
+
+      const processedIds = convHelpers.getProcessedIds();
+      expect(processedIds.size).toBe(0);
+      expect(mockCreate).toHaveBeenCalledTimes(2);
     });
   });
 

@@ -48,6 +48,16 @@ let lastInsertedEvent: Partial<MockCalendarEvent> | null = null;
 let lastPatchedEvent: { eventId: string; requestBody: Partial<MockCalendarEvent> } | null = null;
 let lastDeletedEventId: string | null = null;
 let shouldFailRefresh = false;
+let tokenExchangeError: Error | null = null;
+let mockTokenResponse: {
+  access_token?: string;
+  refresh_token?: string;
+  expiry_date?: number;
+} = {
+  access_token: 'oauth-access-token',
+  refresh_token: 'oauth-refresh-token',
+  expiry_date: Date.now() + 3600000,
+};
 
 // Gmail mock state
 let mockEmails: MockEmail[] = [];
@@ -82,6 +92,24 @@ export function getGmailCallCounts(): { list: number; get: number; threadGet: nu
  */
 export function setShouldFailRefresh(fail: boolean): void {
   shouldFailRefresh = fail;
+}
+
+/**
+ * Configure OAuth token exchange failure.
+ */
+export function setTokenExchangeError(error: Error | null): void {
+  tokenExchangeError = error;
+}
+
+/**
+ * Configure OAuth token exchange response.
+ */
+export function setMockTokenResponse(tokens: {
+  access_token?: string;
+  refresh_token?: string;
+  expiry_date?: number;
+}): void {
+  mockTokenResponse = { ...tokens };
 }
 
 /**
@@ -133,6 +161,12 @@ export function clearMockState(): void {
   lastPatchedEvent = null;
   lastDeletedEventId = null;
   shouldFailRefresh = false;
+  tokenExchangeError = null;
+  mockTokenResponse = {
+    access_token: 'oauth-access-token',
+    refresh_token: 'oauth-refresh-token',
+    expiry_date: Date.now() + 3600000,
+  };
   // Gmail state
   mockEmails = [];
   gmailListCallCount = 0;
@@ -277,6 +311,14 @@ const mockRefreshAccessToken = vi.fn(async () => {
 });
 
 const mockSetCredentials = vi.fn();
+const mockGetToken = vi.fn(async () => {
+  if (tokenExchangeError) {
+    throw tokenExchangeError;
+  }
+  return {
+    tokens: { ...mockTokenResponse },
+  };
+});
 
 const mockGenerateAuthUrl = vi.fn((options: { scope: string[]; state?: string }) => {
   return `https://accounts.google.com/o/oauth2/auth?scope=${options.scope.join('+')}&state=${options.state || ''}`;
@@ -286,6 +328,7 @@ class MockOAuth2 {
   setCredentials = mockSetCredentials;
   refreshAccessToken = mockRefreshAccessToken;
   generateAuthUrl = mockGenerateAuthUrl;
+  getToken = mockGetToken;
 }
 
 // Mock google object
@@ -317,4 +360,5 @@ export {
   mockSetCredentials,
   mockRefreshAccessToken,
   mockGenerateAuthUrl,
+  mockGetToken,
 };

@@ -4,25 +4,43 @@
  * Tests the full path from OAuth routes through calendar tools.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import Database from 'better-sqlite3';
 import { createMockReqRes } from '../helpers/mock-http.js';
 import {
   setMockEvents,
+  setMockTokenResponse,
+  setTokenExchangeError,
   clearMockState as clearCalendarMocks,
   type MockCalendarEvent
 } from '../mocks/google-calendar.js';
+import { getSentMessages, clearSentMessages } from '../mocks/twilio.js';
 import {
   getCredentialStore,
   resetCredentialStore
 } from '../../src/services/credentials/index.js';
-import { generateAuthUrl, handleGoogleAuth } from '../../src/routes/auth.js';
+import { getEmailSkillStore, resetEmailSkillStore } from '../../src/services/email-watcher/sqlite.js';
+
+import { generateAuthUrl, handleGoogleAuth, handleGoogleCallback } from '../../src/routes/auth.js';
 
 describe('Calendar Integration', () => {
   const testPhone = '+1234567890';
+  let emailSkillDb: InstanceType<typeof Database> | null = null;
 
   beforeEach(() => {
     clearCalendarMocks();
+    clearSentMessages();
     resetCredentialStore();
+    resetEmailSkillStore();
+    emailSkillDb = new Database(':memory:');
+    getEmailSkillStore(emailSkillDb);
+  });
+
+  afterEach(() => {
+    if (emailSkillDb) {
+      emailSkillDb.close();
+      emailSkillDb = null;
+    }
   });
 
   describe('OAuth Flow', () => {
@@ -39,19 +57,30 @@ describe('Calendar Integration', () => {
       expect(state.length).toBeGreaterThan(20);
     });
 
-    it('rejects expired state parameter', async () => {
-      // Create a fake expired state (can't easily test real expiry without waiting)
-      // Instead, test with invalid state
-      const { req, res } = createMockReqRes({
-        method: 'GET',
-        url: '/auth/google',
-        query: { state: 'invalid-state' },
-      });
+    it('rejects an actually expired state parameter', async () => {
+      vi.useFakeTimers();
+      try {
+        const baseTime = new Date('2026-02-10T10:00:00.000Z');
+        vi.setSystemTime(baseTime);
+        const authUrl = generateAuthUrl(testPhone);
+        const state = authUrl.split('state=')[1];
 
-      handleGoogleAuth(req, res);
+        // OAuth state expiry is 10 minutes, advance past it
+        vi.setSystemTime(new Date(baseTime.getTime() + 11 * 60 * 1000));
 
-      expect(res.statusCode).toBe(400);
-      expect(res.text).toContain('Invalid or expired');
+        const { req, res } = createMockReqRes({
+          method: 'GET',
+          url: '/auth/google',
+          query: { state },
+        });
+
+        handleGoogleAuth(req, res);
+
+        expect(res.statusCode).toBe(400);
+        expect(res.text).toContain('Invalid or expired');
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('redirects to Google when state is valid', async () => {
@@ -88,6 +117,89 @@ describe('Calendar Integration', () => {
       // For now, we verify the auth URL generation works
       const authUrl = generateAuthUrl(testPhone);
       expect(authUrl).toContain('/auth/google');
+    });
+  });
+
+  describe('OAuth Callback', () => {
+    it('stores credentials and returns success page for valid callback', async () => {
+      const state = generateAuthUrl(testPhone).split('state=')[1];
+
+      setMockTokenResponse({
+        access_token: 'callback-access-token',
+        refresh_token: 'callback-refresh-token',
+        expiry_date: Date.now() + 3600000,
+      });
+
+      const { req, res } = createMockReqRes({
+        method: 'GET',
+        url: '/auth/google/callback',
+        query: { code: 'auth-code-123', state },
+      });
+      await handleGoogleCallback(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.text).toContain('Google account is connected');
+
+      const store = getCredentialStore();
+      const creds = await store.get(testPhone, 'google');
+      expect(creds?.accessToken).toBe('callback-access-token');
+      expect(creds?.refreshToken).toBe('callback-refresh-token');
+
+      await vi.waitFor(() => {
+        expect(getSentMessages().length).toBeGreaterThan(0);
+      }, { timeout: 5000 });
+    });
+
+    it('shows declined page when user denies consent', async () => {
+      const { req, res } = createMockReqRes({
+        method: 'GET',
+        url: '/auth/google/callback',
+        query: { error: 'access_denied' },
+      });
+      await handleGoogleCallback(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.text).toContain('Authorization was declined');
+    });
+
+    it('returns 500 when token exchange fails', async () => {
+      const state = generateAuthUrl(testPhone).split('state=')[1];
+      setTokenExchangeError(new Error('token exchange failed'));
+
+      const { req, res } = createMockReqRes({
+        method: 'GET',
+        url: '/auth/google/callback',
+        query: { code: 'auth-code-123', state },
+      });
+      await handleGoogleCallback(req, res);
+
+      expect(res.statusCode).toBe(500);
+      expect(res.text).toContain('Failed to connect Google account');
+
+      setTokenExchangeError(null);
+    });
+
+    it('returns 500 when OAuth response is missing refresh token', async () => {
+      const state = generateAuthUrl(testPhone).split('state=')[1];
+      setMockTokenResponse({
+        access_token: 'callback-access-token',
+      });
+
+      const { req, res } = createMockReqRes({
+        method: 'GET',
+        url: '/auth/google/callback',
+        query: { code: 'auth-code-123', state },
+      });
+      await handleGoogleCallback(req, res);
+
+      expect(res.statusCode).toBe(500);
+      expect(res.text).toContain('Failed to connect Google account');
+
+      setMockTokenResponse({
+        access_token: 'oauth-access-token',
+        refresh_token: 'oauth-refresh-token',
+        expiry_date: Date.now() + 3600000,
+      });
     });
   });
 

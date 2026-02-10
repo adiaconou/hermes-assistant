@@ -102,6 +102,34 @@ describe('validateTwilioSignature', () => {
 
     expect(result).toBe(false);
   });
+
+  it('returns false when TWILIO_AUTH_TOKEN is not configured', async () => {
+    vi.resetModules();
+
+    vi.doMock('../../src/config.js', () => ({
+      default: {
+        nodeEnv: 'production',
+        twilio: {
+          authToken: '',
+          accountSid: 'test-account-sid',
+          phoneNumber: '+15551234567',
+        },
+      },
+    }));
+
+    const { validateTwilioSignature: validateWithoutToken } = await import('../../src/twilio.js');
+    const twilioModule = (await import('twilio')).default;
+    const mockValidateRequest = vi.mocked(twilioModule.validateRequest);
+
+    const result = validateWithoutToken(
+      'some-signature',
+      'https://example.com/webhook/sms',
+      { From: '+1234567890', Body: 'test' }
+    );
+
+    expect(result).toBe(false);
+    expect(mockValidateRequest).not.toHaveBeenCalled();
+  });
 });
 
 describe('validateTwilioSignature in development mode', () => {

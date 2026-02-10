@@ -41,8 +41,17 @@ export interface MockResponse {
 // Queue of mock responses to return
 let mockResponses: MockResponse[] = [];
 
+export interface CreateCall {
+  model: string;
+  messages: unknown[];
+  system?: string;
+  max_tokens?: number;
+  temperature?: number;
+  tools?: unknown[];
+}
+
 // Call history for assertions
-let createCalls: Array<{ model: string; messages: unknown[]; system?: string }> = [];
+let createCalls: CreateCall[] = [];
 
 /**
  * Set the mock responses to return from messages.create().
@@ -105,7 +114,7 @@ export function createMixedResponse(
 /**
  * Get all calls made to messages.create() for assertions.
  */
-export function getCreateCalls(): Array<{ model: string; messages: unknown[]; system?: string }> {
+export function getCreateCalls(): CreateCall[] {
   return [...createCalls];
 }
 
@@ -118,11 +127,21 @@ export function clearMockState(): void {
 }
 
 // Mock the messages.create method
-const mockCreate = vi.fn(async (params: { model: string; messages: unknown[]; system?: string }) => {
+const mockCreate = vi.fn(async (params: {
+  model: string;
+  messages: unknown[];
+  system?: string;
+  max_tokens?: number;
+  temperature?: number;
+  tools?: unknown[];
+}) => {
   createCalls.push({
     model: params.model,
     messages: params.messages,
     system: params.system,
+    max_tokens: params.max_tokens,
+    temperature: params.temperature,
+    tools: params.tools,
   });
 
   // Return queued response or default

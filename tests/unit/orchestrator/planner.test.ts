@@ -201,8 +201,8 @@ describe('createPlan', () => {
 
       const calls = getCreateCalls();
       expect(calls.length).toBe(1);
-      // Note: temperature is passed but our mock doesn't track it
-      // In real tests we'd verify this
+      expect(calls[0].temperature).toBe(0);
+      expect(calls[0].max_tokens).toBe(1024);
     });
 
     it('should include user message in request', async () => {

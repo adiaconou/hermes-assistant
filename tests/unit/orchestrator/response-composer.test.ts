@@ -274,7 +274,7 @@ describe('synthesizeResponse', () => {
         createTextResponse('Response'),
       ]);
 
-      const longOutput = 'A'.repeat(1000);
+      const longOutput = 'A'.repeat(3000);
       const context = createBaseContext({
         stepResults: {
           step_1: { success: true, output: longOutput },
@@ -288,7 +288,8 @@ describe('synthesizeResponse', () => {
       // Output should be truncated to 2000 chars
       const outputInPrompt = calls[0].system.match(/Output: (A+)/);
       expect(outputInPrompt).toBeTruthy();
-      expect(outputInPrompt![1].length).toBeLessThanOrEqual(2000);
+      expect(outputInPrompt![1].length).toBe(2000);
+      expect(calls[0].system).toContain('...(truncated)');
     });
   });
 
