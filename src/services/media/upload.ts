@@ -10,6 +10,7 @@ import { uploadFile, findFolder, createFolder } from '../google/drive.js';
 import type { MediaAttachment } from '../../tools/types.js';
 import type { StoredMediaAttachment } from '../conversation/types.js';
 import { AuthRequiredError } from '../google/calendar.js';
+import { fetchWithRetry } from '../twilio/fetch-with-retry.js';
 
 /** Folder name for media attachments */
 const ATTACHMENTS_FOLDER = 'Attachments';
@@ -70,11 +71,11 @@ async function downloadFromTwilio(url: string): Promise<Buffer> {
 
   const authHeader = 'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64');
 
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(url, {
     headers: {
       Authorization: authHeader,
     },
-  });
+  }, 'Twilio attachment download');
 
   if (!response.ok) {
     throw new Error(`Failed to download media: ${response.status} ${response.statusText}`);

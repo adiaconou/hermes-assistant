@@ -6,6 +6,7 @@
  */
 
 import config from '../../config.js';
+import { fetchWithRetry } from './fetch-with-retry.js';
 
 /**
  * Allowed non-image media types for processing.
@@ -107,11 +108,11 @@ export async function downloadTwilioMedia(mediaUrl: string): Promise<DownloadedM
     timestamp: new Date().toISOString(),
   }));
 
-  const response = await fetch(mediaUrl, {
+  const response = await fetchWithRetry(mediaUrl, {
     headers: {
       Authorization: `Basic ${auth}`,
     },
-  });
+  }, 'Twilio media download');
 
   if (!response.ok) {
     throw new Error(`Failed to download media: ${response.status} ${response.statusText}`);

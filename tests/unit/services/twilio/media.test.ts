@@ -4,8 +4,9 @@
  * Tests the media type validation and error handling.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
+  downloadTwilioMedia,
   isImageType,
   isAllowedMediaType,
   getMediaErrorMessage,
@@ -166,6 +167,52 @@ describe('twilio media service', () => {
       const error = new Error('Network error');
       const message = getMediaErrorMessage(error);
       expect(message).toContain('trouble downloading');
+    });
+  });
+
+  describe('downloadTwilioMedia retries', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+    });
+
+    it('retries transient fetch failures and succeeds', async () => {
+      let attempts = 0;
+      vi.stubGlobal('fetch', vi.fn(async () => {
+        attempts++;
+        if (attempts === 1) {
+          const transientError = new TypeError('fetch failed') as TypeError & {
+            cause?: { code: string };
+          };
+          transientError.cause = { code: 'ECONNRESET' };
+          throw transientError;
+        }
+
+        return new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: {
+            'content-type': 'image/jpeg',
+            'content-length': '3',
+          },
+        });
+      }));
+
+      const result = await downloadTwilioMedia('https://api.twilio.com/media/123');
+      expect(result.contentType).toBe('image/jpeg');
+      expect(result.size).toBe(3);
+      expect(attempts).toBe(2);
+    });
+
+    it('does not retry non-retryable HTTP errors', async () => {
+      const fetchMock = vi.fn(async () => new Response('not found', {
+        status: 404,
+        statusText: 'Not Found',
+      }));
+      vi.stubGlobal('fetch', fetchMock);
+
+      await expect(downloadTwilioMedia('https://api.twilio.com/media/404'))
+        .rejects.toThrow('Failed to download media: 404 Not Found');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
   });
 });
