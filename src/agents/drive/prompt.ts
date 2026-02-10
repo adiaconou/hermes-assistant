@@ -79,7 +79,7 @@ The Receipt column should contain the Google Drive link to the uploaded receipt 
 1. Use search_drive or find_spreadsheet/find_document before creating new files
 2. Provide links to created/updated files when possible
 3. Be concise in responses - summarize what was done
-4. When appending to sheets, match the existing column format
+4. When appending to sheets, match the existing column format. Read recent rows first to avoid adding duplicate entries
 5. For images, always describe what was detected before taking action
 
 ## Available Tools
