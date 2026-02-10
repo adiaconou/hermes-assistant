@@ -8,17 +8,25 @@
 import config from '../../config.js';
 
 /**
- * Allowed media types for processing.
+ * Allowed non-image media types for processing.
+ *
+ * All image/* types are allowed to avoid brittle MIME subtype handling
+ * across devices/apps (e.g., heic/heif/jpg and content-type parameters).
  */
-const ALLOWED_MEDIA_TYPES = [
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
+const ALLOWED_NON_IMAGE_MEDIA_TYPES = [
   'application/pdf',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ];
+
+/**
+ * Normalize content types from HTTP headers:
+ * - Lowercase
+ * - Strip parameters (e.g., "; charset=binary")
+ */
+function normalizeContentType(contentType: string): string {
+  return contentType.split(';')[0].trim().toLowerCase();
+}
 
 /**
  * Maximum media size in bytes (10 MB).
@@ -39,7 +47,7 @@ export interface DownloadedMedia {
  */
 export class UnsupportedMediaTypeError extends Error {
   constructor(public contentType: string) {
-    super(`Unsupported media type: ${contentType}. Supported types: ${ALLOWED_MEDIA_TYPES.join(', ')}`);
+    super(`Unsupported media type: ${contentType}. Supported types: image/*, ${ALLOWED_NON_IMAGE_MEDIA_TYPES.join(', ')}`);
     this.name = 'UnsupportedMediaTypeError';
   }
 }
@@ -58,14 +66,18 @@ export class MediaTooLargeError extends Error {
  * Check if a content type is an image.
  */
 export function isImageType(contentType: string): boolean {
-  return contentType.startsWith('image/');
+  return normalizeContentType(contentType).startsWith('image/');
 }
 
 /**
  * Check if a content type is allowed.
  */
 export function isAllowedMediaType(contentType: string): boolean {
-  return ALLOWED_MEDIA_TYPES.includes(contentType);
+  const normalized = normalizeContentType(contentType);
+  if (normalized.startsWith('image/')) {
+    return true;
+  }
+  return ALLOWED_NON_IMAGE_MEDIA_TYPES.includes(normalized);
 }
 
 /**
@@ -105,7 +117,8 @@ export async function downloadTwilioMedia(mediaUrl: string): Promise<DownloadedM
     throw new Error(`Failed to download media: ${response.status} ${response.statusText}`);
   }
 
-  const contentType = response.headers.get('content-type') || 'application/octet-stream';
+  const rawContentType = response.headers.get('content-type') || 'application/octet-stream';
+  const contentType = normalizeContentType(rawContentType);
   const contentLength = response.headers.get('content-length');
 
   // Check content type
@@ -150,7 +163,7 @@ export async function downloadTwilioMedia(mediaUrl: string): Promise<DownloadedM
  */
 export function getMediaErrorMessage(error: unknown): string {
   if (error instanceof UnsupportedMediaTypeError) {
-    return `Sorry, I can't process that file type (${error.contentType}). Please send an image (JPEG, PNG), PDF, or Word document.`;
+    return `Sorry, I can't process that file type (${error.contentType}). Please send an image, PDF, or Word document.`;
   }
 
   if (error instanceof MediaTooLargeError) {

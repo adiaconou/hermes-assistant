@@ -186,6 +186,29 @@ export function generateMediaDescription(attachments: MediaAttachment[]): string
   return `[User sent ${parts.join(' and ')}]`;
 }
 
+/**
+ * Build the message content passed into classification/orchestration.
+ *
+ * Always includes a compact media hint when attachments are present so
+ * agents know an image/file exists even when user text is provided.
+ */
+export function buildMessageWithMediaContext(
+  body: string | undefined,
+  attachments: MediaAttachment[]
+): string {
+  const text = body || '';
+  if (attachments.length === 0) {
+    return text;
+  }
+
+  const mediaDescription = generateMediaDescription(attachments);
+  if (text.trim().length === 0) {
+    return mediaDescription;
+  }
+
+  return `${text}\n\n${mediaDescription}`;
+}
+
 /** Escapes special XML characters for safe TwiML embedding. */
 function escapeXml(text: string): string {
   return text
@@ -349,9 +372,9 @@ export async function handleSmsWebhook(req: Request, res: Response): Promise<voi
   // Extract media attachments
   const mediaAttachments = extractMediaAttachments(webhookBody);
 
-  // If message body is empty but has media, create a descriptive placeholder
-  // This prevents "empty content" errors from the LLM API
-  const message = Body || (mediaAttachments.length > 0 ? generateMediaDescription(mediaAttachments) : '');
+  // Always include media context so the model can call image/file tools
+  // even when the user also provides a text caption.
+  const message = buildMessageWithMediaContext(Body, mediaAttachments);
 
   console.log(
     JSON.stringify({

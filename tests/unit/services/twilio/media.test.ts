@@ -31,6 +31,14 @@ describe('twilio media service', () => {
       expect(isImageType('image/webp')).toBe(true);
     });
 
+    it('should return true for image/heic', () => {
+      expect(isImageType('image/heic')).toBe(true);
+    });
+
+    it('should return true for image/jpeg with parameters', () => {
+      expect(isImageType('image/jpeg; charset=binary')).toBe(true);
+    });
+
     it('should return false for application/pdf', () => {
       expect(isImageType('application/pdf')).toBe(false);
     });
@@ -55,6 +63,22 @@ describe('twilio media service', () => {
 
     it('should allow image/webp', () => {
       expect(isAllowedMediaType('image/webp')).toBe(true);
+    });
+
+    it('should allow image/heic', () => {
+      expect(isAllowedMediaType('image/heic')).toBe(true);
+    });
+
+    it('should allow image/heif', () => {
+      expect(isAllowedMediaType('image/heif')).toBe(true);
+    });
+
+    it('should allow image/jpg', () => {
+      expect(isAllowedMediaType('image/jpg')).toBe(true);
+    });
+
+    it('should allow image/jpeg with parameters', () => {
+      expect(isAllowedMediaType('image/jpeg; charset=binary')).toBe(true);
     });
 
     it('should allow application/pdf', () => {

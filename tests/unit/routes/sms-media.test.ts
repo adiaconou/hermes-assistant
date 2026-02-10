@@ -6,7 +6,11 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { extractMediaAttachments, generateMediaDescription } from '../../../src/routes/sms.js';
+import {
+  extractMediaAttachments,
+  generateMediaDescription,
+  buildMessageWithMediaContext,
+} from '../../../src/routes/sms.js';
 
 describe('extractMediaAttachments', () => {
   it('should return empty array when NumMedia is 0', () => {
@@ -232,5 +236,36 @@ describe('generateMediaDescription', () => {
 
     const description = generateMediaDescription(attachments);
     expect(description).toBe('[User sent an file]');
+  });
+});
+
+describe('buildMessageWithMediaContext', () => {
+  it('returns original text when there are no attachments', () => {
+    const result = buildMessageWithMediaContext('Check this', []);
+    expect(result).toBe('Check this');
+  });
+
+  it('returns media description when text is empty', () => {
+    const attachments = [
+      { url: 'https://example.com/1', contentType: 'image/jpeg', index: 0 },
+    ];
+    const result = buildMessageWithMediaContext('', attachments);
+    expect(result).toBe('[User sent an image]');
+  });
+
+  it('returns media description when text is undefined', () => {
+    const attachments = [
+      { url: 'https://example.com/1', contentType: 'image/jpeg', index: 0 },
+    ];
+    const result = buildMessageWithMediaContext(undefined, attachments);
+    expect(result).toBe('[User sent an image]');
+  });
+
+  it('appends media description when text and attachments are both present', () => {
+    const attachments = [
+      { url: 'https://example.com/1', contentType: 'image/jpeg', index: 0 },
+    ];
+    const result = buildMessageWithMediaContext('Analyze this receipt', attachments);
+    expect(result).toBe('Analyze this receipt\n\n[User sent an image]');
   });
 });
