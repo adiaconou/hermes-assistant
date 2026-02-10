@@ -1,8 +1,5 @@
 /**
  * @fileoverview Provider interfaces for UI generation storage.
- *
- * These abstractions allow swapping between local development (file storage)
- * and production (S3 + Redis) implementations via configuration.
  */
 
 /**
@@ -17,10 +14,6 @@ export type ShortUrlEntry = {
 
 /**
  * Storage provider for generated HTML pages.
- *
- * Implementations:
- * - LocalFileStorage: writes to ./data/pages/ (dev)
- * - S3Storage: uploads to S3 bucket (prod)
  */
 export interface PageStorage {
   /**
@@ -41,10 +34,6 @@ export interface PageStorage {
 
 /**
  * URL shortener provider for page links.
- *
- * Implementations:
- * - MemoryShortener: in-memory Map with optional JSON persistence (dev)
- * - RedisShortener: Redis-backed with TTL (prod)
  */
 export interface UrlShortener {
   /**

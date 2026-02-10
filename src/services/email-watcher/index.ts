@@ -108,10 +108,11 @@ export function startEmailWatcher(): void {
 
 /**
  * Stop the email watcher background service.
+ * Waits for any in-flight email processing to complete.
  */
-export function stopEmailWatcher(): void {
+export async function stopEmailWatcher(): Promise<void> {
   if (poller) {
-    poller.stop();
+    await poller.stop();
     poller = null;
     console.log(JSON.stringify({
       event: 'email_watcher_stopped',

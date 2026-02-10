@@ -19,6 +19,10 @@ export interface StoredCredential {
  *
  * Implementations must handle encryption of tokens at rest.
  * The interface uses phone number as user identity (from Twilio).
+ *
+ * Note: Methods return Promises for interface flexibility, but the current
+ * SQLite implementation (better-sqlite3) is synchronous. The async signature
+ * allows swapping to an async backend without changing callers.
  */
 export interface CredentialStore {
   /**

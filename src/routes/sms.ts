@@ -21,6 +21,7 @@ import type { MediaAttachment } from '../tools/types.js';
 import type { StoredMediaAttachment } from '../services/conversation/types.js';
 import { uploadMediaAttachments } from '../services/media/index.js';
 import config from '../config.js';
+import { detectChannel, normalize, sanitize, type MessageChannel } from '../utils/phone.js';
 
 // Re-export for backwards compatibility
 export type { MediaAttachment } from '../tools/types.js';
@@ -148,23 +149,6 @@ export function extractMediaAttachments(body: TwilioWebhookBody): MediaAttachmen
   return attachments;
 }
 
-type MessageChannel = 'whatsapp' | 'sms';
-
-/** WhatsApp messages arrive with "whatsapp:" prefix on the From number. */
-function detectChannel(from: string): MessageChannel {
-  return from.startsWith('whatsapp:') ? 'whatsapp' : 'sms';
-}
-
-/** Removes "whatsapp:" prefix to get the raw phone number. */
-function stripPrefix(address: string): string {
-  return address.replace('whatsapp:', '');
-}
-
-/** Masks phone number for logging (security: avoid logging full numbers). */
-function sanitizePhone(phone: string): string {
-  if (phone.length < 4) return '****';
-  return '***' + phone.slice(-4);
-}
 
 /**
  * Generates a descriptive placeholder when user sends media without text.
@@ -348,14 +332,14 @@ export async function handleSmsWebhook(req: Request, res: Response): Promise<voi
   const { From, Body } = webhookBody;
 
   const channel = detectChannel(From || '');
-  const sender = stripPrefix(From || '');
+  const sender = normalize(From || '');
 
   // Per-phone rate limiting
   if (!checkRateLimit(sender)) {
     console.log(JSON.stringify({
       level: 'warn',
       message: 'Rate limited',
-      from: sanitizePhone(sender),
+      from: sanitize(sender),
       timestamp: new Date().toISOString(),
     }));
     res.status(429).send('Rate limited');
@@ -374,7 +358,7 @@ export async function handleSmsWebhook(req: Request, res: Response): Promise<voi
       level: 'info',
       message: 'Message received',
       channel,
-      from: sanitizePhone(sender),
+      from: sanitize(sender),
       bodyLength: message.length,
       numMedia: mediaAttachments.length,
       mediaTypes: mediaAttachments.map(m => m.contentType),

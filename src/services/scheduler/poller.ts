@@ -12,8 +12,8 @@
 export interface Poller {
   /** Start the polling loop */
   start(): void;
-  /** Stop the polling loop */
-  stop(): void;
+  /** Stop the polling loop and wait for any in-flight operation to complete */
+  stop(): Promise<void>;
   /** Check if the poller is running */
   isRunning(): boolean;
 }
@@ -55,13 +55,18 @@ export function createIntervalPoller(
       }, intervalMs);
     },
 
-    stop(): void {
+    async stop(): Promise<void> {
       if (intervalId === null) {
         return;
       }
 
       clearInterval(intervalId);
       intervalId = null;
+
+      // Wait for any in-flight operation to complete
+      while (isProcessing) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
 
       console.log(JSON.stringify({
         event: 'poller_stopped',

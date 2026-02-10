@@ -18,6 +18,7 @@ import type {
   MessageParam,
   ToolResultBlockParam,
 } from '@anthropic-ai/sdk/resources/messages';
+import config from '../config.js';
 
 import { getClient } from '../services/anthropic/client.js';
 import { buildUserMemoryXml } from '../services/anthropic/prompts/context.js';
@@ -131,7 +132,7 @@ export async function executeWithTools(
   try {
     // Log initial LLM request
     logger?.llmRequest('agent: initial', {
-      model: 'claude-opus-4-5-20251101',
+      model: config.models.agent,
       maxTokens: MAX_TOKENS,
       systemPrompt: systemPromptWithMemory,
       messages: messages.map(m => ({
@@ -144,7 +145,7 @@ export async function executeWithTools(
     // Initial API call
     let llmStartTime = Date.now();
     let response = await anthropic.messages.create({
-      model: 'claude-opus-4-5-20251101',
+      model: config.models.agent,
       max_tokens: MAX_TOKENS,
       system: systemPromptWithMemory,
       tools,
@@ -235,7 +236,7 @@ export async function executeWithTools(
 
       // Log continuation LLM request
       logger?.llmRequest(`agent: iteration ${loopCount}`, {
-        model: 'claude-opus-4-5-20251101',
+        model: config.models.agent,
         maxTokens: MAX_TOKENS,
         systemPrompt: '(same as initial)',
         messages: [{ role: 'user', content: '(continuing with tool results)' }],
@@ -245,7 +246,7 @@ export async function executeWithTools(
       // Continue conversation
       llmStartTime = Date.now();
       response = await anthropic.messages.create({
-        model: 'claude-opus-4-5-20251101',
+        model: config.models.agent,
         max_tokens: MAX_TOKENS,
         system: systemPromptWithMemory,
         tools,

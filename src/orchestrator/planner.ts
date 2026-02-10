@@ -14,6 +14,7 @@
 
 import type { TextBlock } from '@anthropic-ai/sdk/resources/messages';
 
+import config from '../config.js';
 import { getClient } from '../services/anthropic/client.js';
 import { buildTimeContext, buildUserContext } from '../services/anthropic/prompts/context.js';
 import { resolveDate, resolveDateRange } from '../services/date/resolver.js';
@@ -98,27 +99,6 @@ For simple requests, return a single step:
 }
 </output_format>`;
 
-const PLAN_REPAIR_PROMPT = `You repair malformed planner output into valid JSON.
-
-Return ONLY a JSON object in this format:
-{
-  "analysis": "Brief analysis",
-  "goal": "One sentence goal",
-  "steps": [
-    {
-      "id": "step_1",
-      "agent": "agent-name",
-      "task": "Specific task"
-    }
-  ]
-}
-
-Rules:
-1. Preserve the original user intent
-2. Keep steps minimal and sequential
-3. Use specialized agents when clearly appropriate; use general-agent only if needed
-4. No markdown, no extra commentary`;
-
 type ParsedPlanResponse = {
   analysis: string;
   goal: string;
@@ -154,10 +134,7 @@ function createGeneralFallbackPlan(userMessage: string, reason: string, timezone
  * Parse the LLM's plan response.
  * Handles both clean JSON and JSON embedded in markdown.
  */
-function parsePlanResponse(
-  text: string,
-  stage: 'initial' | 'repair'
-): ParsedPlanResponse | null {
+function parsePlanResponse(text: string): ParsedPlanResponse | null {
   // Try to extract JSON from markdown code blocks if present
   const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   const jsonText = jsonMatch ? jsonMatch[1].trim() : text.trim();
@@ -168,58 +145,12 @@ function parsePlanResponse(
     console.error(JSON.stringify({
       level: 'error',
       message: 'Failed to parse plan response',
-      stage,
       text: text.substring(0, 500),
       error: error instanceof Error ? error.message : String(error),
       timestamp: new Date().toISOString(),
     }));
     return null;
   }
-}
-
-async function repairPlanResponse(
-  anthropic: ReturnType<typeof getClient>,
-  userMessage: string,
-  malformedPlan: string,
-  logger?: TraceLogger
-): Promise<ParsedPlanResponse | null> {
-  const repairInput = `User request:
-${userMessage}
-
-Malformed planner output:
-${malformedPlan.substring(0, 4000)}`;
-
-  logger?.llmRequest('planning:repair', {
-    model: 'claude-opus-4-5-20251101',
-    maxTokens: 1024,
-    temperature: 0,
-    systemPrompt: PLAN_REPAIR_PROMPT,
-    messages: [{ role: 'user', content: repairInput }],
-  });
-
-  const llmStartTime = Date.now();
-  const response = await anthropic.messages.create({
-    model: 'claude-opus-4-5-20251101',
-    max_tokens: 1024,
-    temperature: 0,
-    system: PLAN_REPAIR_PROMPT,
-    messages: [{ role: 'user', content: repairInput }],
-  });
-
-  logger?.llmResponse('planning:repair', {
-    stopReason: response.stop_reason ?? 'unknown',
-    content: response.content,
-    usage: response.usage ? {
-      inputTokens: response.usage.input_tokens,
-      outputTokens: response.usage.output_tokens,
-    } : undefined,
-  }, Date.now() - llmStartTime);
-
-  const textBlock = response.content.find(
-    (block): block is TextBlock => block.type === 'text'
-  );
-
-  return parsePlanResponse(textBlock?.text || '', 'repair');
 }
 
 /**
@@ -274,7 +205,7 @@ export async function createPlan(
 
   // Log LLM request
   logger?.llmRequest('planning', {
-    model: 'claude-opus-4-5-20251101',
+    model: config.models.planner,
     maxTokens: 1024,
     temperature: 0,
     systemPrompt: prompt,
@@ -284,7 +215,7 @@ export async function createPlan(
   // Call LLM to create plan
   const llmStartTime = Date.now();
   const response = await anthropic.messages.create({
-    model: 'claude-opus-4-5-20251101',
+    model: config.models.planner,
     max_tokens: 1024,
     temperature: 0, // Deterministic planning (NFR-4)
     system: prompt,
@@ -310,13 +241,10 @@ export async function createPlan(
   );
   const responseText = textBlock?.text || '';
 
-  // Parse the plan, then attempt one repair pass before falling back
-  let parsed = parsePlanResponse(responseText, 'initial');
+  // Parse the plan, falling back to general-agent on parse failure
+  let parsed = parsePlanResponse(responseText);
   if (!parsed) {
-    parsed = await repairPlanResponse(anthropic, context.userMessage, responseText, logger);
-  }
-  if (!parsed) {
-    parsed = createGeneralFallbackPlan(context.userMessage, 'planning_parse_failed_after_repair', context.userConfig?.timezone);
+    parsed = createGeneralFallbackPlan(context.userMessage, 'planning_parse_failed', context.userConfig?.timezone);
   }
 
   // Convert to PlanSteps

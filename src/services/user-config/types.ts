@@ -20,6 +20,10 @@ export interface UserConfig {
 
 /**
  * Interface for user configuration storage backends.
+ *
+ * Note: Methods return Promises for interface flexibility, but the current
+ * SQLite implementation (better-sqlite3) is synchronous. The async signature
+ * allows swapping to an async backend without changing callers.
  */
 export interface UserConfigStore {
   /**

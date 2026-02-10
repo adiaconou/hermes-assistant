@@ -923,10 +923,11 @@ export function startMemoryProcessor(): void {
 
 /**
  * Stop the memory processor.
+ * Waits for any in-flight extraction to complete.
  */
-export function stopMemoryProcessor(): void {
+export async function stopMemoryProcessor(): Promise<void> {
   if (poller) {
-    poller.stop();
+    await poller.stop();
     poller = null;
 
     console.log(JSON.stringify({

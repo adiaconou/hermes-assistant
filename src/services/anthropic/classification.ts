@@ -11,6 +11,7 @@ import type { Message } from '../../conversation.js';
 import type { UserConfig } from '../user-config/index.js';
 import type { UserFact } from '../memory/types.js';
 
+import config from '../../config.js';
 import { getClient } from './client.js';
 import { buildClassificationPrompt } from './prompts/index.js';
 import { TOOLS } from '../../tools/index.js';
@@ -41,7 +42,7 @@ export async function classifyMessage(
   messages.push({ role: 'user', content: userMessage });
 
   const response = await anthropic.messages.create({
-    model: 'claude-opus-4-5-20251101',
+    model: config.models.classifier,
     max_tokens: 512,
     system: buildClassificationPrompt(TOOLS, userConfig ?? null, userFacts),
     messages,

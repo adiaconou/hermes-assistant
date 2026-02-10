@@ -12,6 +12,7 @@ import type {
   MessageParam,
 } from '@anthropic-ai/sdk/resources/messages';
 
+import config from '../config.js';
 import { getClient } from '../services/anthropic/client.js';
 import { buildUserMemoryXml } from '../services/anthropic/prompts/context.js';
 import { formatMapsLink, executeTool } from '../tools/index.js';
@@ -163,7 +164,7 @@ Explain what succeeded and what didn't.
 
     // Log LLM request
     logger?.llmRequest('composition', {
-      model: 'claude-opus-4-5-20251101',
+      model: config.models.composer,
       maxTokens: 350,
       systemPrompt: promptWithMemory + systemAddition,
       messages: [{ role: 'user', content: 'Compose the final response.' }],
@@ -176,7 +177,7 @@ Explain what succeeded and what didn't.
 
     let llmStartTime = Date.now();
     let response = await anthropic.messages.create({
-      model: 'claude-opus-4-5-20251101',
+      model: config.models.composer,
       max_tokens: 350,
       system: promptWithMemory + systemAddition,
       tools,
@@ -246,7 +247,7 @@ Explain what succeeded and what didn't.
       messages.push({ role: 'user', content: toolResults });
 
       logger?.llmRequest(`composition: tool iteration ${toolIterations}`, {
-        model: 'claude-opus-4-5-20251101',
+        model: config.models.composer,
         maxTokens: 350,
         systemPrompt: '(same as initial)',
         messages: [{ role: 'user', content: '(continuing with tool results)' }],
@@ -254,7 +255,7 @@ Explain what succeeded and what didn't.
 
       llmStartTime = Date.now();
       response = await anthropic.messages.create({
-        model: 'claude-opus-4-5-20251101',
+        model: config.models.composer,
         max_tokens: 350,
         system: promptWithMemory + systemAddition,
         tools,

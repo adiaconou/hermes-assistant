@@ -13,6 +13,7 @@ import { Router, Request, Response } from 'express';
 import { google } from 'googleapis';
 import crypto from 'crypto';
 import config from '../config.js';
+import { formatForWhatsAppLink } from '../utils/phone.js';
 import { getCredentialStore } from '../services/credentials/index.js';
 import { sendSms, sendWhatsApp } from '../twilio.js';
 // Legacy generateResponse removed; auth flow response generation will be added later if needed.
@@ -308,21 +309,12 @@ router.get('/auth/google/callback', async (req, res) => {
   }
 });
 
-/**
- * Format phone number for WhatsApp deep link (wa.me format).
- * Removes 'whatsapp:' prefix, '+' sign, and any non-digit characters.
- */
-function formatWhatsAppNumber(phoneNumber: string | undefined): string | null {
-  if (!phoneNumber) return null;
-  // Remove 'whatsapp:' prefix if present, then strip all non-digits
-  return phoneNumber.replace(/^whatsapp:/i, '').replace(/\D/g, '');
-}
 
 /**
  * Success page HTML with optional WhatsApp redirect.
  */
 function successHtml(botPhoneNumber?: string): string {
-  const waNumber = formatWhatsAppNumber(botPhoneNumber);
+  const waNumber = formatForWhatsAppLink(botPhoneNumber);
   const waLink = waNumber ? `https://wa.me/${waNumber}` : null;
 
   return `<!DOCTYPE html>

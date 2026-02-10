@@ -6,7 +6,7 @@
  */
 
 import { google, calendar_v3 } from 'googleapis';
-import { getAuthenticatedClient } from './auth.js';
+import { getAuthenticatedClient, withRetry } from './auth.js';
 
 /**
  * Error thrown when user needs to authenticate with Google.
@@ -57,14 +57,14 @@ export async function listEvents(
 ): Promise<CalendarEvent[]> {
   const calendar = await getCalendarClient(phoneNumber);
 
-  const response = await calendar.events.list({
+  const response = await withRetry(() => calendar.events.list({
     calendarId: 'primary',
     timeMin: timeMin.toISOString(),
     timeMax: timeMax.toISOString(),
     singleEvents: true,
     orderBy: 'startTime',
     maxResults: 20,
-  });
+  }), phoneNumber, 'Calendar');
 
   const events = response.data.items || [];
 
@@ -97,7 +97,7 @@ export async function createEvent(
 ): Promise<CalendarEvent> {
   const calendar = await getCalendarClient(phoneNumber);
 
-  const response = await calendar.events.insert({
+  const response = await withRetry(() => calendar.events.insert({
     calendarId: 'primary',
     requestBody: {
       summary: title,
@@ -105,7 +105,7 @@ export async function createEvent(
       end: { dateTime: end.toISOString() },
       location: location,
     },
-  });
+  }), phoneNumber, 'Calendar');
 
   const event = response.data;
 
@@ -150,11 +150,11 @@ export async function updateEvent(
   if (updates.endTime !== undefined) requestBody.end = { dateTime: updates.endTime.toISOString() };
   if (updates.location !== undefined) requestBody.location = updates.location;
 
-  const response = await calendar.events.patch({
+  const response = await withRetry(() => calendar.events.patch({
     calendarId: 'primary',
     eventId: eventId,
     requestBody,
-  });
+  }), phoneNumber, 'Calendar');
 
   const event = response.data;
 
@@ -181,10 +181,10 @@ export async function getEvent(
 ): Promise<calendar_v3.Schema$Event> {
   const calendar = await getCalendarClient(phoneNumber);
 
-  const response = await calendar.events.get({
+  const response = await withRetry(() => calendar.events.get({
     calendarId: 'primary',
     eventId: eventId,
-  });
+  }), phoneNumber, 'Calendar');
 
   return response.data;
 }
@@ -202,8 +202,8 @@ export async function deleteEvent(
 ): Promise<void> {
   const calendar = await getCalendarClient(phoneNumber);
 
-  await calendar.events.delete({
+  await withRetry(() => calendar.events.delete({
     calendarId: 'primary',
     eventId: eventId,
-  });
+  }), phoneNumber, 'Calendar');
 }

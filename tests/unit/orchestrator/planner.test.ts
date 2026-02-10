@@ -281,35 +281,15 @@ describe('createPlan', () => {
   });
 
   describe('error handling', () => {
-    it('should attempt a repair pass on parse error', async () => {
+    it('should fall back to general-agent on parse error', async () => {
       setMockResponses([
         createTextResponse('This is not valid JSON at all!'),
-        createTextResponse(JSON.stringify({
-          analysis: 'Recovered parse',
-          goal: 'Handle calendar request',
-          steps: [{ id: 'step_1', agent: 'calendar-agent', task: 'List calendar events' }],
-        })),
       ]);
 
       const plan = await createPlan(baseContext, mockRegistry);
       const calls = getCreateCalls();
 
-      expect(calls).toHaveLength(2);
-      expect(plan.steps).toHaveLength(1);
-      expect(plan.steps[0].agent).toBe('calendar-agent');
-      expect(plan.goal).toBe('Handle calendar request');
-    });
-
-    it('should fall back to general-agent when parse and repair both fail', async () => {
-      setMockResponses([
-        createTextResponse('This is not valid JSON at all!'),
-        createTextResponse('Still not valid JSON!'),
-      ]);
-
-      const plan = await createPlan(baseContext, mockRegistry);
-      const calls = getCreateCalls();
-
-      expect(calls).toHaveLength(2);
+      expect(calls).toHaveLength(1);
       expect(plan.steps).toHaveLength(1);
       expect(plan.steps[0].agent).toBe('general-agent');
       expect(plan.goal).toBe('Handle user request');

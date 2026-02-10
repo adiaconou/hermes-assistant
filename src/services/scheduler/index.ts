@@ -85,10 +85,11 @@ export function getSchedulerPoller(): Poller | null {
 
 /**
  * Stop the scheduler and clean up.
+ * Waits for any in-flight job execution to complete.
  */
-export function stopScheduler(): void {
+export async function stopScheduler(): Promise<void> {
   if (pollerInstance) {
-    pollerInstance.stop();
+    await pollerInstance.stop();
     pollerInstance = null;
   }
 }

@@ -13,6 +13,7 @@
 
 import type { TextBlock } from '@anthropic-ai/sdk/resources/messages';
 
+import config from '../config.js';
 import { getClient } from '../services/anthropic/client.js';
 import type {
   ExecutionPlan,
@@ -194,7 +195,7 @@ export async function replan(
 
   // Log LLM request
   logger?.llmRequest('replan', {
-    model: 'claude-opus-4-5-20251101',
+    model: config.models.planner,
     maxTokens: 1024,
     temperature: 0,
     systemPrompt: prompt,
@@ -204,7 +205,7 @@ export async function replan(
   // Call LLM for revised plan
   const llmStartTime = Date.now();
   const response = await anthropic.messages.create({
-    model: 'claude-opus-4-5-20251101',
+    model: config.models.planner,
     max_tokens: 1024,
     temperature: 0,
     system: prompt,

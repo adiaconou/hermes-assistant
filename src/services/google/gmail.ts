@@ -6,7 +6,7 @@
  */
 
 import { google, gmail_v1 } from 'googleapis';
-import { getAuthenticatedClient, isInsufficientScopesError, handleScopeError } from './auth.js';
+import { getAuthenticatedClient, withRetry, isInsufficientScopesError, handleScopeError } from './auth.js';
 import { AuthRequiredError } from './calendar.js';
 
 /**
@@ -71,11 +71,11 @@ export async function listEmails(
   const { query = 'is:inbox', maxResults = 10 } = options;
 
   try {
-    const response = await gmail.users.messages.list({
+    const response = await withRetry(() => gmail.users.messages.list({
       userId: 'me',
       maxResults,
       q: query,
-    });
+    }), phoneNumber, 'Gmail');
 
     if (!response.data.messages?.length) {
       return [];
@@ -84,12 +84,12 @@ export async function listEmails(
     // Fetch metadata for each message
     const emails = await Promise.all(
       response.data.messages.map(async (msg) => {
-        const detail = await gmail.users.messages.get({
+        const detail = await withRetry(() => gmail.users.messages.get({
           userId: 'me',
           id: msg.id!,
           format: 'metadata',
           metadataHeaders: ['From', 'Subject', 'Date'],
-        });
+        }), phoneNumber, 'Gmail');
 
         const headers = detail.data.payload?.headers || [];
         const getHeader = (name: string) =>
@@ -128,11 +128,11 @@ export async function getEmail(
   const gmail = await getGmailClient(phoneNumber);
 
   try {
-    const response = await gmail.users.messages.get({
+    const response = await withRetry(() => gmail.users.messages.get({
       userId: 'me',
       id: emailId,
       format: 'full',
-    });
+    }), phoneNumber, 'Gmail');
 
     if (!response.data) return null;
 
@@ -206,11 +206,11 @@ export async function getThread(
   const gmail = await getGmailClient(phoneNumber);
 
   try {
-    const response = await gmail.users.threads.get({
+    const response = await withRetry(() => gmail.users.threads.get({
       userId: 'me',
       id: threadId,
       format: 'full',
-    });
+    }), phoneNumber, 'Gmail');
 
     if (!response.data || !response.data.messages) return null;
 

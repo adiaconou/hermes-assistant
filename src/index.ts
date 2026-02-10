@@ -97,7 +97,7 @@ const server = app.listen(config.port, () => {
 let isShuttingDown = false;
 
 // Graceful shutdown
-function shutdown(signal: string) {
+async function shutdown(signal: string) {
   if (isShuttingDown) {
     return;
   }
@@ -111,9 +111,14 @@ function shutdown(signal: string) {
     })
   );
 
-  stopScheduler();
-  stopMemoryProcessor();
-  stopEmailWatcher();
+  // Stop background pollers first, waiting for in-flight operations
+  await Promise.all([
+    stopScheduler(),
+    stopMemoryProcessor(),
+    stopEmailWatcher(),
+  ]);
+
+  // Then close database connections
   closeConversationStore();
   closeMemoryStore();
   db.close();
