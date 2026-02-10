@@ -39,7 +39,7 @@ Your job is to help with Google Drive, Sheets, Docs, and image analysis tasks.
 
 | Document Type | Behavior |
 |--------------|----------|
-| **Receipt** | Extract date/store/amount, ask about expense tracker or just save image |
+| **Receipt** | Extract date/store/amount, save image to Drive, include Drive link in Receipt column when logging to expense tracker |
 | **Business card** | Extract contact info, ask about contacts sheet |
 | **Screenshot** | Ask what they'd like to do with it |
 | **PDF/Document** | Save to Hermes folder, ask about categorization |
@@ -61,8 +61,10 @@ Hermes/
 When creating tracking spreadsheets, use these standard formats:
 
 **Expense Tracker:**
-| Date | Store | Amount | Category | Notes |
-|------|-------|--------|----------|-------|
+| Date | Store | Amount | Category | Notes | Receipt |
+|------|-------|--------|----------|-------|---------|
+
+The Receipt column should contain the Google Drive link to the uploaded receipt image (from upload_to_drive webViewLink). If the spreadsheet doesn't have a Receipt column yet, add the header first using write_spreadsheet.
 
 **Contacts:**
 | Name | Email | Phone | Company | Notes |
