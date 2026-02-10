@@ -113,7 +113,18 @@ export async function executeWithTools(
 
   // Build initial messages
   const previousResultsXml = formatPreviousStepResults(context.previousStepResults);
-  const baseUserContent = `Task: ${task}\n\n<previous_results>\n${previousResultsXml}\n</previous_results>`;
+
+  // Signal attached media so the agent knows to use analyze_image
+  let mediaHint = '';
+  if (context.mediaAttachments && context.mediaAttachments.length > 0) {
+    const imageAttachments = context.mediaAttachments.filter(a => a.contentType.startsWith('image/'));
+    if (imageAttachments.length > 0) {
+      const types = imageAttachments.map(a => a.contentType).join(', ');
+      mediaHint = `\n\n[User attached ${imageAttachments.length} image${imageAttachments.length > 1 ? 's' : ''} (${types}). Use the analyze_image tool to examine ${imageAttachments.length > 1 ? 'them' : 'it'}.]`;
+    }
+  }
+
+  const baseUserContent = `Task: ${task}${mediaHint}\n\n<previous_results>\n${previousResultsXml}\n</previous_results>`;
 
   // Use provided messages (e.g., full conversation) or default to the task-only message
   const messages: MessageParam[] = options?.initialMessages ?? [
