@@ -2,9 +2,9 @@
  * Unit tests for media context formatting.
  */
 
-import { describe, it, expect } from 'vitest';
-import { formatMediaContext, hasMediaContext } from '../../../src/orchestrator/media-context.js';
-import type { ConversationMessage, ImageAnalysisMetadata } from '../../../src/services/conversation/types.js';
+import { describe, it, expect, vi } from 'vitest';
+import { formatMediaContext, hasMediaContext, formatCurrentMediaContext } from '../../../src/orchestrator/media-context.js';
+import type { ConversationMessage, ImageAnalysisMetadata, CurrentMediaSummary } from '../../../src/services/conversation/types.js';
 
 describe('formatMediaContext', () => {
   const createMessage = (
@@ -167,5 +167,103 @@ describe('hasMediaContext', () => {
 
   it('returns true for non-empty string', () => {
     expect(hasMediaContext('<media_context>...</media_context>')).toBe(true);
+  });
+});
+
+describe('formatCurrentMediaContext', () => {
+  it('returns empty string for empty summaries', () => {
+    expect(formatCurrentMediaContext([])).toBe('');
+  });
+
+  it('returns empty string for undefined-ish input', () => {
+    expect(formatCurrentMediaContext(undefined as unknown as CurrentMediaSummary[])).toBe('');
+  });
+
+  it('formats a single summary correctly', () => {
+    const summaries: CurrentMediaSummary[] = [{
+      attachment_index: 0,
+      mime_type: 'image/jpeg',
+      category: 'receipt',
+      summary: 'A grocery receipt from Whole Foods showing a total of $47.23.',
+    }];
+
+    const result = formatCurrentMediaContext(summaries);
+
+    expect(result).toContain('<current_media>');
+    expect(result).toContain('</current_media>');
+    expect(result).toContain('index="0"');
+    expect(result).toContain('mime_type="image/jpeg"');
+    expect(result).toContain('category="receipt"');
+    expect(result).toContain('Whole Foods');
+  });
+
+  it('formats multiple summaries', () => {
+    const summaries: CurrentMediaSummary[] = [
+      { attachment_index: 0, mime_type: 'image/jpeg', category: 'receipt', summary: 'Receipt' },
+      { attachment_index: 1, mime_type: 'image/png', category: 'screenshot', summary: 'Screenshot' },
+    ];
+
+    const result = formatCurrentMediaContext(summaries);
+
+    expect(result.match(/<attachment/g)?.length).toBe(2);
+    expect(result).toContain('index="0"');
+    expect(result).toContain('index="1"');
+  });
+
+  it('omits category attribute when not provided', () => {
+    const summaries: CurrentMediaSummary[] = [{
+      attachment_index: 0,
+      mime_type: 'image/jpeg',
+      summary: 'A photo of a dog.',
+    }];
+
+    const result = formatCurrentMediaContext(summaries);
+
+    expect(result).not.toContain('category=');
+    expect(result).toContain('A photo of a dog.');
+  });
+
+  it('escapes XML special characters in summary', () => {
+    const summaries: CurrentMediaSummary[] = [{
+      attachment_index: 0,
+      mime_type: 'image/png',
+      summary: 'Text with <script> & "quotes"',
+    }];
+
+    const result = formatCurrentMediaContext(summaries);
+
+    expect(result).toContain('&lt;script&gt;');
+    expect(result).toContain('&amp;');
+    expect(result).not.toContain('<script>');
+  });
+
+  it('truncates long summaries', () => {
+    const longSummary = 'A'.repeat(500);
+    const summaries: CurrentMediaSummary[] = [{
+      attachment_index: 0,
+      mime_type: 'image/jpeg',
+      summary: longSummary,
+    }];
+
+    const result = formatCurrentMediaContext(summaries);
+
+    // The summary in the output should be <= maxSummaryChars (default 300)
+    const attachmentContent = result.match(/<attachment[^>]*>\n([\s\S]*?)\n<\/attachment>/);
+    expect(attachmentContent).toBeTruthy();
+    expect(attachmentContent![1].length).toBeLessThanOrEqual(300);
+  });
+
+  it('caps number of summaries to maxSummaries', () => {
+    const summaries: CurrentMediaSummary[] = Array.from({ length: 10 }, (_, i) => ({
+      attachment_index: i,
+      mime_type: 'image/jpeg',
+      summary: `Image ${i}`,
+    }));
+
+    const result = formatCurrentMediaContext(summaries);
+
+    // Default maxSummaries is 5
+    const attachmentCount = result.match(/<attachment/g)?.length || 0;
+    expect(attachmentCount).toBeLessThanOrEqual(5);
   });
 });

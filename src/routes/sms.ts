@@ -18,8 +18,8 @@ import { getUserConfigStore, type UserConfig } from '../services/user-config/ind
 import { getMemoryStore } from '../services/memory/index.js';
 import { handleWithOrchestrator } from '../orchestrator/index.js';
 import type { MediaAttachment } from '../tools/types.js';
-import type { StoredMediaAttachment } from '../services/conversation/types.js';
-import { uploadMediaAttachments } from '../services/media/index.js';
+import type { StoredMediaAttachment, CurrentMediaSummary } from '../services/conversation/types.js';
+import { processMediaAttachments } from '../services/media/index.js';
 import config from '../config.js';
 import { detectChannel, normalize, sanitize, type MessageChannel } from '../utils/phone.js';
 
@@ -242,7 +242,8 @@ export function enforceSmsLength(message: string, channel: MessageChannel): stri
  * Called when classification determines async work is needed.
  *
  * Uses the orchestrator for async work (legacy generateResponse removed).
- * If media attachments are present, uploads them to Google Drive first.
+ * If media attachments are present, downloads from Twilio, then runs
+ * Drive upload and Gemini pre-analysis in parallel before planning.
  */
 async function processAsyncWork(
   sender: string,
@@ -254,6 +255,7 @@ async function processAsyncWork(
 ): Promise<void> {
   const startTime = Date.now();
   let storedMedia: StoredMediaAttachment[] = [];
+  let preAnalysis: CurrentMediaSummary[] = [];
 
   try {
     console.log(JSON.stringify({
@@ -265,9 +267,11 @@ async function processAsyncWork(
       timestamp: new Date().toISOString(),
     }));
 
-    // Upload media attachments to Google Drive if present
+    // Process media: download from Twilio, then upload to Drive + pre-analyze in parallel
     if (mediaAttachments && mediaAttachments.length > 0) {
-      storedMedia = await uploadMediaAttachments(sender, mediaAttachments);
+      const mediaResult = await processMediaAttachments(sender, mediaAttachments);
+      storedMedia = mediaResult.storedMedia;
+      preAnalysis = mediaResult.preAnalysis;
 
       if (storedMedia.length > 0) {
         console.log(JSON.stringify({
@@ -280,8 +284,8 @@ async function processAsyncWork(
       }
     }
 
-    // Always use orchestrator handler
-    const responseText = await handleWithOrchestrator(message, sender, channel, userConfig, mediaAttachments, storedMedia, userMessageId);
+    // Always use orchestrator handler (pass pre-analysis for planner enrichment)
+    const responseText = await handleWithOrchestrator(message, sender, channel, userConfig, mediaAttachments, storedMedia, userMessageId, preAnalysis);
 
     console.log(JSON.stringify({
       level: 'info',
@@ -431,8 +435,11 @@ export async function handleSmsWebhook(req: Request, res: Response): Promise<voi
       timestamp: new Date().toISOString(),
     }));
 
+    // Force async for media messages (belt-and-suspenders: don't rely solely on classifier)
+    const needsAsync = classification.needsAsyncWork || mediaAttachments.length > 0;
+
     // If async work needed, spawn background processing (fire and forget)
-    if (classification.needsAsyncWork) {
+    if (needsAsync) {
       processAsyncWork(sender, message, channel, userConfig, mediaAttachments, userMessage.id).catch((error) => {
         console.error(JSON.stringify({
           level: 'error',

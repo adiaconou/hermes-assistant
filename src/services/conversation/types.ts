@@ -12,7 +12,40 @@
 /**
  * Kind of metadata attached to a message.
  */
-export type MessageMetadataKind = 'image_analysis';
+export type MessageMetadataKind = 'image_analysis' | 'media_pre_analysis';
+
+// ============================================================================
+// Current-Turn Media Pre-Analysis Types
+// ============================================================================
+
+/**
+ * Coarse image category from pre-analysis.
+ * Used by the planner to make routing decisions before deep analysis.
+ */
+export type MediaCategory =
+  | 'receipt'
+  | 'data_table'
+  | 'chart'
+  | 'screenshot'
+  | 'photo'
+  | 'document'
+  | 'unknown';
+
+/**
+ * Pre-analysis summary for a single media attachment.
+ * Produced by Gemini before the planner runs, so the planner can
+ * make informed routing decisions based on image content.
+ */
+export interface CurrentMediaSummary {
+  /** Index of the attachment in the inbound message (0-based) */
+  attachment_index: number;
+  /** MIME type of the attachment */
+  mime_type: string;
+  /** Coarse image category (optional — only set for images) */
+  category?: MediaCategory;
+  /** 2-3 sentence summary of the image content (max 300 chars) */
+  summary: string;
+}
 
 /**
  * Metadata payload for image analysis results.

@@ -62,7 +62,7 @@ function generateFilename(mimeType: string, index: number): string {
  * Download media from Twilio URL.
  * Requires Twilio credentials for authentication.
  */
-async function downloadFromTwilio(url: string): Promise<Buffer> {
+export async function downloadFromTwilio(url: string): Promise<Buffer> {
   const { accountSid, authToken } = config.twilio;
 
   if (!accountSid || !authToken) {
@@ -109,6 +109,122 @@ async function getAttachmentsFolder(phoneNumber: string): Promise<string> {
 }
 
 /**
+ * Downloaded media buffer paired with its source metadata.
+ */
+export type DownloadedMedia = {
+  buffer: Buffer;
+  attachment: MediaAttachment;
+};
+
+/**
+ * Download all media attachments from Twilio.
+ * Individual failures are logged and skipped.
+ */
+export async function downloadAllMedia(attachments: MediaAttachment[]): Promise<DownloadedMedia[]> {
+  const results: DownloadedMedia[] = [];
+
+  for (const attachment of attachments) {
+    try {
+      const buffer = await downloadFromTwilio(attachment.url);
+      results.push({ buffer, attachment });
+    } catch (error) {
+      console.log(JSON.stringify({
+        level: 'error',
+        message: 'Failed to download media from Twilio',
+        index: attachment.index,
+        contentType: attachment.contentType,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString(),
+      }));
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Upload pre-downloaded media buffers to Google Drive.
+ *
+ * @param phoneNumber - User's phone number
+ * @param downloads - Pre-downloaded media buffers
+ * @returns Array of stored attachment records (empty if auth required or upload fails)
+ */
+export async function uploadBuffersToDrive(
+  phoneNumber: string,
+  downloads: DownloadedMedia[],
+): Promise<StoredMediaAttachment[]> {
+  if (downloads.length === 0) return [];
+
+  const results: StoredMediaAttachment[] = [];
+
+  try {
+    const folderId = await getAttachmentsFolder(phoneNumber);
+
+    for (const { buffer, attachment } of downloads) {
+      try {
+        const filename = generateFilename(attachment.contentType, attachment.index);
+        const file = await uploadFile(phoneNumber, {
+          name: filename,
+          mimeType: attachment.contentType,
+          content: buffer,
+          folderId,
+        });
+
+        results.push({
+          driveFileId: file.id,
+          filename: file.name,
+          mimeType: attachment.contentType,
+          webViewLink: file.webViewLink,
+        });
+
+        console.log(JSON.stringify({
+          level: 'info',
+          message: 'Uploaded media attachment to Drive',
+          filename: file.name,
+          fileId: file.id,
+          mimeType: attachment.contentType,
+          size: buffer.length,
+          timestamp: new Date().toISOString(),
+        }));
+      } catch (error) {
+        console.log(JSON.stringify({
+          level: 'error',
+          message: 'Failed to upload media attachment',
+          index: attachment.index,
+          contentType: attachment.contentType,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString(),
+        }));
+
+        if (error instanceof AuthRequiredError) {
+          throw error;
+        }
+      }
+    }
+  } catch (error) {
+    if (error instanceof AuthRequiredError) {
+      console.log(JSON.stringify({
+        level: 'info',
+        message: 'Media upload skipped - user not authenticated with Google',
+        phone: phoneNumber.slice(-4).padStart(phoneNumber.length, '*'),
+        attachmentCount: downloads.length,
+        timestamp: new Date().toISOString(),
+      }));
+      return [];
+    }
+
+    console.log(JSON.stringify({
+      level: 'error',
+      message: 'Media upload failed',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString(),
+    }));
+  }
+
+  return results;
+}
+
+/**
  * Upload media attachments to Google Drive.
  *
  * Downloads from Twilio URLs and uploads to the user's
@@ -126,82 +242,6 @@ export async function uploadMediaAttachments(
     return [];
   }
 
-  const results: StoredMediaAttachment[] = [];
-
-  try {
-    // Get the attachments folder first (will throw AuthRequiredError if not authed)
-    const folderId = await getAttachmentsFolder(phoneNumber);
-
-    for (const attachment of attachments) {
-      try {
-        // Download from Twilio
-        const content = await downloadFromTwilio(attachment.url);
-
-        // Generate filename
-        const filename = generateFilename(attachment.contentType, attachment.index);
-
-        // Upload to Drive
-        const file = await uploadFile(phoneNumber, {
-          name: filename,
-          mimeType: attachment.contentType,
-          content,
-          folderId,
-        });
-
-        results.push({
-          driveFileId: file.id,
-          filename: file.name,
-          mimeType: attachment.contentType,
-          webViewLink: file.webViewLink,
-        });
-
-        console.log(JSON.stringify({
-          level: 'info',
-          message: 'Uploaded media attachment to Drive',
-          filename: file.name,
-          fileId: file.id,
-          mimeType: attachment.contentType,
-          size: content.length,
-          timestamp: new Date().toISOString(),
-        }));
-      } catch (error) {
-        // Log individual attachment errors but continue with others
-        console.log(JSON.stringify({
-          level: 'error',
-          message: 'Failed to upload media attachment',
-          index: attachment.index,
-          contentType: attachment.contentType,
-          error: error instanceof Error ? error.message : 'Unknown error',
-          timestamp: new Date().toISOString(),
-        }));
-
-        // Re-throw auth errors
-        if (error instanceof AuthRequiredError) {
-          throw error;
-        }
-      }
-    }
-  } catch (error) {
-    if (error instanceof AuthRequiredError) {
-      // User not authenticated - return empty array but don't fail
-      console.log(JSON.stringify({
-        level: 'info',
-        message: 'Media upload skipped - user not authenticated with Google',
-        phone: phoneNumber.slice(-4).padStart(phoneNumber.length, '*'),
-        attachmentCount: attachments.length,
-        timestamp: new Date().toISOString(),
-      }));
-      return [];
-    }
-
-    // Log other errors but don't fail message processing
-    console.log(JSON.stringify({
-      level: 'error',
-      message: 'Media upload failed',
-      error: error instanceof Error ? error.message : 'Unknown error',
-      timestamp: new Date().toISOString(),
-    }));
-  }
-
-  return results;
+  const downloads = await downloadAllMedia(attachments);
+  return uploadBuffersToDrive(phoneNumber, downloads);
 }

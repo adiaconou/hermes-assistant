@@ -5,7 +5,8 @@
  * that can be injected into agent prompts for multi-turn conversations.
  */
 
-import type { ConversationMessage, ImageAnalysisMetadata } from '../services/conversation/types.js';
+import type { ConversationMessage, ImageAnalysisMetadata, CurrentMediaSummary } from '../services/conversation/types.js';
+import config from '../config.js';
 
 /** Maximum length for individual analysis text before truncation */
 const MAX_ANALYSIS_LENGTH = 2000;
@@ -106,4 +107,33 @@ ${entries.join('\n\n')}
  */
 export function hasMediaContext(mediaContext: string | undefined): boolean {
   return !!mediaContext && mediaContext.length > 0;
+}
+
+/**
+ * Format current-turn media pre-analysis summaries into a <current_media> block
+ * for planner prompt injection.
+ *
+ * Enforces hard caps on number of summaries and per-summary character length.
+ * All text is XML-escaped to prevent prompt injection.
+ *
+ * @param summaries Pre-analysis summaries from Gemini
+ * @returns Formatted XML string or empty string if no summaries
+ */
+export function formatCurrentMediaContext(summaries: CurrentMediaSummary[]): string {
+  if (!summaries || summaries.length === 0) return '';
+
+  const { maxSummaries, maxSummaryChars } = config.mediaFirstPlanning;
+  const capped = summaries.slice(0, maxSummaries);
+
+  const entries = capped.map(s => {
+    const summary = escapeXml(truncateText(s.summary, maxSummaryChars));
+    const categoryAttr = s.category ? ` category="${escapeXml(s.category)}"` : '';
+    return `<attachment index="${s.attachment_index}" mime_type="${escapeXml(s.mime_type)}"${categoryAttr}>\n${summary}\n</attachment>`;
+  });
+
+  return `<current_media>
+The user's current message includes the following media attachments. Use these summaries to understand what the user sent.
+
+${entries.join('\n\n')}
+</current_media>`;
 }

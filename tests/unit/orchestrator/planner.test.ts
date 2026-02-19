@@ -22,6 +22,13 @@ vi.mock('../../../src/orchestrator/conversation-window.js', () => ({
   formatHistoryForPrompt: vi.fn(() => '(No recent history)'),
 }));
 
+vi.mock('../../../src/orchestrator/media-context.js', () => ({
+  formatCurrentMediaContext: vi.fn((summaries: unknown[]) => {
+    if (!summaries || (summaries as unknown[]).length === 0) return '';
+    return '<current_media>\nMocked current media block\n</current_media>';
+  }),
+}));
+
 // Import after mocks
 import { createPlan, resolveTaskDates } from '../../../src/orchestrator/planner.js';
 import type { PlanContext, AgentRegistry } from '../../../src/orchestrator/types.js';
@@ -352,6 +359,96 @@ describe('createPlan', () => {
       const calls = getCreateCalls();
       expect(calls[0].system).toContain('facts');
       expect(calls[0].system).toContain('User prefers mornings');
+    });
+  });
+
+  describe('media-first planning', () => {
+    it('should include current media block when summaries are provided', async () => {
+      setMockResponses([
+        createTextResponse(JSON.stringify({
+          analysis: 'User sent a receipt image',
+          goal: 'Process receipt',
+          steps: [{ id: 'step_1', agent: 'drive-agent', task: 'Extract receipt data' }],
+        })),
+      ]);
+
+      await createPlan({
+        ...baseContext,
+        userMessage: 'Log this expense\n\n[User sent an image]',
+        currentMediaSummaries: [{
+          attachment_index: 0,
+          mime_type: 'image/jpeg',
+          category: 'receipt',
+          summary: 'A Whole Foods receipt totaling $47.23.',
+        }],
+      }, mockRegistry);
+
+      const calls = getCreateCalls();
+      expect(calls[0].system).toContain('<current_media>');
+    });
+
+    it('should not include current media XML block when no summaries', async () => {
+      setMockResponses([
+        createTextResponse(JSON.stringify({
+          analysis: 'Test',
+          goal: 'Goal',
+          steps: [{ id: 'step_1', agent: 'general-agent', task: 'Task' }],
+        })),
+      ]);
+
+      await createPlan(baseContext, mockRegistry);
+
+      const calls = getCreateCalls();
+      // The rules text references <current_media>, but the actual XML block should not be present
+      expect(calls[0].system).not.toContain('Mocked current media block');
+    });
+
+    it('should include deictic resolution rules in prompt', async () => {
+      setMockResponses([
+        createTextResponse(JSON.stringify({
+          analysis: 'Test',
+          goal: 'Goal',
+          steps: [{ id: 'step_1', agent: 'general-agent', task: 'Task' }],
+        })),
+      ]);
+
+      await createPlan(baseContext, mockRegistry);
+
+      const calls = getCreateCalls();
+      expect(calls[0].system).toContain('Deictic resolution');
+      expect(calls[0].system).toContain('"this", "that", "it"');
+    });
+
+    it('should include intent precedence rules in prompt', async () => {
+      setMockResponses([
+        createTextResponse(JSON.stringify({
+          analysis: 'Test',
+          goal: 'Goal',
+          steps: [{ id: 'step_1', agent: 'general-agent', task: 'Task' }],
+        })),
+      ]);
+
+      await createPlan(baseContext, mockRegistry);
+
+      const calls = getCreateCalls();
+      expect(calls[0].system).toContain('Intent precedence');
+      expect(calls[0].system).toContain('explicit user text intent');
+    });
+
+    it('should include image-only clarification rules in prompt', async () => {
+      setMockResponses([
+        createTextResponse(JSON.stringify({
+          analysis: 'Test',
+          goal: 'Goal',
+          steps: [{ id: 'step_1', agent: 'general-agent', task: 'Task' }],
+        })),
+      ]);
+
+      await createPlan(baseContext, mockRegistry);
+
+      const calls = getCreateCalls();
+      expect(calls[0].system).toContain('Image-only messages');
+      expect(calls[0].system).toContain('clarification question');
     });
   });
 });

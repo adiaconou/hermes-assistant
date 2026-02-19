@@ -27,6 +27,7 @@ import type {
 import { ORCHESTRATOR_LIMITS } from './types.js';
 import { formatAgentsForPrompt } from '../executor/registry.js';
 import { formatHistoryForPrompt } from './conversation-window.js';
+import { formatCurrentMediaContext } from './media-context.js';
 import type { TraceLogger } from '../utils/trace-logger.js';
 
 /**
@@ -53,6 +54,8 @@ Analyze the user's request and create a plan with sequential steps.
 {history}
 </conversation_history>
 
+{currentMedia}
+
 <rules>
 1. Use the MINIMUM number of steps needed - prefer fewer steps
 2. For greetings, small talk, gratitude, or ambiguous conversational requests, use 1 step with general-agent
@@ -69,6 +72,9 @@ Analyze the user's request and create a plan with sequential steps.
    - Second step: Pass the data to ui-agent to render it interactively
    - Example: "Show my calendar in a visual dashboard" → step 1: calendar-agent fetches events, step 2: ui-agent renders them
 12. The ui-agent has NO network access - it can only render data provided to it from previous steps or create standalone tools (calculators, forms, timers)
+13. Intent precedence (highest to lowest): (a) explicit user text intent, (b) current-turn media semantics from <current_media>, (c) prior conversation context from <conversation_history>
+14. Deictic resolution: When the user says "this", "that", "it", or similar references AND current-turn media is present in <current_media>, resolve those references to the current-turn media FIRST, not to prior conversation content. Only fall back to conversation history if no current-turn media exists.
+15. Image-only messages: If the user sent only media with no text (or very minimal text like "this"), and the <current_media> summary clearly indicates a specific task (e.g., a receipt to log, a table to extract), route to the appropriate agent. If the intent is ambiguous, create a single step with general-agent to ask the user a concise clarification question about what they want done with the attachment.
 </rules>
 
 <output_format>
@@ -186,12 +192,18 @@ export async function createPlan(
   const timezone = context.userConfig?.timezone || 'UTC';
   const today = new Date().toLocaleDateString('en-CA', { timeZone: timezone });
 
+  // Build current-turn media context (if pre-analysis is available)
+  const currentMediaBlock = context.currentMediaSummaries
+    ? formatCurrentMediaContext(context.currentMediaSummaries)
+    : '';
+
   // Build the prompt
   const prompt = PLANNING_PROMPT
     .replace('{timeContext}', timeContext)
     .replace('{agents}', agentDescriptions)
     .replace('{userContext}', userContextText)
     .replace('{history}', historyText)
+    .replace('{currentMedia}', currentMediaBlock)
     .replace('{today}', today);
 
   console.log(JSON.stringify({
@@ -200,6 +212,7 @@ export async function createPlan(
     userMessageLength: context.userMessage.length,
     historyLength: context.conversationHistory.length,
     factsCount: context.userFacts.length,
+    currentMediaSummaries: context.currentMediaSummaries?.length || 0,
     timestamp: new Date().toISOString(),
   }));
 

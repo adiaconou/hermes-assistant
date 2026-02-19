@@ -86,7 +86,7 @@ Hermes is a multi-agent assistant that receives messages via Twilio (SMS/WhatsAp
 | Phase | Duration | What Happens |
 |-------|----------|--------------|
 | **Sync** | <5s | Validate Twilio signature → Classifier LLM call (512 tokens, no tools) → Return TwiML with immediate reply |
-| **Async** | Up to 5 min | Upload media → Create plan → Execute agents → Compose response → Send SMS/WhatsApp |
+| **Async** | Up to 5 min | Download media → Upload to Drive + Pre-analyze via Gemini (parallel) → Create plan → Execute agents → Compose response → Send SMS/WhatsApp |
 
 ### Classification
 
@@ -104,8 +104,18 @@ User ──SMS──▶ Twilio ──POST──▶ /webhook/sms
                                     │
                          classifyMessage() → fast reply via TwiML
                                     │
-                             needsAsyncWork?
+                         needsAsyncWork? (always true for media)
                                     │ yes
+                                    ▼
+                        processMediaAttachments()
+                                    │
+                          downloadAllMedia()
+                                    │
+                         ┌──────────┴──────────┐
+                         ▼                     ▼
+                  uploadBuffersToDrive()  preAnalyzeMedia()
+                    (Google Drive)        (Gemini Vision)
+                         └──────────┬──────────┘
                                     ▼
                          handleWithOrchestrator()
                                     │
@@ -114,9 +124,9 @@ User ──SMS──▶ Twilio ──POST──▶ /webhook/sms
                createPlan()    executeStep()   synthesizeResponse()
                     │               │               │
                     ▼               ▼               ▼
-             LLM: choose      Agent + tools    LLM: compose
-              agents           (loop)          user reply
-                                                    │
+           LLM: choose +     Agent + tools    LLM: compose
+           <current_media>    (loop)          user reply
+              agents                               │
                                                     ▼
                                            Twilio sendSms()
 ```
@@ -537,12 +547,36 @@ The ui-agent has **no network access** — it can only render data passed to it 
 ### Inbound Media Flow
 
 1. Twilio webhook includes `MediaUrl0` for MMS/WhatsApp images
-2. Media service downloads from Twilio (authenticated)
-3. File is uploaded to Google Drive (Hermes folder)
+2. `processMediaAttachments()` downloads from Twilio once (shared buffer pool)
+3. Two parallel operations via `Promise.all`:
+   - **Drive upload** — file uploaded to Google Drive (Hermes folder)
+   - **Pre-analysis** — Gemini Vision produces a compact summary + category per image
 4. Metadata stored in `conversation_messages.media_attachments`
-5. Drive agent can analyze images via Gemini Vision
-6. Analysis stored as message metadata (`conversation_message_metadata`)
-7. Future turns can reference the analysis without re-analyzing
+5. Pre-analysis summaries injected into planner prompt as `<current_media>` XML block
+6. Drive agent can do deeper analysis via Gemini Vision tool if needed
+7. Pre-analysis metadata persisted as `media_pre_analysis` in `conversation_message_metadata`
+8. Future turns can reference stored analysis without re-analyzing
+
+### Media-First Intent Resolution
+
+When the user sends media (images), the planner receives structured `<current_media>` context with per-attachment summaries. Three prompt rules govern how the planner interprets media:
+
+| Rule | Behavior |
+|------|----------|
+| **Intent precedence** | (1) explicit user text → (2) current-turn media → (3) prior conversation history |
+| **Deictic resolution** | "this", "that", "it" bind to `<current_media>` attachments before conversation history |
+| **Image-only clarification** | If the user sends only an image with no text and the category is ambiguous, the planner emits a general-agent step that asks a clarification question |
+
+### Pre-Analysis Pipeline
+
+- **Service**: `src/services/media/pre-analyze.ts`
+- **Model**: Gemini Vision (configurable via `GEMINI_MODEL`)
+- **Timeout budget**: 5s per image (`MEDIA_PRE_ANALYSIS_TIMEOUT_MS`), 8s total (`MEDIA_TOTAL_TIMEOUT_MS`)
+- **Output**: `CurrentMediaSummary[]` — `{attachment_index, mime_type, category?, summary}`
+- **Categories**: `receipt | data_table | chart | screenshot | photo | document | unknown`
+- **Max summaries**: 5 (`MEDIA_MAX_SUMMARIES`), each capped at 300 chars (`MEDIA_MAX_SUMMARY_CHARS`)
+- **Graceful degradation**: Timeouts, Gemini errors, or disabled feature → empty array (hint-only path)
+- **Feature flag**: `MEDIA_FIRST_PLANNING_ENABLED` (default: true)
 
 ---
 
@@ -574,6 +608,7 @@ src/
 │   ├── response-composer.ts    # Final response synthesis
 │   ├── handler.ts              # SMS ↔ orchestrator integration
 │   ├── conversation-window.ts  # History sliding window
+│   ├── media-context.ts        # Media context XML builders for prompts
 │   └── types.ts                # Plan/step/context types + limits
 │
 ├── executor/
@@ -677,7 +712,9 @@ src/
 │   │
 │   ├── media/                  # Media handling
 │   │   ├── index.ts            # Exports
-│   │   └── upload.ts           # Twilio download + Drive upload
+│   │   ├── upload.ts           # Twilio download + Drive upload
+│   │   ├── pre-analyze.ts      # Gemini pre-analysis (summary + category)
+│   │   └── process.ts          # Combined download → upload + pre-analyze
 │   │
 │   ├── ui/                     # UI page generation
 │   │   ├── index.ts            # Exports

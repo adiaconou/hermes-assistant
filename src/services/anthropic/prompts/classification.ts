@@ -31,6 +31,7 @@ You have access to these tools (which require async processing):
 ${toolSummary}
 
 Classify with these rules:
+- Messages with media attachments (images, files, etc. — indicated by "[User sent ...]" hints) MUST set needsAsyncWork to true. Media always requires async processing for analysis. Respond with a short acknowledgment.
 - Memory-directed messages (remember, recall, forget/delete/update a fact, "what do you know/remember about me") MUST set needsAsyncWork to true so the memory tools run. Respond with a short acknowledgment as immediateResponse.
 - Tasks that need tools or substantial work (lists, plans, external data/actions) → needsAsyncWork=true with a brief acknowledgment.
 - Simple questions/greetings you can answer directly without tools → needsAsyncWork=false and immediateResponse is the full answer.

@@ -10,7 +10,7 @@
  * - Keeps the same signature previously used by legacy handlers
  */
 
-import type { ConversationMessage, StoredMediaAttachment, ImageAnalysisMetadata } from '../services/conversation/types.js';
+import type { ConversationMessage, StoredMediaAttachment, ImageAnalysisMetadata, CurrentMediaSummary } from '../services/conversation/types.js';
 import type { UserConfig } from '../services/user-config/types.js';
 import type { MediaAttachment } from './types.js';
 import { getMemoryStore } from '../services/memory/index.js';
@@ -38,7 +38,8 @@ export async function handleWithOrchestrator(
   userConfig: UserConfig | null,
   mediaAttachments?: MediaAttachment[],
   storedMedia?: StoredMediaAttachment[],
-  messageId?: string
+  messageId?: string,
+  currentMediaSummaries?: CurrentMediaSummary[],
 ): Promise<string> {
   // Create trace logger for this request
   const logger = createTraceLogger(phoneNumber);
@@ -104,11 +105,15 @@ export async function handleWithOrchestrator(
       'Windowed history messages': windowedHistory.length,
       'User facts': userFacts.length,
       'Media metadata entries': metadataMap.size,
+      'Current media summaries': currentMediaSummaries?.length || 0,
     });
 
     // Dev-only: log media context details for debugging
     if (process.env.NODE_ENV !== 'production' && mediaContext) {
       logger.section('MEDIA CONTEXT', mediaContext);
+    }
+    if (process.env.NODE_ENV !== 'production' && currentMediaSummaries && currentMediaSummaries.length > 0) {
+      logger.section('CURRENT MEDIA SUMMARIES', JSON.stringify(currentMediaSummaries, null, 2));
     }
 
     // Run orchestrator
@@ -123,8 +128,28 @@ export async function handleWithOrchestrator(
       mediaAttachments,
       storedMedia,
       messageId,
-      mediaContext
+      mediaContext,
+      currentMediaSummaries,
     );
+
+    // Persist pre-analysis metadata for multi-turn continuity
+    if (messageId && currentMediaSummaries && currentMediaSummaries.length > 0) {
+      try {
+        await conversationStore.addMessageMetadata(
+          messageId,
+          phoneNumber,
+          'media_pre_analysis',
+          currentMediaSummaries,
+        );
+      } catch (metaError) {
+        console.log(JSON.stringify({
+          level: 'warn',
+          message: 'Failed to persist pre-analysis metadata',
+          error: metaError instanceof Error ? metaError.message : String(metaError),
+          timestamp: new Date().toISOString(),
+        }));
+      }
+    }
 
     if (result.success) {
       logger.close('SUCCESS');

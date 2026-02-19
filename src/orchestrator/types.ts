@@ -5,7 +5,7 @@
  * tracks, and dynamically adjusts execution of complex user requests.
  */
 
-import type { ConversationMessage, StoredMediaAttachment } from '../services/conversation/types.js';
+import type { ConversationMessage, StoredMediaAttachment, CurrentMediaSummary } from '../services/conversation/types.js';
 import type { UserFact } from '../services/memory/types.js';
 import type { UserConfig } from '../services/user-config/types.js';
 
@@ -101,6 +101,9 @@ export interface PlanContext {
 
   /** Pre-formatted media context block with image analysis from conversation history */
   mediaContext?: string;
+
+  /** Pre-analysis summaries for current-turn media attachments */
+  currentMediaSummaries?: CurrentMediaSummary[];
 
   /** Results from completed steps, keyed by step ID */
   stepResults: Record<string, StepResult>;
