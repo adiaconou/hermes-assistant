@@ -193,6 +193,45 @@ describe('POST /webhook/sms', () => {
       expect(sentMessages[0].body).toContain('grocery list');
       expect(sentMessages[0].to).toBe('+15559999999');
     });
+
+    it('uses a fixed immediate ack for media messages and still runs async work', async () => {
+      setMockResponses([
+        createTextResponse('{"needsAsyncWork": false, "immediateResponse": "This should be ignored for media."}'),
+        createTextResponse(JSON.stringify({
+          analysis: 'User sent media and wants help',
+          goal: 'Handle media request',
+          steps: [{ id: 'step_1', agent: 'general-agent', task: 'Handle the media request' }],
+        })),
+        createTextResponse('Processed media request.'),
+        createTextResponse('Here is what I found from your attachment.'),
+      ]);
+
+      const payload = {
+        ...createSmsPayload('Can you check this?', '+15558887777'),
+        NumMedia: '1',
+        MediaUrl0: 'not-a-url',
+        MediaContentType0: 'image/jpeg',
+      };
+
+      const { req, res } = createMockReqRes({
+        method: 'POST',
+        url: '/webhook/sms',
+        headers: { 'x-twilio-signature': signPayload(payload) },
+        body: payload,
+      });
+
+      await handleSmsWebhook(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toContain('text/xml');
+      expect(res.text).toContain('Working on your attachment now.');
+      expect(res.text).toContain('I&apos;ll send results shortly.');
+
+      await vi.waitFor(() => {
+        const messages = getSentMessages();
+        expect(messages.length).toBeGreaterThan(0);
+      }, { timeout: 5000 });
+    });
   });
 
   describe('error handling', () => {

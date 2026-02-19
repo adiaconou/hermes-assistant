@@ -7,7 +7,7 @@
  *
  * Timeouts:
  * - Per image: config.mediaFirstPlanning.perImageTimeoutMs (default 5s)
- * - Total:     config.mediaFirstPlanning.totalTimeoutMs   (default 8s)
+ * - Total: 8s for the full batch
  *
  * On failure the caller falls back to the existing hint-only path.
  */
@@ -45,6 +45,8 @@ Your 2-3 sentence description here.
 const VALID_CATEGORIES = new Set<MediaCategory>([
   'receipt', 'data_table', 'chart', 'screenshot', 'photo', 'document', 'unknown',
 ]);
+const PRE_ANALYSIS_TOTAL_TIMEOUT_MS = 8_000;
+const PRE_ANALYSIS_MAX_SUMMARY_CHARS = 300;
 
 /**
  * Parse the pre-analysis response into summary + category.
@@ -153,7 +155,7 @@ export async function preAnalyzeMedia(
   const imageEntries = entries.filter(e => isAnalyzableImage(e.mimeType));
   if (imageEntries.length === 0) return [];
 
-  const { perImageTimeoutMs, totalTimeoutMs, maxSummaryChars } = config.mediaFirstPlanning;
+  const { perImageTimeoutMs } = config.mediaFirstPlanning;
 
   const startTime = Date.now();
 
@@ -161,9 +163,9 @@ export async function preAnalyzeMedia(
     // Run all image analyses in parallel, wrapped in the total timeout
     const results = await withTimeout(
       Promise.all(
-        imageEntries.map(entry => preAnalyzeOne(entry, perImageTimeoutMs, maxSummaryChars)),
+        imageEntries.map(entry => preAnalyzeOne(entry, perImageTimeoutMs, PRE_ANALYSIS_MAX_SUMMARY_CHARS)),
       ),
-      totalTimeoutMs,
+      PRE_ANALYSIS_TOTAL_TIMEOUT_MS,
     );
 
     const durationMs = Date.now() - startTime;
@@ -172,7 +174,7 @@ export async function preAnalyzeMedia(
       console.log(JSON.stringify({
         level: 'warn',
         message: 'Pre-analysis total timeout exceeded',
-        totalTimeoutMs,
+        totalTimeoutMs: PRE_ANALYSIS_TOTAL_TIMEOUT_MS,
         imageCount: imageEntries.length,
         durationMs,
         timestamp: new Date().toISOString(),

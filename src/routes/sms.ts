@@ -221,6 +221,7 @@ function escapeXml(text: string): string {
 
 /** SMS has a 160 character limit per segment. */
 const SMS_MAX_LENGTH = 160;
+const MEDIA_IMMEDIATE_ACK = "Working on your attachment now. I'll send results shortly.";
 
 /**
  * Enforce SMS length limits for synchronous TwiML responses.
@@ -414,17 +415,22 @@ export async function handleSmsWebhook(req: Request, res: Response): Promise<voi
       timestamp: new Date().toISOString(),
     }));
 
+    const hasMedia = mediaAttachments.length > 0;
+    const immediateResponse = hasMedia
+      ? MEDIA_IMMEDIATE_ACK
+      : classification.immediateResponse;
+
     // Store messages in history
     const userMessage = await addMessage(sender, 'user', message, channel);
-    await addMessage(sender, 'assistant', classification.immediateResponse, channel);
+    await addMessage(sender, 'assistant', immediateResponse, channel);
 
-    // Enforce SMS length limits for TwiML response (WhatsApp is unaffected)
-    const immediateResponse = enforceSmsLength(classification.immediateResponse, channel);
+    // Enforce SMS length limits for TwiML response (WhatsApp is unaffected).
+    const safeImmediateResponse = enforceSmsLength(immediateResponse, channel);
 
     // Return TwiML with the immediate response
     res.type('text/xml');
     res.send(
-      `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(immediateResponse)}</Message></Response>`
+      `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(safeImmediateResponse)}</Message></Response>`
     );
 
     console.log(JSON.stringify({

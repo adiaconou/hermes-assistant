@@ -125,12 +125,6 @@ const config = {
     enabled: optionalBool('MEDIA_FIRST_PLANNING_ENABLED', true),
     /** Per-image pre-analysis timeout (ms) */
     perImageTimeoutMs: optionalInt('MEDIA_PRE_ANALYSIS_TIMEOUT_MS', 5000),
-    /** Total timeout for all attachment pre-analysis (ms) */
-    totalTimeoutMs: optionalInt('MEDIA_TOTAL_TIMEOUT_MS', 8000),
-    /** Maximum number of attachment summaries injected into planner prompt */
-    maxSummaries: optionalInt('MEDIA_MAX_SUMMARIES', 5),
-    /** Maximum characters per individual summary */
-    maxSummaryChars: optionalInt('MEDIA_MAX_SUMMARY_CHARS', 300),
   },
 
   /** Base URL for generating short links */

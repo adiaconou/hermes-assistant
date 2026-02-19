@@ -403,7 +403,7 @@ describe('createPlan', () => {
       expect(calls[0].system).not.toContain('Mocked current media block');
     });
 
-    it('should include deictic resolution rules in prompt', async () => {
+    it('should include deictic resolution rule in prompt', async () => {
       setMockResponses([
         createTextResponse(JSON.stringify({
           analysis: 'Test',
@@ -415,11 +415,11 @@ describe('createPlan', () => {
       await createPlan(baseContext, mockRegistry);
 
       const calls = getCreateCalls();
-      expect(calls[0].system).toContain('Deictic resolution');
-      expect(calls[0].system).toContain('"this", "that", "it"');
+      expect(calls[0].system).toContain('resolve "this/that/it"');
+      expect(calls[0].system).toContain('before conversation history');
     });
 
-    it('should include intent precedence rules in prompt', async () => {
+    it('should include intent priority rule in prompt', async () => {
       setMockResponses([
         createTextResponse(JSON.stringify({
           analysis: 'Test',
@@ -431,11 +431,11 @@ describe('createPlan', () => {
       await createPlan(baseContext, mockRegistry);
 
       const calls = getCreateCalls();
-      expect(calls[0].system).toContain('Intent precedence');
-      expect(calls[0].system).toContain('explicit user text intent');
+      expect(calls[0].system).toContain('Intent priority');
+      expect(calls[0].system).toContain('explicit user text first');
     });
 
-    it('should include image-only clarification rules in prompt', async () => {
+    it('should include media ambiguity clarification rule in prompt', async () => {
       setMockResponses([
         createTextResponse(JSON.stringify({
           analysis: 'Test',
@@ -447,8 +447,8 @@ describe('createPlan', () => {
       await createPlan(baseContext, mockRegistry);
 
       const calls = getCreateCalls();
-      expect(calls[0].system).toContain('Image-only messages');
-      expect(calls[0].system).toContain('clarification question');
+      expect(calls[0].system).toContain('media-only or still ambiguous');
+      expect(calls[0].system).toContain('general-agent step');
     });
   });
 });

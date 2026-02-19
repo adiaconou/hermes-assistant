@@ -132,25 +132,6 @@ export async function handleWithOrchestrator(
       currentMediaSummaries,
     );
 
-    // Persist pre-analysis metadata for multi-turn continuity
-    if (messageId && currentMediaSummaries && currentMediaSummaries.length > 0) {
-      try {
-        await conversationStore.addMessageMetadata(
-          messageId,
-          phoneNumber,
-          'media_pre_analysis',
-          currentMediaSummaries,
-        );
-      } catch (metaError) {
-        console.log(JSON.stringify({
-          level: 'warn',
-          message: 'Failed to persist pre-analysis metadata',
-          error: metaError instanceof Error ? metaError.message : String(metaError),
-          timestamp: new Date().toISOString(),
-        }));
-      }
-    }
-
     if (result.success) {
       logger.close('SUCCESS');
       return result.response;

@@ -554,8 +554,7 @@ The ui-agent has **no network access** — it can only render data passed to it 
 4. Metadata stored in `conversation_messages.media_attachments`
 5. Pre-analysis summaries injected into planner prompt as `<current_media>` XML block
 6. Drive agent can do deeper analysis via Gemini Vision tool if needed
-7. Pre-analysis metadata persisted as `media_pre_analysis` in `conversation_message_metadata`
-8. Future turns can reference stored analysis without re-analyzing
+7. Pre-analysis is used only for current-turn planning (no persistence in V1)
 
 ### Media-First Intent Resolution
 
@@ -571,10 +570,10 @@ When the user sends media (images), the planner receives structured `<current_me
 
 - **Service**: `src/services/media/pre-analyze.ts`
 - **Model**: Gemini Vision (configurable via `GEMINI_MODEL`)
-- **Timeout budget**: 5s per image (`MEDIA_PRE_ANALYSIS_TIMEOUT_MS`), 8s total (`MEDIA_TOTAL_TIMEOUT_MS`)
+- **Timeout budget**: 5s per image (`MEDIA_PRE_ANALYSIS_TIMEOUT_MS`), 8s total (hardcoded)
 - **Output**: `CurrentMediaSummary[]` — `{attachment_index, mime_type, category?, summary}`
 - **Categories**: `receipt | data_table | chart | screenshot | photo | document | unknown`
-- **Max summaries**: 5 (`MEDIA_MAX_SUMMARIES`), each capped at 300 chars (`MEDIA_MAX_SUMMARY_CHARS`)
+- **Max summaries**: 5 (hardcoded), each capped at 300 chars (hardcoded)
 - **Graceful degradation**: Timeouts, Gemini errors, or disabled feature → empty array (hint-only path)
 - **Feature flag**: `MEDIA_FIRST_PLANNING_ENABLED` (default: true)
 

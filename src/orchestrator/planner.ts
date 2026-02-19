@@ -72,9 +72,8 @@ Analyze the user's request and create a plan with sequential steps.
    - Second step: Pass the data to ui-agent to render it interactively
    - Example: "Show my calendar in a visual dashboard" → step 1: calendar-agent fetches events, step 2: ui-agent renders them
 12. The ui-agent has NO network access - it can only render data provided to it from previous steps or create standalone tools (calculators, forms, timers)
-13. Intent precedence (highest to lowest): (a) explicit user text intent, (b) current-turn media semantics from <current_media>, (c) prior conversation context from <conversation_history>
-14. Deictic resolution: When the user says "this", "that", "it", or similar references AND current-turn media is present in <current_media>, resolve those references to the current-turn media FIRST, not to prior conversation content. Only fall back to conversation history if no current-turn media exists.
-15. Image-only messages: If the user sent only media with no text (or very minimal text like "this"), and the <current_media> summary clearly indicates a specific task (e.g., a receipt to log, a table to extract), route to the appropriate agent. If the intent is ambiguous, create a single step with general-agent to ask the user a concise clarification question about what they want done with the attachment.
+13. If <current_media> exists, resolve "this/that/it" to current-turn media before conversation history.
+14. Intent priority: explicit user text first, then <current_media>, then history. If the request is media-only or still ambiguous, create one general-agent step that asks a concise clarification question.
 </rules>
 
 <output_format>

@@ -25,9 +25,6 @@ vi.mock('../../../../src/config.js', () => ({
     mediaFirstPlanning: {
       enabled: true,
       perImageTimeoutMs: 5000,
-      totalTimeoutMs: 8000,
-      maxSummaries: 5,
-      maxSummaryChars: 300,
     },
     google: {
       geminiApiKey: 'test-key',

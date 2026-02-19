@@ -6,10 +6,11 @@
  */
 
 import type { ConversationMessage, ImageAnalysisMetadata, CurrentMediaSummary } from '../services/conversation/types.js';
-import config from '../config.js';
 
 /** Maximum length for individual analysis text before truncation */
 const MAX_ANALYSIS_LENGTH = 2000;
+const MAX_CURRENT_MEDIA_SUMMARIES = 5;
+const MAX_CURRENT_MEDIA_SUMMARY_CHARS = 300;
 
 /**
  * Escape XML special characters to prevent prompt injection.
@@ -122,11 +123,10 @@ export function hasMediaContext(mediaContext: string | undefined): boolean {
 export function formatCurrentMediaContext(summaries: CurrentMediaSummary[]): string {
   if (!summaries || summaries.length === 0) return '';
 
-  const { maxSummaries, maxSummaryChars } = config.mediaFirstPlanning;
-  const capped = summaries.slice(0, maxSummaries);
+  const capped = summaries.slice(0, MAX_CURRENT_MEDIA_SUMMARIES);
 
   const entries = capped.map(s => {
-    const summary = escapeXml(truncateText(s.summary, maxSummaryChars));
+    const summary = escapeXml(truncateText(s.summary, MAX_CURRENT_MEDIA_SUMMARY_CHARS));
     const categoryAttr = s.category ? ` category="${escapeXml(s.category)}"` : '';
     return `<attachment index="${s.attachment_index}" mime_type="${escapeXml(s.mime_type)}"${categoryAttr}>\n${summary}\n</attachment>`;
   });

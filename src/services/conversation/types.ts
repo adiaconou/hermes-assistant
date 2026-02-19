@@ -12,7 +12,7 @@
 /**
  * Kind of metadata attached to a message.
  */
-export type MessageMetadataKind = 'image_analysis' | 'media_pre_analysis';
+export type MessageMetadataKind = 'image_analysis';
 
 // ============================================================================
 // Current-Turn Media Pre-Analysis Types
