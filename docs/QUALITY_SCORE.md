@@ -2,7 +2,7 @@
 
 Per-domain quality grades for the Hermes Assistant codebase. Every domain should be above 90. Grades are updated when domains change significantly.
 
-Last graded: _pending initial grading_
+Last graded: 2026-02-19
 
 ---
 
@@ -71,20 +71,20 @@ _Drags score down: Over-abstracted, speculative features, exotic dependencies, c
 
 | Domain | Tests | Errors | Docs | Boundaries | Observability | Architecture | Core Beliefs | Overall |
 |--------|-------|--------|------|------------|---------------|-------------|-------------|---------|
-| Orchestrator | — | — | — | — | — | — | — | — |
-| Calendar agent | — | — | — | — | — | — | — | — |
-| Scheduler agent | — | — | — | — | — | — | — | — |
-| Email agent | — | — | — | — | — | — | — | — |
-| Memory agent | — | — | — | — | — | — | — | — |
-| Drive agent | — | — | — | — | — | — | — | — |
-| UI agent | — | — | — | — | — | — | — | — |
-| General agent | — | — | — | — | — | — | — | — |
-| Memory system | — | — | — | — | — | — | — | — |
-| Scheduler system | — | — | — | — | — | — | — | — |
-| Date resolver | — | — | — | — | — | — | — | — |
-| Email watcher | — | — | — | — | — | — | — | — |
-| SMS routing | — | — | — | — | — | — | — | — |
-| Tools layer | — | — | — | — | — | — | — | — |
-| Database layer | — | — | — | — | — | — | — | — |
-| Google integrations | — | — | — | — | — | — | — | — |
+| Orchestrator | 55 | 65 | 80 | 45 | 60 | 75 | 65 | 61 |
+| Calendar agent | 60 | 75 | 85 | 70 | 70 | 85 | 80 | 75 |
+| Scheduler agent | 55 | 70 | 80 | 65 | 65 | 80 | 75 | 70 |
+| Email agent | 55 | 75 | 85 | 65 | 70 | 80 | 80 | 73 |
+| Memory agent | 65 | 75 | 85 | 70 | 70 | 85 | 85 | 76 |
+| Drive agent | 65 | 75 | 80 | 65 | 70 | 80 | 80 | 74 |
+| UI agent | 75 | 80 | 85 | 75 | 75 | 85 | 85 | 80 |
+| General agent | 35 | 65 | 60 | 55 | 65 | 75 | 70 | 62 |
+| Memory system | 80 | 85 | 90 | 80 | 80 | 90 | 90 | 85 |
+| Scheduler system | 65 | 75 | 80 | 70 | 75 | 85 | 80 | 77 |
+| Date resolver | 70 | 65 | 80 | 60 | 55 | 75 | 80 | 70 |
+| Email watcher | 80 | 80 | 85 | 80 | 80 | 85 | 85 | 82 |
+| SMS routing | 60 | 75 | 70 | 75 | 75 | 80 | 80 | 74 |
+| Tools layer | 70 | 70 | 65 | 70 | 70 | 80 | 80 | 73 |
+| Database layer | 75 | 80 | 75 | 80 | 75 | 85 | 85 | 80 |
+| Google integrations | 60 | 75 | 80 | 70 | 70 | 80 | 80 | 74 |
 
