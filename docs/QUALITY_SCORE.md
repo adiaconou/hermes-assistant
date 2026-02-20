@@ -1,71 +1,90 @@
 # Quality Score
 
-Quality standards, testing requirements, and verification criteria.
+Per-domain quality grades for the Hermes Assistant codebase. Every domain should be above 90. Grades are updated when domains change significantly.
+
+Last graded: _pending initial grading_
 
 ---
 
-## Testing Requirements
+## Grading Dimensions
 
-**Every code change must include appropriate tests and all tests must pass.**
+Each domain is scored 0-100 across seven dimensions. The rubric below defines what 90+ looks like and what drags a score down.
 
-### What to Test
+**Score meaning:**
+- **90-100** — Complete, follows all conventions, no known gaps
+- **75-89** — Functional, minor gaps identified
+- **50-74** — Works but has known weaknesses that should be addressed
+- **Below 50** — Significant gaps, risk of breakage
 
-- Unit tests for major code paths and key branches
-- Unit tests for error handling and edge cases
-- Integration tests for key workflows
-- **Mock external services** — Never call real Twilio, Anthropic, Google, or Gemini APIs in tests
+### Tests
 
-### Testing Stack
+**Unit tests** cover major happy paths and major error/exception cases. They don't need to test every branch — focus on the paths that matter most if they break. **Integration tests** cover the same major happy paths but exercise the real call chain: route handler through service layer, orchestrator through agent execution, background poller through job execution. The difference is unit tests isolate a single function with mocked dependencies, integration tests verify components work together. All external services (Twilio, Anthropic, Google, Gemini) must be mocked in both.
 
-| Tool | Purpose |
-|------|---------|
-| **Vitest** | Test framework and runner |
-| **Supertest** | HTTP integration testing |
-| **Vitest mocks** | Module mocking + custom mocks in `tests/mocks/` |
-| **vitest.config.ts** | Aliases `@anthropic-ai/sdk` to mock |
+_90+: Happy paths and key error cases covered at both levels. Tests fail when behavior changes._
+_Drags score down: No tests, tests that only check trivial cases, unmocked external calls, tests that pass regardless of behavior, tests that assert incorrect behavior (encoding bugs as expected)._
 
-### Commands
+### Error handling
 
-```bash
-npm test                 # Run all tests
-npm run test:unit        # Unit tests only
-npm run test:integration # Integration tests only
-npm run lint             # ESLint
-npm run build            # TypeScript type check + compile
-```
+Handle errors that have real user impact. If a Google API call fails mid-orchestration, the user should get a useful message, not a silent failure or a stack trace. If a scheduled job throws, it should log and continue, not crash the poller. Don't over-engineer — catching every possible exception type or adding retry logic to things that rarely fail is unnecessary complexity. Use YAGNI: handle the failures you've seen or can reasonably expect, not hypothetical ones.
+
+_90+: User-facing failures produce helpful messages. Background processes don't crash on errors. No silent swallowing of errors that matter._
+_Drags score down: Bare try/catch that swallows errors, unhandled promise rejections, user sees raw error messages or gets no response, over-engineered error hierarchies for simple cases._
+
+### Doc accuracy
+
+A design doc exists in `docs/design-docs/`, is listed in the index, and describes how the subsystem actually works today. The doc doesn't need to be exhaustive — it needs to be correct. If the code has diverged from the doc, the doc is wrong and the score drops.
+
+_90+: Doc exists, is indexed, and a reader following it would correctly understand the subsystem._
+_Drags score down: No doc, doc describes behavior that no longer exists, doc omits major subsystem capabilities._
+
+### Boundary validation
+
+Validate data at system boundaries — where external input enters your domain. This means: incoming SMS payloads, API responses from Google/Twilio/Anthropic, user-provided tool arguments, and database reads that might return unexpected shapes. Internal function calls between trusted modules don't need validation. Trust your own types.
+
+_90+: External inputs are validated or safely parsed before use. Malformed data doesn't propagate._
+_Drags score down: Raw external data used without checks, type assertions on API responses, no validation on user-provided values in tool arguments._
+
+### Observability
+
+Log enough to diagnose a problem after the fact without having to reproduce it. Every request should be traceable: you should be able to follow an inbound SMS through classification, planning, agent execution, and response composition in the logs. Errors should include context (what was being attempted, relevant IDs). Don't log sensitive data (tokens, full phone numbers, API keys). Don't over-log — routine success paths need minimal logging.
+
+_90+: Errors logged with context. Request flow is traceable. No sensitive data in logs._
+_Drags score down: Silent failures, errors logged without context, no way to trace a request, sensitive data in log output, excessive debug logging left in production paths._
+
+### Architecture
+
+Follows the established patterns: two-phase SMS processing (sync classifier + async orchestrator), agent isolation (each agent sees only its own tools), tool registration through the central registry, background loops running independently of the request path. New code should fit into existing patterns, not invent new ones.
+
+_90+: Follows all established patterns. A new contributor reading ARCHITECTURE.md would correctly predict how this domain works._
+_Drags score down: Bypasses agent isolation, tools not registered centrally, background work mixed into request path, patterns that contradict ARCHITECTURE.md._
+
+### Core beliefs
+
+Adheres to [core-beliefs.md](design-docs/core-beliefs.md). The code is simple and focused — no speculative features, no premature abstractions, no clever indirection. Dependencies are boring and well-understood. Changes are additive and incremental. The domain doesn't contain code that exists "just in case."
+
+_90+: Code does what it needs to and nothing more. Dependencies are stable and well-known. No dead code or unused abstractions._
+_Drags score down: Over-abstracted, speculative features, exotic dependencies, code that exists for hypothetical future requirements._
 
 ---
 
-## Definition of Done
+## Domain Grades
 
-A feature is complete when:
+| Domain | Tests | Errors | Docs | Boundaries | Observability | Architecture | Core Beliefs | Overall |
+|--------|-------|--------|------|------------|---------------|-------------|-------------|---------|
+| Orchestrator | — | — | — | — | — | — | — | — |
+| Calendar agent | — | — | — | — | — | — | — | — |
+| Scheduler agent | — | — | — | — | — | — | — | — |
+| Email agent | — | — | — | — | — | — | — | — |
+| Memory agent | — | — | — | — | — | — | — | — |
+| Drive agent | — | — | — | — | — | — | — | — |
+| UI agent | — | — | — | — | — | — | — | — |
+| General agent | — | — | — | — | — | — | — | — |
+| Memory system | — | — | — | — | — | — | — | — |
+| Scheduler system | — | — | — | — | — | — | — | — |
+| Date resolver | — | — | — | — | — | — | — | — |
+| Email watcher | — | — | — | — | — | — | — | — |
+| SMS routing | — | — | — | — | — | — | — | — |
+| Tools layer | — | — | — | — | — | — | — | — |
+| Database layer | — | — | — | — | — | — | — | — |
+| Google integrations | — | — | — | — | — | — | — | — |
 
-1. All new code paths have unit tests
-2. `npm run test:unit` passes
-3. `npm run test:integration` passes
-4. `npm run lint` passes (no new warnings)
-5. `npm run build` succeeds
-6. Architecture docs updated if system design changed
-7. Design doc created/updated if the feature involves architectural decisions
-
----
-
-## Code Quality Checklist
-
-- [ ] No `any` types (use `unknown` if needed)
-- [ ] No type assertions (`as`) unless absolutely necessary
-- [ ] Error handling is consistent (fail fast, throw early)
-- [ ] No sensitive data in logs (tokens, API keys, full phone numbers)
-- [ ] External services are mocked in tests
-- [ ] Comments explain "why", not "what"
-- [ ] No unused imports, variables, or dead code
-
----
-
-## Before Committing
-
-```bash
-npm run test:unit && npm run test:integration  # Tests pass
-npm run lint                                     # No lint errors
-npm run build                                    # Types check out
-```
