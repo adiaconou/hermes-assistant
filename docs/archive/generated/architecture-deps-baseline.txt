@@ -1,0 +1,405 @@
+
+> personal-assistant@0.1.0 lint:architecture
+> node scripts/check-layer-deps.mjs --report
+
+=== Architecture Edge Report ===
+
+src -> src (2 edges)
+  index.ts -> config
+  twilio.ts -> config
+src -> src/admin (1 edges)
+  index.ts -> index
+src -> src/routes (4 edges)
+  index.ts -> sms
+  index.ts -> pages
+  index.ts -> auth
+  index.ts -> health
+src -> src/services/conversation (2 edges)
+  conversation.ts -> index
+  index.ts -> index
+src -> src/services/email-watcher (1 edges)
+  index.ts -> index
+src -> src/services/memory (2 edges)
+  index.ts -> processor
+  index.ts -> index
+src -> src/services/scheduler (1 edges)
+  index.ts -> index
+src/admin -> src (1 edges)
+  email-skills.ts -> config
+src/admin -> src/admin (2 edges)
+  index.ts -> memory
+  index.ts -> email-skills
+src/admin -> src/services/email-watcher (1 edges)
+  email-skills.ts -> sqlite
+src/admin -> src/services/memory (1 edges)
+  memory.ts -> index
+src/admin -> src/services/user-config (1 edges)
+  email-skills.ts -> index
+src/agents -> src/executor (1 edges)
+  index.ts -> tool-executor
+src/agents -> src/registry (1 edges)
+  index.ts -> agents
+src/agents -> src/services/anthropic/prompts (1 edges)
+  context.ts -> context
+src/agents/calendar -> src/agents (1 edges)
+  index.ts -> context
+src/agents/calendar -> src/agents/calendar (1 edges)
+  index.ts -> prompt
+src/agents/calendar -> src/executor (1 edges)
+  index.ts -> tool-executor
+src/agents/drive -> src/agents (1 edges)
+  index.ts -> context
+src/agents/drive -> src/agents/drive (1 edges)
+  index.ts -> prompt
+src/agents/drive -> src/executor (1 edges)
+  index.ts -> tool-executor
+src/agents/email -> src/agents (1 edges)
+  index.ts -> context
+src/agents/email -> src/agents/email (1 edges)
+  index.ts -> prompt
+src/agents/email -> src/executor (1 edges)
+  index.ts -> tool-executor
+src/agents/general -> src/agents/general (1 edges)
+  index.ts -> prompt
+src/agents/general -> src/executor (1 edges)
+  index.ts -> tool-executor
+src/agents/memory -> src/agents (1 edges)
+  index.ts -> context
+src/agents/memory -> src/agents/memory (1 edges)
+  index.ts -> prompt
+src/agents/memory -> src/executor (1 edges)
+  index.ts -> tool-executor
+src/agents/scheduler -> src/agents (1 edges)
+  index.ts -> context
+src/agents/scheduler -> src/agents/scheduler (1 edges)
+  index.ts -> prompt
+src/agents/scheduler -> src/executor (1 edges)
+  index.ts -> tool-executor
+src/agents/ui -> src/agents (1 edges)
+  index.ts -> context
+src/agents/ui -> src/agents/ui (1 edges)
+  index.ts -> prompts
+src/agents/ui -> src/executor (1 edges)
+  index.ts -> tool-executor
+src/agents/ui -> src/services/ui (1 edges)
+  prompts.ts -> index
+src/executor -> src (1 edges)
+  tool-executor.ts -> config
+src/executor -> src/agents (2 edges)
+  registry.ts -> index
+  router.ts -> index
+src/executor -> src/executor (1 edges)
+  registry.ts -> router
+src/executor -> src/services/anthropic (1 edges)
+  tool-executor.ts -> client
+src/executor -> src/services/anthropic/prompts (1 edges)
+  tool-executor.ts -> context
+src/executor -> src/tools (1 edges)
+  tool-executor.ts -> index
+src/orchestrator -> src (3 edges)
+  planner.ts -> config
+  replanner.ts -> config
+  response-composer.ts -> config
+src/orchestrator -> src/executor (4 edges)
+  executor.ts -> router
+  orchestrate.ts -> registry
+  planner.ts -> registry
+  replanner.ts -> registry
+src/orchestrator -> src/orchestrator (18 edges)
+  conversation-window.ts -> types
+  executor.ts -> types
+  handler.ts -> orchestrate
+  handler.ts -> media-context
+  handler.ts -> conversation-window
+  index.ts -> types
+  index.ts -> orchestrate
+  index.ts -> response-composer
+  index.ts -> handler
+  orchestrate.ts -> types
+  orchestrate.ts -> planner
+  orchestrate.ts -> executor
+  orchestrate.ts -> replanner
+  orchestrate.ts -> response-composer
+  planner.ts -> types
+  planner.ts -> conversation-window
+  planner.ts -> media-context
+  replanner.ts -> types
+src/orchestrator -> src/services/anthropic (3 edges)
+  planner.ts -> client
+  replanner.ts -> client
+  response-composer.ts -> client
+src/orchestrator -> src/services/anthropic/prompts (2 edges)
+  planner.ts -> context
+  response-composer.ts -> context
+src/orchestrator -> src/services/conversation (1 edges)
+  handler.ts -> index
+src/orchestrator -> src/services/date (1 edges)
+  planner.ts -> resolver
+src/orchestrator -> src/services/memory (1 edges)
+  handler.ts -> index
+src/orchestrator -> src/tools (1 edges)
+  response-composer.ts -> index
+src/orchestrator -> src/utils (1 edges)
+  handler.ts -> trace-logger
+src/registry -> src/agents/calendar (1 edges)
+  agents.ts -> index
+src/registry -> src/agents/drive (1 edges)
+  agents.ts -> index
+src/registry -> src/agents/email (1 edges)
+  agents.ts -> index
+src/registry -> src/agents/general (1 edges)
+  agents.ts -> index
+src/registry -> src/agents/memory (1 edges)
+  agents.ts -> index
+src/registry -> src/agents/scheduler (1 edges)
+  agents.ts -> index
+src/registry -> src/agents/ui (1 edges)
+  agents.ts -> index
+src/routes -> src (6 edges)
+  auth.ts -> config
+  auth.ts -> twilio
+  auth.ts -> conversation
+  sms.ts -> conversation
+  sms.ts -> twilio
+  sms.ts -> config
+src/routes -> src/orchestrator (1 edges)
+  sms.ts -> index
+src/routes -> src/services/anthropic (1 edges)
+  sms.ts -> index
+src/routes -> src/services/credentials (1 edges)
+  auth.ts -> index
+src/routes -> src/services/email-watcher (1 edges)
+  auth.ts -> skills
+src/routes -> src/services/media (1 edges)
+  sms.ts -> index
+src/routes -> src/services/memory (1 edges)
+  sms.ts -> index
+src/routes -> src/services/ui (1 edges)
+  pages.ts -> index
+src/routes -> src/services/user-config (1 edges)
+  sms.ts -> index
+src/routes -> src/utils (2 edges)
+  auth.ts -> phone
+  sms.ts -> phone
+src/services/anthropic -> src (2 edges)
+  classification.ts -> config
+  client.ts -> config
+src/services/anthropic -> src/services/anthropic (3 edges)
+  classification.ts -> client
+  index.ts -> client
+  index.ts -> classification
+src/services/anthropic -> src/services/anthropic/prompts (1 edges)
+  classification.ts -> index
+src/services/anthropic -> src/tools (2 edges)
+  classification.ts -> index
+  index.ts -> index
+src/services/anthropic/prompts -> src (1 edges)
+  context.ts -> config
+src/services/anthropic/prompts -> src/services/anthropic/prompts (4 edges)
+  classification.ts -> context
+  index.ts -> system
+  index.ts -> context
+  index.ts -> classification
+src/services/anthropic/prompts -> src/services/memory (1 edges)
+  context.ts -> index
+src/services/anthropic/prompts -> src/services/ui (1 edges)
+  system.ts -> index
+src/services/conversation -> src (1 edges)
+  index.ts -> config
+src/services/conversation -> src/services/conversation (1 edges)
+  index.ts -> sqlite
+src/services/credentials -> src (1 edges)
+  index.ts -> config
+src/services/credentials -> src/services/credentials (2 edges)
+  index.ts -> sqlite
+  index.ts -> memory
+src/services/email-watcher -> src (6 edges)
+  actions.ts -> twilio
+  actions.ts -> config
+  classifier.ts -> config
+  index.ts -> config
+  prompt.ts -> config
+  sync.ts -> config
+src/services/email-watcher -> src/executor (1 edges)
+  actions.ts -> tool-executor
+src/services/email-watcher -> src/services/anthropic (1 edges)
+  classifier.ts -> client
+src/services/email-watcher -> src/services/email-watcher (7 edges)
+  actions.ts -> sqlite
+  classifier.ts -> sqlite
+  classifier.ts -> prompt
+  index.ts -> sync
+  index.ts -> classifier
+  index.ts -> actions
+  skills.ts -> sqlite
+src/services/email-watcher -> src/services/google (1 edges)
+  sync.ts -> auth
+src/services/email-watcher -> src/services/memory (2 edges)
+  actions.ts -> index
+  classifier.ts -> index
+src/services/email-watcher -> src/services/scheduler (1 edges)
+  index.ts -> poller
+src/services/email-watcher -> src/services/user-config (4 edges)
+  actions.ts -> index
+  index.ts -> index
+  skills.ts -> index
+  sync.ts -> index
+src/services/google -> src (3 edges)
+  auth.ts -> config
+  drive.ts -> config
+  vision.ts -> config
+src/services/google -> src/services/credentials (1 edges)
+  auth.ts -> index
+src/services/google -> src/services/google (14 edges)
+  auth.ts -> calendar
+  calendar.ts -> auth
+  docs.ts -> auth
+  docs.ts -> calendar
+  docs.ts -> drive
+  docs.ts -> drive
+  drive.ts -> auth
+  drive.ts -> calendar
+  gmail.ts -> auth
+  gmail.ts -> calendar
+  sheets.ts -> auth
+  sheets.ts -> calendar
+  sheets.ts -> drive
+  sheets.ts -> drive
+src/services/media -> src (2 edges)
+  pre-analyze.ts -> config
+  upload.ts -> config
+src/services/media -> src/services/google (4 edges)
+  pre-analyze.ts -> vision
+  pre-analyze.ts -> vision
+  upload.ts -> drive
+  upload.ts -> calendar
+src/services/media -> src/services/media (5 edges)
+  index.ts -> upload
+  index.ts -> pre-analyze
+  index.ts -> process
+  process.ts -> upload
+  process.ts -> pre-analyze
+src/services/media -> src/services/twilio (1 edges)
+  upload.ts -> fetch-with-retry
+src/services/memory -> src (2 edges)
+  index.ts -> config
+  processor.ts -> config
+src/services/memory -> src/services/conversation (1 edges)
+  processor.ts -> index
+src/services/memory -> src/services/memory (4 edges)
+  index.ts -> sqlite
+  processor.ts -> index
+  processor.ts -> prompts
+  processor.ts -> ranking
+src/services/memory -> src/services/scheduler (1 edges)
+  processor.ts -> poller
+src/services/memory -> src/utils (1 edges)
+  processor.ts -> trace-logger
+src/services/scheduler -> src (1 edges)
+  executor.ts -> twilio
+src/services/scheduler -> src/executor (1 edges)
+  executor.ts -> tool-executor
+src/services/scheduler -> src/services/date (1 edges)
+  parser.ts -> resolver
+src/services/scheduler -> src/services/memory (1 edges)
+  executor.ts -> index
+src/services/scheduler -> src/services/scheduler (9 edges)
+  executor.ts -> sqlite
+  index.ts -> types
+  index.ts -> sqlite
+  index.ts -> parser
+  index.ts -> executor
+  index.ts -> poller
+  index.ts -> sqlite
+  index.ts -> executor
+  index.ts -> poller
+src/services/scheduler -> src/services/user-config (1 edges)
+  executor.ts -> index
+src/services/scheduler -> src/tools (1 edges)
+  executor.ts -> index
+src/services/twilio -> src (1 edges)
+  media.ts -> config
+src/services/twilio -> src/services/twilio (1 edges)
+  media.ts -> fetch-with-retry
+src/services/ui -> src (2 edges)
+  index.ts -> config
+  provider-factory.ts -> config
+src/services/ui -> src/services/ui (6 edges)
+  index.ts -> generator
+  index.ts -> validator
+  index.ts -> provider-factory
+  index.ts -> generator
+  index.ts -> validator
+  index.ts -> provider-factory
+src/services/ui -> src/services/ui/providers (2 edges)
+  provider-factory.ts -> local-storage
+  provider-factory.ts -> memory-shortener
+src/services/user-config -> src (1 edges)
+  index.ts -> config
+src/services/user-config -> src/services/user-config (1 edges)
+  index.ts -> sqlite
+src/tools -> src/routes (1 edges)
+  utils.ts -> auth
+src/tools -> src/services/conversation (2 edges)
+  user-config.ts -> index
+  vision.ts -> index
+src/tools -> src/services/date (2 edges)
+  user-config.ts -> resolver
+  utils.ts -> resolver
+src/tools -> src/services/email-watcher (5 edges)
+  email-skills.ts -> sqlite
+  email-skills.ts -> skills
+  email-skills.ts -> sync
+  email-skills.ts -> classifier
+  email-skills.ts -> sync
+src/tools -> src/services/google (8 edges)
+  calendar.ts -> calendar
+  email-skills.ts -> gmail
+  email-skills.ts -> gmail
+  email-skills.ts -> auth
+  email.ts -> gmail
+  utils.ts -> calendar
+  vision.ts -> vision
+  vision.ts -> drive
+src/tools -> src/services/memory (2 edges)
+  memory.ts -> index
+  user-config.ts -> index
+src/tools -> src/services/twilio (1 edges)
+  vision.ts -> media
+src/tools -> src/services/ui (1 edges)
+  ui.ts -> index
+src/tools -> src/services/user-config (3 edges)
+  email-skills.ts -> index
+  scheduler.ts -> index
+  user-config.ts -> index
+src/tools -> src/tools (23 edges)
+  calendar.ts -> utils
+  docs.ts -> utils
+  drive.ts -> utils
+  email-skills.ts -> utils
+  email-skills.ts -> utils
+  email.ts -> utils
+  index.ts -> ui
+  index.ts -> calendar
+  index.ts -> email
+  index.ts -> memory
+  index.ts -> user-config
+  index.ts -> scheduler
+  index.ts -> maps
+  index.ts -> drive
+  index.ts -> sheets
+  index.ts -> docs
+  index.ts -> vision
+  index.ts -> maps
+  memory.ts -> utils
+  scheduler.ts -> utils
+  sheets.ts -> utils
+  user-config.ts -> utils
+  vision.ts -> utils
+src/utils -> src (1 edges)
+  trace-logger.ts -> config
+
+Total: 268 edges
+
+7 known exception(s) (see config/architecture-boundaries.json)
+0 violations

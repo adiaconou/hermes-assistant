@@ -13,12 +13,10 @@ A user-visible way to see this working is to run a dependency check command that
 ## Progress
 
 - [x] (2026-02-20 18:25Z) Created this ExecPlan in `docs/exec-plans/active/forward-layered-architecture-refactor.md` with full scope, milestones, and validation guidance.
-- [ ] Establish a baseline architecture dependency report and commit it as a tracked artifact.
-- [ ] Introduce machine-enforced import boundary checks in CI with a temporary exception allowlist.
-- [ ] Establish explicit agent discoverability scaffolding (`src/registry/agents.ts`, capability metadata contract, validation, generated catalog).
-- [ ] Remove currently known reverse edges (`tools -> routes`, `services -> tools` hotspots) without behavior changes.
-- [ ] Migrate the first domain (`scheduler`) to the layered package structure with compatibility adapters.
-- [ ] Migrate the second domain (`email-watcher`) to the layered package structure with compatibility adapters.
+- [x] (2026-02-21 20:45Z) Milestone 1 complete. Created `scripts/check-layer-deps.mjs`, `scripts/check-agent-registry.mjs`, `scripts/generate-agent-catalog.mjs`, `config/architecture-boundaries.json`, `src/registry/agents.ts`, `src/types/domain.ts`. Added `lint:architecture`, `lint:agents`, `docs:agents` scripts. Made `src/agents/index.ts` a compatibility shim re-exporting from registry. Baseline report generated at `docs/generated/architecture-deps-baseline.txt` (268 edges, 7 exceptions, 0 violations). All 719 unit tests pass, build succeeds. Discovered additional exception: `src/services/anthropic/index.ts` re-exports TOOLS from tools layer.
+- [x] (2026-02-21 23:30Z) Milestone 2 complete. Removed all 6 Milestone-2 exceptions (down from 7 to 1 remaining). Fix 1: Moved `generateAuthUrl`/`encryptState`/`decryptState`/`AuthRequiredError` to `src/providers/auth.ts`. Fix 2: Moved `MediaAttachment` to `src/types/media.ts` with re-exports for backward compat. Fix 3: `classifyMessage()` now receives `tools` as a parameter; removed TOOLS re-export from `services/anthropic/index.ts`. Fix 4: Scheduler executor receives `readOnlyToolNames` as a parameter injected from `src/index.ts`. Fix 5: `synthesizeResponse()` receives `ComposerDeps` (compositionTools + executeTool) injected by `orchestrate.ts`. Architecture check: 1 exception, 0 violations. TypeScript compiles cleanly.
+- [x] (2026-02-22 00:45Z) Milestone 3 complete. Migrated scheduler to `src/domains/scheduler/` with full layered structure: `types.ts`, `capability.ts`, `repo/sqlite.ts`, `providers/sms.ts`, `providers/executor.ts`, `service/parser.ts`, `service/executor.ts`, `runtime/index.ts`, `runtime/tools.ts`, `runtime/agent.ts`, `runtime/prompt.ts`. Pre-step: extracted `Poller` to `src/utils/poller.ts`. All original files replaced with re-export shims. Bootstrap wired in `src/index.ts` with `setExecuteWithTools()`. Registry updated to import from domain. Boundary checker updated: same-layer imports now allowed, `repo` added to runtime's allowed imports, `src/tools/`, `src/agents/`, `src/services/memory/` added to domain external allowed list. Architecture check: 1 exception, 0 violations. TypeScript compiles cleanly.
+- [x] (2026-02-22 02:00Z) Milestone 4 complete. Migrated email-watcher to `src/domains/email-watcher/` with full layered structure: `types.ts`, `capability.ts`, `repo/sqlite.ts`, `providers/gmail-sync.ts`, `providers/executor.ts`, `service/prompt.ts`, `service/classifier.ts`, `service/actions.ts`, `service/skills.ts`, `runtime/index.ts`, `runtime/tools.ts`. Classifier moved from providers to service layer (needs repo+service access). All 9 original files replaced with re-export shims. Bootstrap wired in `src/index.ts` with `setEmailWatcherExecuteWithTools()`. Last exception removed from architecture-boundaries.json (actions.ts→executor now uses injected provider). Added `src/services/google/` to domain external allowed list, fixed `src/config.ts`→`src/config` in config. Architecture check: 0 exceptions, 0 violations. TypeScript compiles cleanly.
 - [ ] Migrate remaining domains or establish strict shims for deferred domains with explicit deadlines.
 - [ ] Remove compatibility adapters, tighten boundary checks to strict mode, and update docs and quality grades.
 
@@ -50,6 +48,18 @@ A user-visible way to see this working is to run a dependency check command that
 
 - Observation: `src/services/email-watcher/actions.ts` imports `executeWithTools` directly from `src/executor/tool-executor.ts`. This cross-boundary edge is not listed in the plan's known violations but will need to be addressed when email-watcher moves to a domain.
   Evidence: `import { executeWithTools } from '../../executor/tool-executor.js'` in `actions.ts`.
+
+- Observation: The email-watcher classifier was initially placed in the `providers` layer but required imports from `repo` (sqlite) and `service` (prompt), violating `providers → [types, config]` rules. It belongs in the `service` layer because it orchestrates repo and prompt data to produce classification results.
+  Evidence: Boundary checker flagged `providers/classifier-llm.ts → repo/sqlite` and `providers/classifier-llm.ts → service/prompt` as violations. Moved to `service/classifier.ts` — resolved.
+
+- Observation: `src/services/anthropic/index.ts` barrel file re-exports `TOOLS` and `READ_ONLY_TOOLS` from `../../tools/index.js`. This is a `services -> tools` reverse edge not listed in the original plan exceptions. No consumer uses this re-export (only `classifyMessage` is imported from this barrel by `routes/sms.ts`).
+  Evidence: Line 22: `export { TOOLS, READ_ONLY_TOOLS } from '../../tools/index.js'`. Added as exception with deadline 2026-03-15.
+
+- Observation: The domain layer rule `runtime: [types, config, service, providers]` was too restrictive. Runtime files within the same domain need to import each other (agent imports prompt, tools imports index), and the runtime index needs to re-export repo functions. Updated to allow same-layer imports and added `repo` to runtime's allowed imports.
+  Evidence: Scheduler domain had 4 violations for runtime->runtime and runtime->repo before rule updates.
+
+- Observation: The `domainExternalRules.allowed` entry `src/twilio.ts` didn't match resolved import paths because the boundary checker strips `.js` extensions. Changed to `src/twilio` for correct matching.
+  Evidence: Warning for `providers/sms.ts -> src/twilio` despite `src/twilio.ts` being in allowed list.
 
 ## Decision Log
 
