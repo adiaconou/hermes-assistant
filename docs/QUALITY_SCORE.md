@@ -8,7 +8,7 @@ Last graded: 2026-02-19
 
 ## Grading Dimensions
 
-Each domain is scored 0-100 across seven dimensions. The rubric below defines what 90+ looks like and what drags a score down.
+Each domain is scored 0-100 across eight dimensions. The rubric below defines what 90+ looks like and what drags a score down.
 
 **Score meaning:**
 - **90-100** — Complete, follows all conventions, no known gaps
@@ -65,26 +65,33 @@ Adheres to [core-beliefs.md](design-docs/core-beliefs.md). The code is simple an
 _90+: Code does what it needs to and nothing more. Dependencies are stable and well-known. No dead code or unused abstractions._
 _Drags score down: Over-abstracted, speculative features, exotic dependencies, code that exists for hypothetical future requirements._
 
+### Structural compliance
+
+Files respect the forward-layer rule (`types → config → repo → service → runtime → ui`), cross-domain imports go through declared `providers/` re-exports only, and no domain imports from forbidden top-level paths (`src/routes/`, `src/orchestrator/`, `src/executor/`, `src/registry/`). Once the boundary checker exists ([exec plan, Milestone 1](exec-plans/active/forward-layered-architecture-refactor.md)), this dimension is mechanically verifiable — the score is the pass rate of `npm run lint:architecture`.
+
+_90+: Zero boundary violations. All cross-domain imports go through provider re-exports. Layer ordering is clean. No imports from forbidden paths._
+_Drags score down: Direct imports from sibling domain internals, upward layer imports (repo importing runtime), imports from forbidden top-level paths, bypassing provider re-export pattern for cross-domain dependencies, `AuthRequiredError` or similar shared types defined in the wrong module._
+
 ---
 
 ## Domain Grades
 
-| Domain | Tests | Errors | Docs | Boundaries | Observability | Architecture | Core Beliefs | Overall |
-|--------|-------|--------|------|------------|---------------|-------------|-------------|---------|
-| Orchestrator | 55 | 65 | 80 | 45 | 60 | 75 | 65 | 61 |
-| Calendar agent | 60 | 75 | 85 | 70 | 70 | 85 | 80 | 75 |
-| Scheduler agent | 55 | 70 | 80 | 65 | 65 | 80 | 75 | 70 |
-| Email agent | 55 | 75 | 85 | 65 | 70 | 80 | 80 | 73 |
-| Memory agent | 65 | 75 | 85 | 70 | 70 | 85 | 85 | 76 |
-| Drive agent | 65 | 75 | 80 | 65 | 70 | 80 | 80 | 74 |
-| UI agent | 75 | 80 | 85 | 75 | 75 | 85 | 85 | 80 |
-| General agent | 35 | 65 | 60 | 55 | 65 | 75 | 70 | 62 |
-| Memory system | 80 | 85 | 90 | 80 | 80 | 90 | 90 | 85 |
-| Scheduler system | 65 | 75 | 80 | 70 | 75 | 85 | 80 | 77 |
-| Date resolver | 70 | 65 | 80 | 60 | 55 | 75 | 80 | 70 |
-| Email watcher | 80 | 80 | 85 | 80 | 80 | 85 | 85 | 82 |
-| SMS routing | 60 | 75 | 70 | 75 | 75 | 80 | 80 | 74 |
-| Tools layer | 70 | 70 | 65 | 70 | 70 | 80 | 80 | 73 |
-| Database layer | 75 | 80 | 75 | 80 | 75 | 85 | 85 | 80 |
-| Google integrations | 60 | 75 | 80 | 70 | 70 | 80 | 80 | 74 |
+| Domain | Tests | Errors | Docs | Boundaries | Observability | Architecture | Core Beliefs | Structure | Overall |
+|--------|-------|--------|------|------------|---------------|-------------|-------------|-----------|---------|
+| Orchestrator | 55 | 65 | 80 | 45 | 60 | 75 | 65 | 60 | 63 |
+| Calendar agent | 60 | 75 | 85 | 70 | 70 | 85 | 80 | 50 | 72 |
+| Scheduler agent | 55 | 70 | 80 | 65 | 65 | 80 | 75 | 65 | 69 |
+| Email agent | 55 | 75 | 85 | 65 | 70 | 80 | 80 | 55 | 71 |
+| Memory agent | 65 | 75 | 85 | 70 | 70 | 85 | 85 | 70 | 76 |
+| Drive agent | 65 | 75 | 80 | 65 | 70 | 80 | 80 | 45 | 70 |
+| UI agent | 75 | 80 | 85 | 75 | 75 | 85 | 85 | 75 | 79 |
+| General agent | 35 | 65 | 60 | 55 | 65 | 75 | 70 | 50 | 59 |
+| Memory system | 80 | 85 | 90 | 80 | 80 | 90 | 90 | 75 | 84 |
+| Scheduler system | 65 | 75 | 80 | 70 | 75 | 85 | 80 | 70 | 75 |
+| Date resolver | 70 | 65 | 80 | 60 | 55 | 75 | 80 | 80 | 71 |
+| Email watcher | 80 | 80 | 85 | 80 | 80 | 85 | 85 | 45 | 78 |
+| SMS routing | 60 | 75 | 70 | 75 | 75 | 80 | 80 | 60 | 72 |
+| Tools layer | 70 | 70 | 65 | 70 | 70 | 80 | 80 | 40 | 68 |
+| Database layer | 75 | 80 | 75 | 80 | 75 | 85 | 85 | 75 | 79 |
+| Google integrations | 60 | 75 | 80 | 70 | 70 | 80 | 80 | 35 | 69 |
 
