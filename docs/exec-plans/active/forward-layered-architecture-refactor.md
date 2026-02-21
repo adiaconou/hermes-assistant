@@ -237,6 +237,7 @@ Business capability: background email monitoring, skill-based classification, au
     ├── repo/
     │   └── sqlite.ts           ← email_skills CRUD (from services/email-watcher/sqlite.ts)
     ├── providers/
+    │   ├── google-core.ts      ← re-exports getAuthenticatedClient, withRetry from google-core
     │   ├── gmail-sync.ts       ← Gmail history.list incremental sync (from services/email-watcher/sync.ts)
     │   ├── classifier-llm.ts   ← LLM classification call (from services/email-watcher/classifier.ts)
     │   └── executor.ts         ← wraps injected executeWithTools function (currently a direct
@@ -481,9 +482,9 @@ There is currently no ESLint config file in the repository (ESLint 9 flat config
 
    **c. `crossDomainRules`** — applies when source and target are in different `src/domains/<name>/` directories. Default is `deny`. For each `allowed` entry, checks that the source domain and target domain match, and that the importing file matches the `via` path relative to the source domain. Example: `calendar/service/calendar.ts → google-core/providers/auth.ts` is a violation because the `via` constraint requires the import to go through `calendar/providers/google-core.ts`.
 
-   **d. `domainExternalRules`** — applies when the source is inside `src/domains/` and the target is a top-level module outside `src/domains/`. Checks `forbidden` paths first (violation if matched), then checks `allowed` paths (valid if matched). Paths not in either list are implicitly allowed during migration, flagged as warnings if `--strict` is passed.
+   **d. `domainExternalRules`** — applies when the source is inside `src/domains/` and the target is a top-level module outside `src/domains/`. Checks `forbidden` paths first (violation if matched), then checks `allowed` paths (valid if matched). Paths not in either list are warnings in default mode and violations in `--strict` mode.
 
-6. Skips edges listed in the `exceptions` array.
+6. Skips edges listed in the `exceptions` array after validating each entry includes `from`, `to`, `reason`, `owner`, and `deadline`.
 7. For each violation, prints a three-line block: the forbidden edge (source file → target file), the rule that was broken, and a remediation instruction. Example outputs:
 
         VIOLATION: src/services/scheduler/executor.ts -> src/tools/index.ts
@@ -572,6 +573,12 @@ During transition, keep `src/agents/index.ts` as a compatibility shim that re-ex
             "to": "src/domains/google-core/",
             "via": "providers/google-core.ts",
             "reason": "Shared Google OAuth2 and folder hierarchy"
+          },
+          {
+            "from": "src/domains/email-watcher/",
+            "to": "src/domains/google-core/",
+            "via": "providers/google-core.ts",
+            "reason": "Shared Google OAuth2 for Gmail history sync"
           }
         ]
       },
@@ -612,36 +619,42 @@ During transition, keep `src/agents/index.ts` as a compatibility shim that re-ex
           "from": "src/tools/utils.ts",
           "to": "src/routes/auth.ts",
           "reason": "generateAuthUrl — will be moved to src/providers/auth.ts in Milestone 2",
+          "owner": "forward-layered-architecture-refactor",
           "deadline": "2026-03-15"
         },
         {
           "from": "src/services/anthropic/classification.ts",
           "to": "src/tools/index.ts",
           "reason": "TOOLS import — will be passed as parameter in Milestone 2",
+          "owner": "forward-layered-architecture-refactor",
           "deadline": "2026-03-15"
         },
         {
           "from": "src/services/scheduler/executor.ts",
           "to": "src/tools/index.ts",
           "reason": "READ_ONLY_TOOLS import — will be passed as parameter in Milestone 2",
+          "owner": "forward-layered-architecture-refactor",
           "deadline": "2026-03-15"
         },
         {
           "from": "src/services/media/upload.ts",
           "to": "src/tools/types.ts",
           "reason": "MediaAttachment type — will be moved to src/types/media.ts in Milestone 2",
+          "owner": "forward-layered-architecture-refactor",
           "deadline": "2026-03-15"
         },
         {
           "from": "src/services/media/process.ts",
           "to": "src/tools/types.ts",
           "reason": "MediaAttachment type — will be moved to src/types/media.ts in Milestone 2",
+          "owner": "forward-layered-architecture-refactor",
           "deadline": "2026-03-15"
         },
         {
           "from": "src/services/email-watcher/actions.ts",
           "to": "src/executor/tool-executor.ts",
           "reason": "executeWithTools import — will be injected via providers/executor.ts when email-watcher migrates to domain in Milestone 4",
+          "owner": "forward-layered-architecture-refactor",
           "deadline": "2026-04-15"
         }
       ]
@@ -653,7 +666,7 @@ Note: Domain-layer rules apply only when both files are inside the same `src/dom
 
 Note: Cross-domain imports are denied by default (`crossDomainRules.default: "deny"`). Allowed cross-domain edges must be declared with a `via` field that restricts the import to a single provider re-export file in the consuming domain. If `calendar/service/calendar.ts` imports `google-core/providers/auth.ts` directly (bypassing `calendar/providers/google-core.ts`), it is a violation.
 
-Note: Domain imports from top-level modules are governed by `domainExternalRules`. Domains may import from `allowed` paths but not from `forbidden` paths. Any top-level path not in either list is implicitly allowed (to avoid over-constraining during migration). After Milestone 6, tighten to an explicit allowlist.
+Note: Domain imports from top-level modules are governed by `domainExternalRules`. Domains may import from `allowed` paths but not from `forbidden` paths. Any top-level path not in either list is a warning in default mode and a violation in `--strict` mode. Milestone 5 runs strict as a preflight gate; Milestone 6 makes strict mode the default.
 
 #### Files to modify
 
@@ -669,7 +682,7 @@ Run from WSL:
 
     npm run lint:architecture
 
-Expected: exits 0, prints "5 known exceptions (see config/architecture-boundaries.json)" and "0 violations".
+Expected: exits 0, prints "6 known exceptions (see config/architecture-boundaries.json)" and "0 violations".
 
 Run:
 
@@ -857,11 +870,11 @@ The response composer (`src/orchestrator/response-composer.ts`) imports `formatM
 
 #### After all five fixes
 
-Remove all five entries from the `exceptions` array in `config/architecture-boundaries.json`. Run:
+Remove the five Milestone 2 entries from the `exceptions` array in `config/architecture-boundaries.json`. Run:
 
     npm run lint:architecture
 
-Expected: exits 0 with "0 known exceptions" and "0 violations".
+Expected: exits 0 with "1 known exception" (the email-watcher `executeWithTools` edge tracked for Milestone 4) and "0 violations".
 
 Run full quality gates:
 
@@ -1092,7 +1105,7 @@ Email-watcher is `exposure: 'tool-only'` — it has no standalone agent (no `src
 #### Step 2: Create providers layer
 
 **Create `src/domains/email-watcher/providers/gmail-sync.ts`** — copy `src/services/email-watcher/sync.ts`. Update imports:
-- Change `../google/auth` to `../../../services/google/auth.js` (stays as-is until google-core is created in Milestone 5; this import is temporarily allowed because `src/services/google/` is not in `domainExternalRules.forbidden`)
+- Change `../google/auth` to `../../../services/google/auth.js` as a temporary compatibility path. This must be rewired in Milestone 5 to `./google-core.js` so strict mode can pass without allowlisting `src/services/google/`.
 - Change `../user-config/index` to `../../../services/user-config/index.js`
 - Change `../../config` to `../../../config.js`
 - Change `./types` to `../types.js`
@@ -1244,7 +1257,7 @@ Run from WSL:
 
     npm run lint && npm run lint:architecture && npm run lint:agents && npm run test:unit && npm run test:integration && npm run build
 
-Expected: all pass with no new violations. `npm run lint:agents` validates that email-watcher has `exposure: 'tool-only'` and is NOT present in `src/registry/agents.ts`. The exception list in `config/architecture-boundaries.json` is now empty (all Milestone 2 exceptions were removed in M2, the email-watcher exception is removed in this milestone).
+Expected: all pass with no new violations. `npm run lint:agents` validates that email-watcher has `exposure: 'tool-only'` and is NOT present in `src/registry/agents.ts`. The exception list in `config/architecture-boundaries.json` is now empty (the five Milestone 2 exceptions were removed in M2, and the final email-watcher exception is removed in this milestone).
 
 Verify server boot:
 
@@ -1290,6 +1303,29 @@ Extract shared Google OAuth2 infrastructure and Hermes Drive folder hierarchy in
     export { AuthRequiredError } from '../../providers/auth.js'
 
 **Verify**: `npm run test:unit && npm run build`
+
+#### Step 1a: Rewire email-watcher Google auth ingress
+
+Email-watcher's `gmail-sync` provider still uses a temporary import from `src/services/google/auth.ts` introduced in Milestone 4. Rewire it to the same `google-core` provider pattern used by calendar/email/drive so strict external rules can pass without special-casing `src/services/google/`.
+
+**Create `src/domains/email-watcher/providers/google-core.ts`**:
+- Re-export `getAuthenticatedClient`, `withRetry` from `../../google-core/providers/auth.js`
+- This is the required `via` path for the `email-watcher -> google-core` cross-domain rule
+
+**Modify `src/domains/email-watcher/providers/gmail-sync.ts`**:
+- Change import from `../../../services/google/auth.js` to `./google-core.js`
+
+**Modify `config/architecture-boundaries.json`**:
+- Ensure `crossDomainRules.allowed` includes:
+
+      {
+        "from": "src/domains/email-watcher/",
+        "to": "src/domains/google-core/",
+        "via": "providers/google-core.ts",
+        "reason": "Shared Google OAuth2 for Gmail history sync"
+      }
+
+**Verify**: `npm run lint:architecture && npm run test:unit -- --reporter=verbose tests/unit/services/email-watcher/`
 
 #### Step 2: Create `calendar` (agent)
 
@@ -1391,15 +1427,14 @@ Note: `runtime/pages.ts` is a route handler that moves into the domain's runtime
 
 **Verify**: `npm run test:unit && npm run lint:architecture && npm run lint:agents && npm run build`
 
-#### Step 7: Tighten enforcement
+#### Step 7: Strict-mode preflight
 
 After all six domains are migrated:
 
 1. Verify the `exceptions` array in `config/architecture-boundaries.json` is empty.
-2. Enable `--strict` mode for `domainExternalRules` checking — any domain import from a top-level path not in the `allowed` list now fails instead of warning.
-3. Verify all cross-domain `via` constraints are enforced for Google domains (calendar, email, drive all import google-core only through `providers/google-core.ts`).
-4. Run `npm run lint:architecture -- --strict` and confirm exit 0.
-5. Update `package.json` to use strict mode by default: `"lint:architecture": "node scripts/check-layer-deps.mjs --strict"`
+2. Run `npm run lint:architecture -- --strict` and confirm exit 0. In strict mode, any domain import from a top-level path not in the `allowed` list must fail.
+3. Verify all cross-domain `via` constraints are enforced for Google domains (calendar, email, drive, and email-watcher all import google-core only through `providers/google-core.ts`).
+4. Keep `package.json` default command non-strict until Milestone 6 finalization.
 
 #### Step 8: Move tests
 
@@ -1410,8 +1445,9 @@ Move test files for each domain from `tests/unit/services/<name>/` and `tests/un
 Run from WSL:
 
     npm run lint && npm run lint:architecture && npm run lint:agents && npm run test:unit && npm run test:integration && npm run build
+    npm run lint:architecture -- --strict
 
-Expected: all pass. The `exceptions` array is empty. Architecture lint runs in strict mode with zero violations. All 8 domains (google-core, scheduler, email-watcher, calendar, email, drive, memory, ui) pass domain-layer rules. Cross-domain `via` constraints are enforced for all Google domains.
+Expected: all pass. The `exceptions` array is empty. Strict-mode preflight (`npm run lint:architecture -- --strict`) passes with zero violations. All 8 domains (google-core, scheduler, email-watcher, calendar, email, drive, memory, ui) pass domain-layer rules. Cross-domain `via` constraints are enforced for all Google domains.
 
 Run:
 
@@ -1425,7 +1461,7 @@ Generate final edge report:
 
 ### Milestone 6: Finalize and Document
 
-Remove compatibility adapters once callers are updated. Update `ARCHITECTURE.md` to move language from “target” to “enforced” for completed domains, and add a short “how to add a new domain module” orientation in `docs/DESIGN.md` (or a new focused design doc if needed).
+Remove compatibility adapters once callers are updated. Finalize `domainExternalRules` as an explicit allowlist (no implicit external imports), update `package.json` to make strict mode the default (`"lint:architecture": "node scripts/check-layer-deps.mjs --strict"`), update `ARCHITECTURE.md` to move language from “target” to “enforced” for completed domains, and add a short “how to add a new domain module” orientation in `docs/DESIGN.md` (or a new focused design doc if needed).
 
 Update `docs/QUALITY_SCORE.md` architecture grades based on post-migration state. Ensure all standard quality gates pass from WSL.
 
@@ -1527,3 +1563,5 @@ Revision Note (2026-02-20): Added agent discoverability and mixed-domain exposur
 Revision Note (2026-02-21): Major domain boundary revision based on code-level dependency analysis. Added `google-core` internal domain for shared Google OAuth2 and folder hierarchy. Updated calendar, email, drive domains to import google-core via `providers/google-core.ts` re-exports. Removed `media` from domain list (stays as shared infrastructure — no tools, no agent, no persistence). Split auth into provider-agnostic top-level (`AuthRequiredError`, `generateAuthUrl` in `src/providers/auth.ts`) and Google-specific (`getAuthenticatedClient`, `withRetry` in `google-core/providers/auth.ts`). Added `crossDomainRules` (deny-by-default + allowlist with `via` constraint) and `domainExternalRules` (allowed/forbidden top-level imports from domains) to boundary config. Fixed `domainLayerRules`: `repo` adds `types`, `runtime` adds `config`, `ui` changed from `runtime` to `service`. Added email-watcher → executor edge to exceptions. Moved orphaned tools (maps, user-config) to `src/registry/shared-tools.ts`. Updated Milestone 2 Fix 1 to include `AuthRequiredError` relocation. Updated Milestone 5 with ordered migration sequence starting from google-core. Updated checker script spec for cross-domain and external rule enforcement.
 
 Revision Note (2026-02-21): Milestones 3, 4, and 5 expanded to match detail level of Milestones 1 and 2. Key changes: (1) Extracted `createIntervalPoller` to `src/utils/poller.ts` as shared infrastructure (used by scheduler, email-watcher, memory — cannot live inside any single domain). (2) Added `providers/executor.ts` injection pattern to both scheduler and email-watcher domains for `executeWithTools` dependency. (3) Added `src/services/anthropic/`, `src/services/user-config/`, `src/twilio.ts`, `src/utils/` to `domainExternalRules.allowed` (all consumed by domains, confirmed by import analysis). (4) Added `capability.ts` to scheduler, email-watcher, memory, and ui domain diagrams (were missing). (5) Resolved email-watcher exposure as definitively `tool-only` (no agent directory exists). (6) Fixed M5 step 1 duplication with M2 Fix 1 (`AuthRequiredError` relocation already done in M2). (7) Added explicit consumer lists, compatibility adapter specs, exception cleanup steps, registry wiring, and test migration for M3 and M4. (8) Added strict-mode enablement step and final edge report generation to M5.
+
+Revision Note (2026-02-21): Addressed review consistency gaps. Corrected baseline exception count (6), updated Milestone 2/4 exception lifecycle expectations, added required `owner` metadata to exception schema examples, clarified `domainExternalRules` strict semantics (warnings in default mode, violations in strict mode), added explicit Milestone 5 rewire for email-watcher auth ingress (`services/google/auth` -> domain `providers/google-core.ts`), expanded cross-domain allowlist for `email-watcher -> google-core`, and moved "strict by default" package script switch to Milestone 6 finalization.
