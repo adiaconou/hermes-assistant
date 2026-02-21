@@ -101,8 +101,8 @@ A user-visible way to see this working is to run a dependency check command that
   Rationale: Without mechanical enforcement, the "cross-domain imports are disallowed by default" statement (previously just a note) would be advisory. The `via` constraint forces the provider re-export pattern and keeps each domain's cross-domain ingress points explicit and auditable.
   Date/Author: 2026-02-21 / Review
 
-- Decision: Domain imports from top-level shared infrastructure are allowed for a specific set of modules (`src/config.ts`, `src/providers/`, `src/types/`, `src/services/date/`, `src/services/credentials/`, `src/services/conversation/`) and forbidden for runtime/wiring modules (`src/routes/`, `src/orchestrator/`, `src/executor/`, `src/registry/`). Enforced in `domainExternalRules` in the boundary config.
-  Rationale: Domains must be able to use cross-cutting infrastructure (config, auth, date resolution, credential storage) but must not reach into runtime wiring (routes, orchestrator, executor, registry). Without explicit rules, nothing prevents a domain service from importing the orchestrator.
+- Decision: Domain imports from top-level shared infrastructure are allowed for a specific set of modules (`src/config.ts`, `src/providers/`, `src/types/`, `src/utils/`, `src/twilio.ts`, `src/services/date/`, `src/services/credentials/`, `src/services/conversation/`, `src/services/anthropic/`, `src/services/user-config/`) and forbidden for runtime/wiring modules (`src/routes/`, `src/orchestrator/`, `src/executor/`, `src/registry/`). Enforced in `domainExternalRules` in the boundary config.
+  Rationale: Domains must be able to use cross-cutting infrastructure (config, auth, date resolution, credential storage, LLM client, user preferences, SMS sending, utilities) but must not reach into runtime wiring (routes, orchestrator, executor, registry). Without explicit rules, nothing prevents a domain service from importing the orchestrator.
   Date/Author: 2026-02-21 / Review
 
 - Decision: Correct three errors in `domainLayerRules.allowedImports`. `repo` adds `types`. `runtime` adds `config`. `ui` changes from `["types", "runtime"]` to `["types", "service"]`.
@@ -111,6 +111,14 @@ A user-visible way to see this working is to run a dependency check command that
 
 - Decision: Orphaned cross-cutting tools (`format_maps_link` from `tools/maps.ts`, `set_user_config` and `delete_user_data` from `tools/user-config.ts`) move to `src/registry/shared-tools.ts` alongside the tool registry.
   Rationale: These tools do not belong to any single domain. `format_maps_link` is used only by the response composer. User config tools are cross-cutting (used by general-agent). Placing them in the registry module keeps them discoverable without creating a fake domain.
+  Date/Author: 2026-02-21 / Review
+
+- Decision: Extract `createIntervalPoller` and the `Poller` interface from `src/services/scheduler/poller.ts` to `src/utils/poller.ts` as shared infrastructure before domain migrations begin.
+  Rationale: `createIntervalPoller` is consumed by three independent modules: scheduler, email-watcher, and memory processor. Leaving it inside the scheduler domain would force two cross-domain exceptions (email-watcher → scheduler and memory → scheduler) for a generic utility with zero scheduler-specific logic. Moving it to `src/utils/` makes the dependency graph accurate.
+  Date/Author: 2026-02-21 / Review
+
+- Decision: Add `src/services/anthropic/`, `src/services/user-config/`, `src/twilio.ts`, and `src/utils/` to `domainExternalRules.allowed`.
+  Rationale: Code-level import analysis of scheduler and email-watcher shows both modules depend on anthropic client (email-watcher classifier), user-config store (both), and twilio SDK wrapper (both for SMS/WhatsApp sending). These are cross-cutting infrastructure consumed by multiple domains and meet the same criteria as the already-allowed modules. Without listing them, they would be implicitly allowed during migration but fail under strict mode in Milestone 5.
   Date/Author: 2026-02-21 / Review
 
 ## Outcomes & Retrospective
@@ -203,16 +211,18 @@ Business capability: scheduled reminders and recurring jobs.
 
     src/domains/scheduler/
     ├── types.ts                ← ScheduledJob, CreateJobInput, ExecutionResult (from services/scheduler/types.ts)
+    ├── capability.ts           ← exposure: 'agent'
     ├── repo/
     │   └── sqlite.ts           ← job CRUD operations (from services/scheduler/sqlite.ts)
     ├── providers/
-    │   └── sms.ts              ← interface for sending SMS/WhatsApp (wraps twilio.ts)
+    │   ├── sms.ts              ← interface for sending SMS/WhatsApp (wraps twilio.ts)
+    │   └── executor.ts         ← wraps injected executeWithTools function (avoids domain → executor
+    │                              reverse edge; receives executeWithTools at init time via runtime/index.ts)
     ├── service/
     │   ├── parser.ts           ← natural language → cron/timestamp (from services/scheduler/parser.ts)
     │   └── executor.ts         ← job execution logic (from services/scheduler/executor.ts)
     └── runtime/
         ├── index.ts            ← initScheduler, getSchedulerDb, stopScheduler (from services/scheduler/index.ts)
-        ├── poller.ts           ← createIntervalPoller (from services/scheduler/poller.ts)
         ├── tools.ts            ← scheduler ToolDefinition[] (from tools/scheduler.ts)
         ├── agent.ts            ← agent capability definition (from agents/scheduler/index.ts)
         └── prompt.ts           ← agent system prompt (from agents/scheduler/prompt.ts)
@@ -223,6 +233,7 @@ Business capability: background email monitoring, skill-based classification, au
 
     src/domains/email-watcher/
     ├── types.ts                ← IncomingEmail, EmailSkill, ClassificationResult (from services/email-watcher/types.ts)
+    ├── capability.ts           ← exposure: 'tool-only'
     ├── repo/
     │   └── sqlite.ts           ← email_skills CRUD (from services/email-watcher/sqlite.ts)
     ├── providers/
@@ -279,6 +290,7 @@ Business capability: user fact extraction, storage, and retrieval.
 
     src/domains/memory/
     ├── types.ts                ← UserFact, MemoryStore (from services/memory/types.ts)
+    ├── capability.ts           ← exposure: 'agent'
     ├── repo/
     │   └── sqlite.ts           ← user_facts CRUD (from services/memory/sqlite.ts)
     ├── service/
@@ -322,6 +334,7 @@ Business capability: interactive HTML page generation.
 
     src/domains/ui/
     ├── types.ts                ← page types, storage provider interface (from services/ui/providers/types.ts)
+    ├── capability.ts           ← exposure: 'agent'
     ├── service/
     │   ├── generator.ts        ← HTML generation (from services/ui/generator.ts)
     │   └── validator.ts        ← HTML validation (from services/ui/validator.ts)
@@ -397,6 +410,9 @@ These modules serve multiple domains and do not have their own tools or agents. 
     │
     ├── admin/                      ← admin routes (stays)
     └── utils/                      ← trace-logger, phone formatting (stays)
+        └── poller.ts               ← createIntervalPoller, Poller interface (extracted from
+                                       services/scheduler/poller.ts — shared by scheduler,
+                                       email-watcher, and memory processor)
 
 ### What moves vs. what stays — summary
 
@@ -407,6 +423,7 @@ These modules serve multiple domains and do not have their own tools or agents. 
 | `src/services/scheduler/` | `src/domains/scheduler/` | Bounded domain with own persistence |
 | `src/services/email-watcher/` | `src/domains/email-watcher/` | Bounded domain with own persistence |
 | `src/services/memory/` | `src/domains/memory/` | Bounded domain with own persistence |
+| `src/services/scheduler/poller.ts` | `src/utils/poller.ts` | Generic polling utility consumed by scheduler, email-watcher, and memory (see Decision Log) |
 | `src/services/media/` | stays at `src/services/media/` | **Not a domain** — stateless pipeline, no tools/agent/persistence (see Decision Log) |
 | `src/services/ui/` | `src/domains/ui/` | Bounded domain |
 | `src/services/google/auth.ts` | split: OAuth2 client → `src/domains/google-core/providers/auth.ts`, error type + link generation → `src/providers/auth.ts` | Google-specific auth vs provider-agnostic auth error/link |
@@ -563,9 +580,13 @@ During transition, keep `src/agents/index.ts` as a compatibility shim that re-ex
           "src/config.ts",
           "src/providers/",
           "src/types/",
+          "src/utils/",
+          "src/twilio.ts",
           "src/services/date/",
           "src/services/credentials/",
-          "src/services/conversation/"
+          "src/services/conversation/",
+          "src/services/anthropic/",
+          "src/services/user-config/"
         ],
         "forbidden": [
           {
@@ -852,38 +873,555 @@ Generate updated edge report and compare against baseline:
 
 ### Milestone 3: Migrate Scheduler to Domain Layers
 
-Create `src/domains/scheduler/` with `types`, `config`, `repo`, `providers`, `service`, and `runtime` submodules. Move scheduler logic from `src/services/scheduler/*` into these packages while preserving existing public entry points with adapter exports so current callers continue to work.
+Create `src/domains/scheduler/` with the layered package structure. Move scheduler logic from `src/services/scheduler/*`, `src/tools/scheduler.ts`, and `src/agents/scheduler/` into domain layers while preserving existing public entry points with compatibility re-exports so current callers continue to work.
 
-`runtime` in this domain should own the poller entry points and orchestration hooks; `service` should own scheduling logic; `repo` should own SQLite operations. Cross-cutting concerns like SMS sending and tool execution interfaces should be consumed via providers.
+#### Pre-step: Extract poller to shared infrastructure
 
-Add `src/domains/scheduler/capability.ts` with explicit exposure metadata. If scheduler remains an agent domain, set `exposure: 'agent'` and wire its runtime agent module into `src/registry/agents.ts`.
+`createIntervalPoller` and the `Poller` interface are consumed by scheduler, email-watcher, and memory processor. They must be extracted before the scheduler becomes a domain, otherwise email-watcher and memory would need cross-domain imports into the scheduler domain for a generic utility.
 
-Acceptance is that scheduler behavior is unchanged, existing scheduler unit/integration tests pass, architecture lint reports no new violations, `lint:agents` passes, and `docs/generated/agent-catalog.md` reflects the scheduler entry.
+**Create `src/utils/poller.ts`** — move the entire contents of `src/services/scheduler/poller.ts` (the `Poller` interface and `createIntervalPoller` function) here unchanged.
+
+**Modify `src/services/scheduler/poller.ts`** — replace contents with a re-export shim:
+
+    export { createIntervalPoller, type Poller } from '../../utils/poller.js'
+
+**Modify `src/services/email-watcher/index.ts`**:
+- Change `import { createIntervalPoller, type Poller } from '../scheduler/poller.js'` to `import { createIntervalPoller, type Poller } from '../../utils/poller.js'`
+
+**Modify `src/services/memory/processor.ts`**:
+- Change `import { createIntervalPoller, type Poller } from '../scheduler/poller.js'` to `import { createIntervalPoller, type Poller } from '../../utils/poller.js'`
+
+**Verify**: `npm run test:unit && npm run build` — pure move, no behavior change.
+
+#### Step 1: Create domain type, capability, and repo layers
+
+**Create `src/domains/scheduler/types.ts`** — copy `src/services/scheduler/types.ts` unchanged. Exports: `MessageChannel`, `ScheduledJob`, `CreateJobInput`, `JobUpdates`, `ExecutionResult`.
+
+**Create `src/domains/scheduler/capability.ts`**:
+
+    import type { DomainCapability } from '../../types/domain.js'
+
+    export const capability: DomainCapability = {
+      domain: 'scheduler',
+      exposure: 'agent',
+      agentId: 'scheduler-agent',
+      agentModule: './runtime/agent.js',
+      tools: ['create_scheduled_job', 'list_scheduled_jobs', 'update_scheduled_job', 'delete_scheduled_job'],
+    }
+
+**Create `src/domains/scheduler/repo/sqlite.ts`** — copy `src/services/scheduler/sqlite.ts`. Change its import from `./types` to `../types.js`. Exports: `initSchedulerDb`, `createJob`, `getJobById`, `getJobsByPhone`, `getDueJobs`, `updateJob`, `deleteJob`.
+
+#### Step 2: Create providers layer
+
+**Create `src/domains/scheduler/providers/sms.ts`** — thin wrapper around `src/twilio.ts`:
+
+    import { sendSms, sendWhatsApp } from '../../../twilio.js'
+    import type { MessageChannel } from '../types.js'
+
+    export async function sendScheduledMessage(
+      phoneNumber: string,
+      channel: MessageChannel,
+      body: string
+    ): Promise<void> {
+      if (channel === 'whatsapp') {
+        await sendWhatsApp(phoneNumber, body)
+      } else {
+        await sendSms(phoneNumber, body)
+      }
+    }
+
+**Create `src/domains/scheduler/providers/executor.ts`** — wraps the injected `executeWithTools` function to avoid a direct `domain → src/executor/` import:
+
+    import type { AgentExecutionContext, StepResult } from '../../../executor/types.js'
+
+    type ExecuteWithToolsFn = (
+      systemPrompt: string,
+      task: string,
+      toolNames: string[],
+      context: AgentExecutionContext
+    ) => Promise<StepResult>
+
+    let _executeWithTools: ExecuteWithToolsFn | null = null
+
+    export function setExecuteWithTools(fn: ExecuteWithToolsFn): void {
+      _executeWithTools = fn
+    }
+
+    export function getExecuteWithTools(): ExecuteWithToolsFn {
+      if (!_executeWithTools) throw new Error('executeWithTools not initialized — call setExecuteWithTools() at bootstrap')
+      return _executeWithTools
+    }
+
+Note: `executor/types.ts` contains only type definitions. The `domainExternalRules` forbids importing `src/executor/` modules. However, `import type` (type-only imports) do not create runtime edges. The boundary checker should be updated in Milestone 1 to skip `import type` statements when checking `domainExternalRules.forbidden`, or this file should import the types from a re-export in `src/types/`. If the checker does not distinguish type-only imports, create `src/types/executor.ts` that re-exports `AgentExecutionContext` and `StepResult` from `src/executor/types.ts`, and import from there instead.
+
+#### Step 3: Create service layer
+
+**Create `src/domains/scheduler/service/parser.ts`** — copy `src/services/scheduler/parser.ts`. Update its import from `../date/resolver` to `../../../services/date/resolver.js` (allowed by `domainExternalRules`). Exports: `ParsedSchedule`, `parseSchedule`, `parseReminderTime`, `parseScheduleToCron`, `isValidCron`, `cronToHuman`.
+
+**Create `src/domains/scheduler/service/executor.ts`** — copy `src/services/scheduler/executor.ts` with these changes:
+- Remove `import { executeWithTools } from '../../executor/tool-executor.js'` — replace with `import { getExecuteWithTools } from '../providers/executor.js'`
+- Remove `import { READ_ONLY_TOOLS } from '../../tools/index.js'` — this was already replaced with a `readOnlyToolNames: string[]` parameter in Milestone 2 Fix 4
+- Change `import { sendSms, sendWhatsApp } from '../../twilio.js'` to `import { sendScheduledMessage } from '../providers/sms.js'`
+- Change `import { getUserConfigStore } from '../user-config/index.js'` to `import { getUserConfigStore } from '../../../services/user-config/index.js'`
+- Change `import { getMemoryStore } from '../memory/index.js'` to `import { getMemoryStore } from '../../../services/memory/index.js'`
+- Change `import { ... } from './sqlite.js'` to `import { ... } from '../repo/sqlite.js'`
+- Change `import type { ... } from './types.js'` to `import type { ... } from '../types.js'`
+- Replace direct `executeWithTools(...)` call with `getExecuteWithTools()(...)`
+- Replace `sendSms`/`sendWhatsApp` conditional with `sendScheduledMessage(job.phoneNumber, job.channel, body)`
+
+#### Step 4: Create runtime layer
+
+**Create `src/domains/scheduler/runtime/index.ts`** — copy `src/services/scheduler/index.ts` with these changes:
+- Change `import { ... } from './types.js'` to `import { ... } from '../types.js'`
+- Change `import { ... } from './sqlite.js'` to `import { ... } from '../repo/sqlite.js'`
+- Change `import { ... } from './parser.js'` to `import { ... } from '../service/parser.js'`
+- Change `import { ... } from './executor.js'` to `import { ... } from '../service/executor.js'`
+- Change `import { createIntervalPoller } from './poller.js'` to `import { createIntervalPoller } from '../../../utils/poller.js'`
+- Re-export all domain public API for convenience:
+
+      export * from '../types.js'
+      export * from '../repo/sqlite.js'
+      export * from '../service/parser.js'
+      export * from '../service/executor.js'
+      export { createIntervalPoller, type Poller } from '../../../utils/poller.js'
+
+**Create `src/domains/scheduler/runtime/tools.ts`** — copy `src/tools/scheduler.ts`. Change its import from `../services/scheduler/index.js` to `./index.js` (re-exports everything). Exports: `createScheduledJob`, `listScheduledJobs`, `updateScheduledJob`, `deleteScheduledJob` (4 ToolDefinition objects).
+
+**Create `src/domains/scheduler/runtime/agent.ts`** — copy `src/agents/scheduler/index.ts`. Update the import for `AgentCapability` / `AgentExecutionContext` types as needed. Exports: `capability`, `executor`.
+
+**Create `src/domains/scheduler/runtime/prompt.ts`** — copy `src/agents/scheduler/prompt.ts` unchanged. Exports: `SCHEDULER_AGENT_PROMPT`.
+
+#### Step 5: Create compatibility adapters
+
+These re-export shims keep existing imports working during the transition period. They are removed in Milestone 6.
+
+**Modify `src/services/scheduler/index.ts`** — replace the body with:
+
+    // Compatibility adapter — remove in Milestone 6
+    export * from '../../domains/scheduler/runtime/index.js'
+
+**Modify `src/services/scheduler/types.ts`** — replace with:
+
+    export * from '../../domains/scheduler/types.js'
+
+**Modify `src/services/scheduler/sqlite.ts`** — replace with:
+
+    export * from '../../domains/scheduler/repo/sqlite.js'
+
+**Modify `src/services/scheduler/parser.ts`** — replace with:
+
+    export * from '../../domains/scheduler/service/parser.js'
+
+**Modify `src/services/scheduler/executor.ts`** — replace with:
+
+    export * from '../../domains/scheduler/service/executor.js'
+
+**Modify `src/tools/scheduler.ts`** — replace with:
+
+    export * from '../domains/scheduler/runtime/tools.js'
+
+**Modify `src/agents/scheduler/index.ts`** — replace with:
+
+    export * from '../../domains/scheduler/runtime/agent.js'
+
+**Modify `src/agents/scheduler/prompt.ts`** — replace with:
+
+    export * from '../../domains/scheduler/runtime/prompt.js'
+
+#### Step 6: Wire bootstrap and registries
+
+**Modify `src/index.ts`**:
+- Add `import { setExecuteWithTools } from './domains/scheduler/providers/executor.js'`
+- Add `import { executeWithTools } from './executor/tool-executor.js'`
+- Before `initScheduler()`, call: `setExecuteWithTools(executeWithTools)`
+
+**Modify `src/registry/agents.ts`**:
+- Import scheduler agent from `../domains/scheduler/runtime/agent.js` instead of `../agents/scheduler/index.js`
+
+**Modify `src/registry/tools.ts`**:
+- Import scheduler tools from `../domains/scheduler/runtime/tools.js` instead of `../tools/scheduler.js`
+
+#### Step 7: Move tests
+
+**Move `tests/unit/tools/scheduler.test.ts`** to `tests/unit/domains/scheduler/tools.test.ts`. Update import paths from `../../../src/tools/scheduler` to `../../../../src/domains/scheduler/runtime/tools` (or keep importing from the compatibility shim if import paths are simpler during transition).
+
+**Move `tests/unit/scheduler/`** (if it exists as a directory) to `tests/unit/domains/scheduler/`. Update import paths accordingly.
+
+#### Acceptance
+
+Run from WSL:
+
+    npm run lint && npm run lint:architecture && npm run lint:agents && npm run test:unit && npm run test:integration && npm run build
+
+Expected: all pass with no new violations. `npm run lint:agents` validates that the scheduler domain has `exposure: 'agent'`, `runtime/agent.ts` exists, `runtime/prompt.ts` exists, and the scheduler agent is present in `src/registry/agents.ts`.
+
+Run:
+
+    npm run docs:agents
+
+Expected: `docs/generated/agent-catalog.md` includes the scheduler agent entry.
+
+Verify server boot:
+
+    npm run dev:server
+
+Expected: scheduler initializes, poller starts, `/health` responds HTTP 200.
 
 ### Milestone 4: Migrate Email Watcher to Domain Layers
 
-Repeat the same migration structure for `email-watcher` into `src/domains/email-watcher/`. Keep API compatibility through adapters during transition. Ensure classification, sync, actions, skills, and prompt assembly align to layer boundaries and consume cross-cutting dependencies through providers.
+Create `src/domains/email-watcher/` with the layered package structure. Move email-watcher logic from `src/services/email-watcher/*` and `src/tools/email-skills.ts` into domain layers while preserving existing public entry points with compatibility re-exports.
 
-Add `src/domains/email-watcher/capability.ts` with explicit exposure metadata. If email-watcher remains tool-only, set `exposure: 'tool-only'` and do not add it to `src/registry/agents.ts`.
+Email-watcher is `exposure: 'tool-only'` — it has no standalone agent (no `src/agents/email-watcher/` directory exists). It exposes 6 tools for SMS-based skill management but runs as a background service, not as an orchestrator agent.
 
-Acceptance is that email watcher behavior remains unchanged in tests and manual smoke verification, with no new dependency violations, and agent registry validation passes with the declared exposure.
+#### Step 1: Create domain type, capability, and repo layers
+
+**Create `src/domains/email-watcher/types.ts`** — copy `src/services/email-watcher/types.ts` unchanged. Exports: `IncomingEmail`, `EmailAttachment`, `EmailSkill`, `ClassificationResult`, `SkillMatch`, `SkillValidationError`, `ThrottleState`.
+
+**Create `src/domains/email-watcher/capability.ts`**:
+
+    import type { DomainCapability } from '../../types/domain.js'
+
+    export const capability: DomainCapability = {
+      domain: 'email-watcher',
+      exposure: 'tool-only',
+      tools: ['create_email_skill', 'list_email_skills', 'update_email_skill', 'delete_email_skill', 'toggle_email_watcher', 'test_email_skill'],
+    }
+
+**Create `src/domains/email-watcher/repo/sqlite.ts`** — copy `src/services/email-watcher/sqlite.ts`. Change `./types` import to `../types.js`. Exports: `EmailSkillStore` class, `getEmailSkillStore`, `resetEmailSkillStore`.
+
+#### Step 2: Create providers layer
+
+**Create `src/domains/email-watcher/providers/gmail-sync.ts`** — copy `src/services/email-watcher/sync.ts`. Update imports:
+- Change `../google/auth` to `../../../services/google/auth.js` (stays as-is until google-core is created in Milestone 5; this import is temporarily allowed because `src/services/google/` is not in `domainExternalRules.forbidden`)
+- Change `../user-config/index` to `../../../services/user-config/index.js`
+- Change `../../config` to `../../../config.js`
+- Change `./types` to `../types.js`
+- Exports: `syncNewEmails`, `prepareEmailForClassification`
+
+**Create `src/domains/email-watcher/providers/classifier-llm.ts`** — copy `src/services/email-watcher/classifier.ts`. Update imports:
+- Change `../anthropic/client` to `../../../services/anthropic/client.js`
+- Change `./sqlite` to `../repo/sqlite.js`
+- Change `../memory/index` to `../../../services/memory/index.js`
+- Change `./prompt` to `../service/prompt.js`
+- Change `../../config` to `../../../config.js`
+- Change `./types` to `../types.js`
+- Exports: `classifyEmails`
+
+**Create `src/domains/email-watcher/providers/executor.ts`** — wraps the injected `executeWithTools` function, same pattern as scheduler:
+
+    type ExecuteWithToolsFn = (
+      systemPrompt: string,
+      task: string,
+      toolNames: string[],
+      context: AgentExecutionContext
+    ) => Promise<StepResult>
+
+    let _executeWithTools: ExecuteWithToolsFn | null = null
+
+    export function setExecuteWithTools(fn: ExecuteWithToolsFn): void {
+      _executeWithTools = fn
+    }
+
+    export function getExecuteWithTools(): ExecuteWithToolsFn {
+      if (!_executeWithTools) throw new Error('executeWithTools not initialized — call setExecuteWithTools() at bootstrap')
+      return _executeWithTools
+    }
+
+Same note as Milestone 3 Step 2 regarding type-only imports from `src/executor/types.ts`.
+
+#### Step 3: Create service layer
+
+**Create `src/domains/email-watcher/service/actions.ts`** — copy `src/services/email-watcher/actions.ts` with these changes:
+- Remove `import { executeWithTools } from '../../executor/tool-executor.js'` — replace with `import { getExecuteWithTools } from '../providers/executor.js'`
+- Change `./sqlite` to `../repo/sqlite.js`
+- Change `../user-config/index` to `../../../services/user-config/index.js`
+- Change `../memory/index` to `../../../services/memory/index.js`
+- Change `../../twilio` to `../../../twilio.js`
+- Change `../../config` to `../../../config.js`
+- Change `./types` to `../types.js`
+- Change `../../executor/types` to `../../../executor/types.js` (type-only import; same caveat as Milestone 3 Step 2)
+- Replace direct `executeWithTools(...)` call with `getExecuteWithTools()(...)`
+
+**Create `src/domains/email-watcher/service/skills.ts`** — copy `src/services/email-watcher/skills.ts`. Update imports:
+- Change `./sqlite` to `../repo/sqlite.js`
+- Change `../user-config/index` to `../../../services/user-config/index.js`
+- Change `./types` to `../types.js`
+- Exports: `seedDefaultSkills`, `validateSkillDefinition`, `initEmailWatcherState`
+
+**Create `src/domains/email-watcher/service/prompt.ts`** — copy `src/services/email-watcher/prompt.ts`. Update imports:
+- Change `../../config` to `../../../config.js`
+- Change `./types` to `../types.js`
+- Exports: `buildClassifierPrompt`
+
+#### Step 4: Create runtime layer
+
+**Create `src/domains/email-watcher/runtime/index.ts`** — copy `src/services/email-watcher/index.ts` with these changes:
+- Change `../../config` to `../../../config.js`
+- Change `../scheduler/poller` to `../../../utils/poller.js`
+- Change `../user-config/index` to `../../../services/user-config/index.js`
+- Change `./sync` to `../providers/gmail-sync.js`
+- Change `./classifier` to `../providers/classifier-llm.js`
+- Change `./actions` to `../service/actions.js`
+- Exports: `startEmailWatcher`, `stopEmailWatcher`
+
+**Create `src/domains/email-watcher/runtime/tools.ts`** — copy `src/tools/email-skills.ts`. Update imports:
+- Change `../services/email-watcher/sqlite.js` to `../repo/sqlite.js`
+- Change `../services/email-watcher/skills.js` to `../service/skills.js`
+- Change `../services/email-watcher/sync.js` to `../providers/gmail-sync.js`
+- Change `../services/email-watcher/classifier.js` to `../providers/classifier-llm.js`
+- Exports: `createEmailSkill`, `listEmailSkills`, `updateEmailSkill`, `deleteEmailSkill`, `toggleEmailWatcher`, `testEmailSkill` (6 ToolDefinition objects)
+
+#### Step 5: Create compatibility adapters
+
+**Modify `src/services/email-watcher/index.ts`** — replace with:
+
+    // Compatibility adapter — remove in Milestone 6
+    export * from '../../domains/email-watcher/runtime/index.js'
+
+**Modify `src/services/email-watcher/types.ts`** — replace with:
+
+    export * from '../../domains/email-watcher/types.js'
+
+**Modify `src/services/email-watcher/sqlite.ts`** — replace with:
+
+    export * from '../../domains/email-watcher/repo/sqlite.js'
+
+**Modify `src/services/email-watcher/skills.ts`** — replace with:
+
+    export * from '../../domains/email-watcher/service/skills.js'
+
+**Modify `src/services/email-watcher/sync.ts`** — replace with:
+
+    export * from '../../domains/email-watcher/providers/gmail-sync.js'
+
+**Modify `src/services/email-watcher/classifier.ts`** — replace with:
+
+    export * from '../../domains/email-watcher/providers/classifier-llm.js'
+
+**Modify `src/services/email-watcher/actions.ts`** — replace with:
+
+    export * from '../../domains/email-watcher/service/actions.js'
+
+**Modify `src/services/email-watcher/prompt.ts`** — replace with:
+
+    export * from '../../domains/email-watcher/service/prompt.js'
+
+**Modify `src/tools/email-skills.ts`** — replace with:
+
+    export * from '../domains/email-watcher/runtime/tools.js'
+
+#### Step 6: Wire bootstrap, registries, and consumers
+
+**Modify `src/index.ts`**:
+- Add `import { setExecuteWithTools as setEmailWatcherExecuteWithTools } from './domains/email-watcher/providers/executor.js'`
+- Before `startEmailWatcher()`, call: `setEmailWatcherExecuteWithTools(executeWithTools)`
+
+**Modify `src/registry/tools.ts`**:
+- Import email-watcher tools from `../domains/email-watcher/runtime/tools.js` instead of `../tools/email-skills.js`
+
+**Modify `src/routes/auth.ts`**:
+- Change `import { initEmailWatcherState } from '../services/email-watcher/skills.js'` to import from `../domains/email-watcher/service/skills.js` (or keep the compatibility shim import)
+
+**Modify `src/admin/email-skills.ts`**:
+- Change `import { getEmailSkillStore } from '../services/email-watcher/sqlite.js'` to import from `../domains/email-watcher/repo/sqlite.js` (or keep the compatibility shim import)
+
+#### Step 7: Remove resolved exception
+
+**Modify `config/architecture-boundaries.json`**:
+- Remove the exception entry for `src/services/email-watcher/actions.ts → src/executor/tool-executor.ts` (deadline 2026-04-15). The `executeWithTools` import is now injected via `providers/executor.ts`.
+
+#### Step 8: Move tests
+
+**Move `tests/unit/tools/email-skills.test.ts`** to `tests/unit/domains/email-watcher/tools.test.ts`. Update import paths.
+
+**Move `tests/unit/services/email-watcher/`** (if directory exists) to `tests/unit/domains/email-watcher/`. Update import paths.
+
+**Update `tests/unit/admin/email-skills.test.ts`** — update imports if they referenced email-watcher service files directly.
+
+#### Acceptance
+
+Run from WSL:
+
+    npm run lint && npm run lint:architecture && npm run lint:agents && npm run test:unit && npm run test:integration && npm run build
+
+Expected: all pass with no new violations. `npm run lint:agents` validates that email-watcher has `exposure: 'tool-only'` and is NOT present in `src/registry/agents.ts`. The exception list in `config/architecture-boundaries.json` is now empty (all Milestone 2 exceptions were removed in M2, the email-watcher exception is removed in this milestone).
+
+Verify server boot:
+
+    npm run dev:server
+
+Expected: email watcher starts its background poller, scheduler continues to work, `/health` responds HTTP 200.
 
 ### Milestone 5: Expand Pattern and Tighten Enforcement
 
-Migrate remaining high-value domains in this order:
+Migrate remaining domains. The order is constrained: `google-core` must be created first because calendar, email, and drive all depend on its shared OAuth2 and folder hierarchy infrastructure.
 
-1. **`google-core`** (internal) — extract `services/google/auth.ts` into `domains/google-core/providers/auth.ts` and `services/google/drive.ts` folder hierarchy into `domains/google-core/service/drive-folders.ts`. Move `AuthRequiredError` to top-level `src/providers/auth.ts`. This must happen before calendar, email, or drive can migrate cleanly.
-2. **`calendar`** (agent) — move `services/google/calendar.ts` and `tools/calendar.ts` into the domain structure. Wire `providers/google-core.ts` re-export.
-3. **`email`** (agent) — move `services/google/gmail.ts` and `tools/email.ts`. Wire `providers/google-core.ts` re-export. Add `EmailProvider` interface for future provider swaps.
-4. **`drive`** (agent) — move remaining `services/google/` files (drive file ops, sheets, docs, vision) and corresponding tools. Wire `providers/google-core.ts` re-export for auth + folder hierarchy.
-5. **`memory`** (agent) — move `services/memory/` and `tools/memory.ts`.
-6. **`ui`** (agent) — move `services/ui/` and `tools/ui.ts`.
+Note: `AuthRequiredError` was already moved to `src/providers/auth.ts` in Milestone 2 Fix 1. The google-core extraction here covers only the remaining Google-specific auth functions and drive folder hierarchy.
 
-Create explicit temporary shims with dated TODO ownership for any domains deferred beyond this milestone. Reduce the exceptions list in the boundary config after each domain cutover.
+#### Step 1: Create `google-core` (internal)
 
-At the end of this milestone, switch architecture lint from "allow known exceptions" to strict mode for migrated domains, and keep exception scope only for explicitly deferred domains with deadlines. Enable `--strict` mode in `domainExternalRules` checking for migrated domains.
+Extract shared Google OAuth2 infrastructure and Hermes Drive folder hierarchy into `src/domains/google-core/`.
 
-Acceptance is that migrated domains have zero boundary exceptions, the exceptions file is materially smaller than baseline, and cross-domain `via` constraints are enforced for all Google domains.
+**Create `src/domains/google-core/types.ts`** — extract Google-specific type definitions: `GoogleClientOptions`, token-related types. Re-export `AuthRequiredError` from `src/providers/auth.ts` for convenience (so downstream domains can import it from google-core instead of needing a separate import).
+
+**Create `src/domains/google-core/capability.ts`**:
+
+    import type { DomainCapability } from '../../types/domain.js'
+
+    export const capability: DomainCapability = {
+      domain: 'google-core',
+      exposure: 'internal',
+    }
+
+**Create `src/domains/google-core/providers/auth.ts`** — extract from `src/services/google/auth.ts`:
+- `createOAuth2Client`, `getAuthenticatedClient`, `refreshAccessToken`, `withRetry`, `isInsufficientScopesError`, `handleScopeError`
+- These functions import from `googleapis`, `../../../services/credentials/` (allowed), and `../../../config.js` (allowed)
+- `AuthRequiredError` stays in `src/providers/auth.ts` (already moved in M2); import it from there
+
+**Create `src/domains/google-core/service/drive-folders.ts`** — extract from `src/services/google/drive.ts`:
+- `getOrCreateHermesFolder`, `moveToHermesFolder`, `searchFiles`
+- These are the shared folder hierarchy functions consumed by drive, docs, and sheets domains
+- Import auth from `../providers/auth.js`
+
+**Modify `src/services/google/auth.ts`** — replace with re-export shim:
+
+    // Compatibility adapter — remove in Milestone 6
+    export * from '../../domains/google-core/providers/auth.js'
+    export { AuthRequiredError } from '../../providers/auth.js'
+
+**Verify**: `npm run test:unit && npm run build`
+
+#### Step 2: Create `calendar` (agent)
+
+**Create `src/domains/calendar/`** per the domain structure diagram. Key files:
+
+- **`types.ts`** — `CalendarEvent`, `CreateEventInput`, etc.
+- **`capability.ts`** — `exposure: 'agent'`, `agentId: 'calendar-agent'`
+- **`providers/google-core.ts`** — re-exports `getAuthenticatedClient`, `withRetry` from `../../google-core/providers/auth.js` (this is the required `via` path for the cross-domain rule)
+- **`providers/google-calendar.ts`** — move `src/services/google/calendar.ts` here (minus `AuthRequiredError` which is already in `src/providers/auth.ts`). Import auth via `./google-core.js`
+- **`service/calendar.ts`** — extract business logic from `src/tools/calendar.ts` tool handlers into service functions
+- **`runtime/tools.ts`** — calendar ToolDefinition[] (schemas from `src/tools/calendar.ts`, handlers call service layer)
+- **`runtime/agent.ts`** — from `src/agents/calendar/index.ts`
+- **`runtime/prompt.ts`** — from `src/agents/calendar/prompt.ts`
+
+Create compatibility shims in `src/services/google/calendar.ts`, `src/tools/calendar.ts`, and `src/agents/calendar/`.
+
+Wire into `src/registry/agents.ts` and `src/registry/tools.ts`.
+
+**Verify**: `npm run test:unit && npm run lint:architecture && npm run lint:agents && npm run build`
+
+#### Step 3: Create `email` (agent)
+
+**Create `src/domains/email/`** per the domain structure diagram. Key files:
+
+- **`types.ts`** — `EmailSearchResult`, `EmailThread`, `EmailMessage`, `EmailProvider` interface
+- **`capability.ts`** — `exposure: 'agent'`, `agentId: 'email-agent'`
+- **`providers/google-core.ts`** — re-exports from google-core (required `via` path)
+- **`providers/gmail.ts`** — move `src/services/google/gmail.ts` here, implement `EmailProvider` interface for future provider swaps
+- **`service/email.ts`** — email search/read logic against `EmailProvider` interface
+- **`runtime/tools.ts`** — email ToolDefinition[] from `src/tools/email.ts`
+- **`runtime/agent.ts`** — from `src/agents/email/index.ts`
+- **`runtime/prompt.ts`** — from `src/agents/email/prompt.ts`
+
+Create compatibility shims. Wire into registries.
+
+Note: `src/domains/email/` (the Gmail agent domain) is distinct from `src/domains/email-watcher/` (the background skill-based email processor). The email domain handles interactive "search my email" requests; email-watcher handles autonomous classification and actions.
+
+**Verify**: `npm run test:unit && npm run lint:architecture && npm run lint:agents && npm run build`
+
+#### Step 4: Create `drive` (agent)
+
+**Create `src/domains/drive/`** per the domain structure diagram. Key files:
+
+- **`types.ts`** — `DriveFile`, `SheetRange`, `DocContent`, vision types
+- **`capability.ts`** — `exposure: 'agent'`, `agentId: 'drive-agent'`
+- **`providers/google-core.ts`** — re-exports auth + `getOrCreateHermesFolder`, `moveToHermesFolder`, `searchFiles` from google-core (required `via` path)
+- **`providers/google-drive.ts`** — move `src/services/google/drive.ts` file operations here (minus folder hierarchy which is now in google-core)
+- **`providers/google-sheets.ts`** — move `src/services/google/sheets.ts`
+- **`providers/google-docs.ts`** — move `src/services/google/docs.ts`
+- **`providers/gemini-vision.ts`** — move `src/services/google/vision.ts`
+- **`service/drive.ts`** — file management, spreadsheet ops, doc ops, image analysis
+- **`runtime/tools/`** — `drive.ts`, `sheets.ts`, `docs.ts`, `vision.ts` ToolDefinitions
+- **`runtime/agent.ts`** — from `src/agents/drive/index.ts`
+- **`runtime/prompt.ts`** — from `src/agents/drive/prompt.ts`
+
+Create compatibility shims. Wire into registries.
+
+After this step, `src/services/google/` should be nearly empty (only the compatibility re-export shims remain). Verify that the cross-domain `via` constraints are enforced: all drive imports from google-core must go through `providers/google-core.ts`.
+
+**Verify**: `npm run test:unit && npm run lint:architecture && npm run lint:agents && npm run build`
+
+#### Step 5: Create `memory` (agent)
+
+**Create `src/domains/memory/`** per the domain structure diagram. Key files:
+
+- **`types.ts`** — `UserFact`, `MemoryStore` from `src/services/memory/types.ts`
+- **`capability.ts`** — `exposure: 'agent'`, `agentId: 'memory-agent'`
+- **`repo/sqlite.ts`** — from `src/services/memory/sqlite.ts`
+- **`service/processor.ts`** — from `src/services/memory/processor.ts`. Change poller import to `../../../utils/poller.js`
+- **`service/ranking.ts`** — from `src/services/memory/ranking.ts`
+- **`service/prompts.ts`** — from `src/services/memory/prompts.ts`
+- **`runtime/index.ts`** — from `src/services/memory/index.ts`
+- **`runtime/tools.ts`** — from `src/tools/memory.ts`
+- **`runtime/agent.ts`** — from `src/agents/memory/index.ts`
+- **`runtime/prompt.ts`** — from `src/agents/memory/prompt.ts`
+
+Create compatibility shims. Wire into registries.
+
+**Verify**: `npm run test:unit && npm run lint:architecture && npm run lint:agents && npm run build`
+
+#### Step 6: Create `ui` (agent)
+
+**Create `src/domains/ui/`** per the domain structure diagram. Key files:
+
+- **`types.ts`** — page types, storage provider interface from `src/services/ui/providers/types.ts`
+- **`capability.ts`** — `exposure: 'agent'`, `agentId: 'ui-agent'`
+- **`service/generator.ts`** — from `src/services/ui/generator.ts`
+- **`service/validator.ts`** — from `src/services/ui/validator.ts`
+- **`runtime/tools.ts`** — from `src/tools/ui.ts`
+- **`runtime/agent.ts`** — from `src/agents/ui/index.ts`
+- **`runtime/prompt.ts`** — from `src/agents/ui/prompt.ts`
+- **`runtime/pages.ts`** — page serving route handler from `src/routes/pages.ts`
+- **`runtime/providers/local-storage.ts`** — from `src/services/ui/providers/`
+- **`runtime/providers/memory-shortener.ts`** — from `src/services/ui/providers/`
+
+Create compatibility shims. Wire into registries.
+
+Note: `runtime/pages.ts` is a route handler that moves into the domain's runtime layer. `src/routes/` should import from the domain and delegate to it, keeping the route file as a thin wiring layer.
+
+**Verify**: `npm run test:unit && npm run lint:architecture && npm run lint:agents && npm run build`
+
+#### Step 7: Tighten enforcement
+
+After all six domains are migrated:
+
+1. Verify the `exceptions` array in `config/architecture-boundaries.json` is empty.
+2. Enable `--strict` mode for `domainExternalRules` checking — any domain import from a top-level path not in the `allowed` list now fails instead of warning.
+3. Verify all cross-domain `via` constraints are enforced for Google domains (calendar, email, drive all import google-core only through `providers/google-core.ts`).
+4. Run `npm run lint:architecture -- --strict` and confirm exit 0.
+5. Update `package.json` to use strict mode by default: `"lint:architecture": "node scripts/check-layer-deps.mjs --strict"`
+
+#### Step 8: Move tests
+
+Move test files for each domain from `tests/unit/services/<name>/` and `tests/unit/tools/<name>.test.ts` to `tests/unit/domains/<name>/`. Update import paths. Verify all tests still pass.
+
+#### Acceptance
+
+Run from WSL:
+
+    npm run lint && npm run lint:architecture && npm run lint:agents && npm run test:unit && npm run test:integration && npm run build
+
+Expected: all pass. The `exceptions` array is empty. Architecture lint runs in strict mode with zero violations. All 8 domains (google-core, scheduler, email-watcher, calendar, email, drive, memory, ui) pass domain-layer rules. Cross-domain `via` constraints are enforced for all Google domains.
+
+Run:
+
+    npm run docs:agents
+
+Expected: `docs/generated/agent-catalog.md` lists all 7 agent domains (scheduler, calendar, email, drive, memory, ui, general) and omits tool-only (email-watcher) and internal (google-core) domains from the agent list while documenting their existence.
+
+Generate final edge report:
+
+    npm run lint:architecture -- --report > docs/generated/architecture-deps-post-m5.txt
 
 ### Milestone 6: Finalize and Document
 
@@ -987,3 +1525,5 @@ Revision Note (2026-02-20): Addressed review findings 1-3 by correcting the `src
 Revision Note (2026-02-20): Added agent discoverability and mixed-domain exposure guidance without changing domain structure: centralized `src/registry/agents.ts`, per-domain `capability.ts` metadata (`agent|tool-only|internal`), `lint:agents` validation, and generated `docs/generated/agent-catalog.md`.
 
 Revision Note (2026-02-21): Major domain boundary revision based on code-level dependency analysis. Added `google-core` internal domain for shared Google OAuth2 and folder hierarchy. Updated calendar, email, drive domains to import google-core via `providers/google-core.ts` re-exports. Removed `media` from domain list (stays as shared infrastructure — no tools, no agent, no persistence). Split auth into provider-agnostic top-level (`AuthRequiredError`, `generateAuthUrl` in `src/providers/auth.ts`) and Google-specific (`getAuthenticatedClient`, `withRetry` in `google-core/providers/auth.ts`). Added `crossDomainRules` (deny-by-default + allowlist with `via` constraint) and `domainExternalRules` (allowed/forbidden top-level imports from domains) to boundary config. Fixed `domainLayerRules`: `repo` adds `types`, `runtime` adds `config`, `ui` changed from `runtime` to `service`. Added email-watcher → executor edge to exceptions. Moved orphaned tools (maps, user-config) to `src/registry/shared-tools.ts`. Updated Milestone 2 Fix 1 to include `AuthRequiredError` relocation. Updated Milestone 5 with ordered migration sequence starting from google-core. Updated checker script spec for cross-domain and external rule enforcement.
+
+Revision Note (2026-02-21): Milestones 3, 4, and 5 expanded to match detail level of Milestones 1 and 2. Key changes: (1) Extracted `createIntervalPoller` to `src/utils/poller.ts` as shared infrastructure (used by scheduler, email-watcher, memory — cannot live inside any single domain). (2) Added `providers/executor.ts` injection pattern to both scheduler and email-watcher domains for `executeWithTools` dependency. (3) Added `src/services/anthropic/`, `src/services/user-config/`, `src/twilio.ts`, `src/utils/` to `domainExternalRules.allowed` (all consumed by domains, confirmed by import analysis). (4) Added `capability.ts` to scheduler, email-watcher, memory, and ui domain diagrams (were missing). (5) Resolved email-watcher exposure as definitively `tool-only` (no agent directory exists). (6) Fixed M5 step 1 duplication with M2 Fix 1 (`AuthRequiredError` relocation already done in M2). (7) Added explicit consumer lists, compatibility adapter specs, exception cleanup steps, registry wiring, and test migration for M3 and M4. (8) Added strict-mode enablement step and final edge report generation to M5.
