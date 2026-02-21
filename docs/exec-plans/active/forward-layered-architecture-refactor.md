@@ -15,6 +15,7 @@ A user-visible way to see this working is to run a dependency check command that
 - [x] (2026-02-20 18:25Z) Created this ExecPlan in `docs/exec-plans/active/forward-layered-architecture-refactor.md` with full scope, milestones, and validation guidance.
 - [ ] Establish a baseline architecture dependency report and commit it as a tracked artifact.
 - [ ] Introduce machine-enforced import boundary checks in CI with a temporary exception allowlist.
+- [ ] Establish explicit agent discoverability scaffolding (`src/registry/agents.ts`, capability metadata contract, validation, generated catalog).
 - [ ] Remove currently known reverse edges (`tools -> routes`, `services -> tools` hotspots) without behavior changes.
 - [ ] Migrate the first domain (`scheduler`) to the layered package structure with compatibility adapters.
 - [ ] Migrate the second domain (`email-watcher`) to the layered package structure with compatibility adapters.
@@ -68,6 +69,10 @@ A user-visible way to see this working is to run a dependency check command that
   Rationale: Eliminating orchestrator→tools entirely would require threading tool functions through multiple call layers for no architectural benefit. The orchestrator already dispatches to agents and tools via the executor. Making it explicitly import from the tool registry is honest about what it does.
   Date/Author: 2026-02-20 / Review
 
+- Decision: Agent discoverability is explicit and centralized in `src/registry/agents.ts`, while each domain declares exposure metadata in `capability.ts` when migrated.
+  Rationale: Some domains are `agent`, some are `tool-only`, and some are `internal`. Making this explicit avoids implicit folder-based assumptions and lets linters validate consistency.
+  Date/Author: 2026-02-20 / Review
+
 ## Outcomes & Retrospective
 
 Initial state: plan authored, no implementation changes yet. The next contributor should begin at Milestone 1 and update `Progress`, `Surprises & Discoveries`, and `Decision Log` at every stopping point.
@@ -105,6 +110,35 @@ The architecture document already records the target contract and a gap review i
 ## Domain Boundaries and Target Folder Structure
 
 Not everything becomes a domain. A domain is a bounded business capability with its own data, tools, and/or agent. Cross-cutting infrastructure that serves multiple domains stays in shared top-level modules.
+
+Domain structure in this plan stays unchanged. The updates in this revision add explicit metadata and registry rules so an agent can discover all active agents without traversing the whole domain tree.
+
+### Agent Exposure and Discoverability Contract
+
+Not every domain has its own agent, and that is valid by design.
+
+- `agent`: domain has `runtime/agent.ts` and `runtime/prompt.ts`.
+- `tool-only`: domain exposes tools but no standalone agent.
+- `internal`: domain is runtime/service-only and exposes neither tools nor agent.
+
+To make this explicit:
+
+1. `src/registry/agents.ts` is the only runtime source of truth for active agents.
+2. Each migrated domain adds `src/domains/<name>/capability.ts` with:
+
+       export type DomainExposure = 'agent' | 'tool-only' | 'internal';
+
+       export interface DomainCapability {
+         domain: string;
+         exposure: DomainExposure;
+         agentId?: string;
+         agentModule?: string;
+         tools?: string[];
+       }
+
+3. Domains with `exposure: 'agent'` must include `runtime/agent.ts` and `runtime/prompt.ts`.
+4. Domains with `exposure: 'tool-only'` or `exposure: 'internal'` do not require `runtime/agent.ts`.
+5. `docs/generated/agent-catalog.md` is generated from `src/registry/agents.ts` plus domain capability metadata.
 
 ### Domains (move to `src/domains/<name>/`)
 
@@ -261,7 +295,8 @@ These modules serve multiple domains and do not have their own tools or agents. 
     │   └── auth.ts                 ← generateAuthUrl, encryptState (created in Milestone 2)
     │
     ├── registry/
-    │   └── tools.ts                ← aggregates ToolDefinition[] from all domains, exports TOOLS, toolHandlers, READ_ONLY_TOOLS, executeTool()
+    │   ├── tools.ts                ← aggregates ToolDefinition[] from all domains, exports TOOLS, toolHandlers, READ_ONLY_TOOLS, executeTool()
+    │   └── agents.ts               ← single source of truth for active agent definitions
     │
     ├── routes/
     │   ├── sms.ts                  ← Twilio webhook handler (thin: delegates to orchestrator)
@@ -304,7 +339,7 @@ These modules serve multiple domains and do not have their own tools or agents. 
 
 | Current location | Target | Rationale |
 |-----------------|--------|-----------|
-| `src/agents/<name>/` (except general) | `src/domains/<name>/runtime/agent.ts` + `prompt.ts` | Agent is a runtime adapter for the domain |
+| `src/agents/<name>/` (except general) | `src/domains/<name>/runtime/agent.ts` + `prompt.ts` only for `exposure: 'agent'` domains | Not all domains have standalone agents |
 | `src/tools/<name>.ts` (except utils, maps, user-config) | `src/domains/<name>/runtime/tools.ts` | Tool definitions are runtime adapters |
 | `src/services/scheduler/` | `src/domains/scheduler/` | Bounded domain with own persistence |
 | `src/services/email-watcher/` | `src/domains/email-watcher/` | Bounded domain with own persistence |
@@ -328,6 +363,7 @@ These modules serve multiple domains and do not have their own tools or agents. 
 | `src/orchestrator/` | stays | Cross-cutting runtime coordinator |
 | `src/executor/` | stays | Cross-cutting agent execution engine |
 | `src/agents/general/` | stays | Escape-hatch agent, not a domain |
+| `src/agents/index.ts` | `src/registry/agents.ts` | Centralized active-agent registry for discoverability and enforcement |
 | `src/routes/` | stays (thins out as domain runtimes take over) | HTTP wiring layer |
 
 ### Edge cases and notes
@@ -338,7 +374,7 @@ These modules serve multiple domains and do not have their own tools or agents. 
 
 **`src/agents/general/`** is not a domain. It is the fallback agent with access to all tools. It stays in `src/agents/general/` (or could move to `src/orchestrator/` since it is part of the orchestration fallback path). The executor/registry already handles general-agent dispatch.
 
-**`src/agents/index.ts`** currently exports the AGENTS array. After migration, this file imports agent definitions from `src/domains/*/runtime/agent.ts` + `src/agents/general/` and assembles the array. It becomes an agent registry analogous to `src/registry/tools.ts`.
+**`src/registry/agents.ts`** becomes the only source of truth for active agents. It imports `runtime/agent.ts` from domains with `exposure: 'agent'` plus `src/agents/general/`. Agents should not be discovered by directory traversal.
 
 **Tests** mirror the domain structure. When `src/services/scheduler/` moves to `src/domains/scheduler/`, the corresponding tests move from `tests/unit/scheduler/` to `tests/unit/domains/scheduler/`. Import paths in test files update accordingly.
 
@@ -368,6 +404,20 @@ There is currently no ESLint config file in the repository (ESLint 9 flat config
 
 8. If `--report` flag is passed, prints a full edge summary (all edges grouped by source→target directory and domain layer) before violations.
 9. Exits with code 0 if no unapproved violations, code 1 otherwise.
+
+**`scripts/check-agent-registry.mjs`** — A Node script that validates agent discoverability invariants:
+
+1. Loads `src/registry/agents.ts` and parses the declared agent IDs.
+2. For each `src/domains/*/capability.ts` with `exposure: 'agent'`, verifies `runtime/agent.ts` and `runtime/prompt.ts` exist.
+3. Verifies every `exposure: 'agent'` domain is present in `src/registry/agents.ts`.
+4. Verifies `tool-only` and `internal` domains are not present in `src/registry/agents.ts`.
+5. Exits non-zero with clear remediation messages when drift is detected.
+
+**`scripts/generate-agent-catalog.mjs`** — A Node script that writes `docs/generated/agent-catalog.md` from `src/registry/agents.ts` plus domain capabilities.
+
+**`src/registry/agents.ts`** — Central active-agent registry. In the initial state (before all domains are migrated), this file can import the existing agent modules from `src/agents/*` and export the same AGENTS array semantics currently provided by `src/agents/index.ts`.
+
+During transition, keep `src/agents/index.ts` as a compatibility shim that re-exports from `src/registry/agents.ts` so existing imports continue to work.
 
 **`config/architecture-boundaries.json`** — Machine-readable boundary rules:
 
@@ -448,7 +498,9 @@ Note: Domain-layer rules apply only when both files are inside the same `src/dom
 
 **`package.json`** — Add script:
 
-    "lint:architecture": "node scripts/check-layer-deps.mjs"
+    "lint:architecture": "node scripts/check-layer-deps.mjs",
+    "lint:agents": "node scripts/check-agent-registry.mjs",
+    "docs:agents": "node scripts/generate-agent-catalog.mjs"
 
 #### Acceptance
 
@@ -458,11 +510,18 @@ Run from WSL:
 
 Expected: exits 0, prints "5 known exceptions (see config/architecture-boundaries.json)" and "0 violations".
 
+Run:
+
+    npm run lint:agents
+    npm run docs:agents
+
+Expected: `lint:agents` exits 0 and `docs/generated/agent-catalog.md` is generated/updated.
+
 Then add a temporary forbidden import to any service file (for example, add `import '../routes/sms.js'` to `src/services/memory/processor.ts`), run again, and confirm it exits 1 with a clear violation message. Revert the test edit.
 
 Also run the existing quality gates to ensure nothing was broken:
 
-    npm run lint && npm run test:unit && npm run test:integration && npm run build
+    npm run lint && npm run lint:architecture && npm run lint:agents && npm run test:unit && npm run test:integration && npm run build
 
 Generate and commit the baseline edge report:
 
@@ -636,7 +695,7 @@ Expected: exits 0 with "0 known exceptions" and "0 violations".
 
 Run full quality gates:
 
-    npm run lint && npm run test:unit && npm run test:integration && npm run build
+    npm run lint && npm run lint:architecture && npm run lint:agents && npm run test:unit && npm run test:integration && npm run build
 
 Generate updated edge report and compare against baseline:
 
@@ -648,13 +707,17 @@ Create `src/domains/scheduler/` with `types`, `config`, `repo`, `providers`, `se
 
 `runtime` in this domain should own the poller entry points and orchestration hooks; `service` should own scheduling logic; `repo` should own SQLite operations. Cross-cutting concerns like SMS sending and tool execution interfaces should be consumed via providers.
 
-Acceptance is that scheduler behavior is unchanged, existing scheduler unit/integration tests pass, and architecture lint reports no new violations.
+Add `src/domains/scheduler/capability.ts` with explicit exposure metadata. If scheduler remains an agent domain, set `exposure: 'agent'` and wire its runtime agent module into `src/registry/agents.ts`.
+
+Acceptance is that scheduler behavior is unchanged, existing scheduler unit/integration tests pass, architecture lint reports no new violations, `lint:agents` passes, and `docs/generated/agent-catalog.md` reflects the scheduler entry.
 
 ### Milestone 4: Migrate Email Watcher to Domain Layers
 
 Repeat the same migration structure for `email-watcher` into `src/domains/email-watcher/`. Keep API compatibility through adapters during transition. Ensure classification, sync, actions, skills, and prompt assembly align to layer boundaries and consume cross-cutting dependencies through providers.
 
-Acceptance is that email watcher behavior remains unchanged in tests and manual smoke verification, with no new dependency violations.
+Add `src/domains/email-watcher/capability.ts` with explicit exposure metadata. If email-watcher remains tool-only, set `exposure: 'tool-only'` and do not add it to `src/registry/agents.ts`.
+
+Acceptance is that email watcher behavior remains unchanged in tests and manual smoke verification, with no new dependency violations, and agent registry validation passes with the declared exposure.
 
 ### Milestone 5: Expand Pattern and Tighten Enforcement
 
@@ -686,6 +749,8 @@ Expected outcome: a deterministic text report that lists import edges and explic
 
     npm run lint
     npm run lint:architecture
+    npm run lint:agents
+    npm run docs:agents
     npm run test:unit
     npm run test:integration
     npm run build
@@ -707,6 +772,8 @@ Expected outcome: boundary gate correctly blocks illegal direction imports.
 Validation is complete only when all of the following are true:
 
 - Architecture boundary check exists, runs locally, and is enforced in CI.
+- Agent registry/capability validation exists, runs locally, and is enforced in CI.
+- `docs/generated/agent-catalog.md` is generated from registry + capabilities and reflects active agents.
 - Known reverse edges identified in this plan are removed or documented as temporary exceptions with owner and deadline.
 - Scheduler and email watcher run through their existing flows with unchanged external behavior.
 - Full test and build suite passes from WSL with the project’s standard commands.
@@ -715,6 +782,7 @@ Validation is complete only when all of the following are true:
 Behavioral acceptance scenarios:
 
 - If a developer adds a new import from a lower layer to an upper layer (for example `repo` importing `runtime`), `npm run lint:architecture` fails with a clear error naming both files.
+- If a domain sets `exposure: 'agent'` without adding `runtime/agent.ts` or omits registry wiring, `npm run lint:agents` fails with a clear error.
 - Existing SMS request handling and background processors continue to function, evidenced by passing integration tests and successful local health check.
 
 ## Idempotence and Recovery
@@ -730,6 +798,7 @@ Keep concise evidence artifacts in-repo as milestones complete:
 - `docs/generated/architecture-deps-baseline.txt` for initial and final edge snapshots.
 - A short changelog entry in this file’s `Progress` section per completed milestone.
 - If CI is updated, include the relevant job name and command in `Progress`.
+- `docs/generated/agent-catalog.md` generated by `npm run docs:agents`.
 
 Expected architecture-lint failure output should look like:
 
@@ -745,6 +814,9 @@ By the end of Milestone 1, the following interfaces must exist:
 
 - A boundary configuration artifact that declares allowed layer directions and temporary exceptions.
 - A deterministic command (`npm run lint:architecture`) that enforces those rules.
+- A centralized active-agent registry at `src/registry/agents.ts`.
+- A domain capability contract (`DomainCapability`) used by migrated domains.
+- Deterministic commands `npm run lint:agents` and `npm run docs:agents`.
 
 By the end of Milestones 3 and 4, each migrated domain must expose stable runtime entry points so existing callers continue working during transition. Adapter exports must be intentionally temporary and removed in Milestone 6.
 
@@ -753,3 +825,5 @@ Revision Note (2026-02-20): Initial version created in response to request for a
 Revision Note (2026-02-20): Milestones 1 and 2 expanded with concrete file-level specifications, exact function signatures, and specific line-number references. Decision Log updated with injection pattern choice (function parameters), boundary checker approach (custom script), tool architecture design (domain-local definitions + central registry), and orchestrator→tools lateral dependency ruling. Surprises section updated with ESLint config and MediaAttachment findings.
 
 Revision Note (2026-02-20): Addressed review findings 1-3 by correcting the `src/providers/auth.ts` config import path to `../config.js`, extending Milestone 1 boundary spec with explicit `domainLayerRules` enforcement for `src/domains/<name>/...`, and requiring the dependency checker to parse dynamic `import('...')` edges in addition to static imports.
+
+Revision Note (2026-02-20): Added agent discoverability and mixed-domain exposure guidance without changing domain structure: centralized `src/registry/agents.ts`, per-domain `capability.ts` metadata (`agent|tool-only|internal`), `lint:agents` validation, and generated `docs/generated/agent-catalog.md`.

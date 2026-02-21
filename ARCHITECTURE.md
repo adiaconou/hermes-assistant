@@ -6,19 +6,22 @@ System design for Hermes Assistant — an SMS/WhatsApp personal assistant powere
 
 1. [System Overview](#system-overview)
 2. [High-Level Architecture](#high-level-architecture)
-3. [Request Processing Flow](#request-processing-flow)
-4. [Orchestrator](#orchestrator)
-5. [Agent System](#agent-system)
-6. [Tool Registry](#tool-registry)
-7. [Memory System](#memory-system)
-8. [Scheduler System](#scheduler-system)
-9. [Email Watcher System](#email-watcher-system)
-10. [Date Resolution](#date-resolution)
-11. [Data Storage](#data-storage)
-12. [External Integrations](#external-integrations)
-13. [UI Generation](#ui-generation)
-14. [Media Handling](#media-handling)
-15. [File Structure](#file-structure)
+3. [Layered Domain Contract (Target)](#layered-domain-contract-target)
+4. [Forward-Layer Compliance Review (2026-02-20)](#forward-layer-compliance-review-2026-02-20)
+5. [Migration Recommendations](#migration-recommendations)
+6. [Request Processing Flow](#request-processing-flow)
+7. [Orchestrator](#orchestrator)
+8. [Agent System](#agent-system)
+9. [Tool Registry](#tool-registry)
+10. [Memory System](#memory-system)
+11. [Scheduler System](#scheduler-system)
+12. [Email Watcher System](#email-watcher-system)
+13. [Date Resolution](#date-resolution)
+14. [Data Storage](#data-storage)
+15. [External Integrations](#external-integrations)
+16. [UI Generation](#ui-generation)
+17. [Media Handling](#media-handling)
+18. [File Structure](#file-structure)
 
 ---
 
@@ -76,6 +79,115 @@ Hermes is a multi-agent assistant that receives messages via Twilio (SMS/WhatsAp
                 │                  │      │  Twilio SMS/WhatsApp          │
                 └──────────────────┘      └──────────────────────────────┘
 ```
+
+---
+
+## Layered Domain Contract (Target)
+
+This repository currently documents a component-oriented architecture (`routes`, `services`, `tools`, `orchestrator`). To align with the forward-only layered model described in the Harness article, the target shape is domain-oriented and mechanically enforced.
+
+### Canonical Layer Order
+
+Within each business domain, dependencies must move in one direction only:
+
+```
+Types -> Config -> Repo -> Service -> Runtime -> UI
+                 ^ 
+             Providers (explicit cross-cutting ingress)
+```
+
+### Domain Package Template
+
+```
+src/domains/<domain>/
+├── types/
+├── config/
+├── repo/
+├── providers/
+├── service/
+├── runtime/
+└── ui/
+```
+
+### Layer Responsibilities and Allowed Imports
+
+| Layer | Responsibility | Allowed internal imports |
+|-------|----------------|--------------------------|
+| `types` | Domain DTOs, schema types, value objects | none |
+| `config` | Domain constants/config parsing | `types` |
+| `repo` | Persistence/data access for the domain | `types`, `config` |
+| `providers` | Interfaces for cross-cutting systems (auth, Google/Twilio clients, telemetry, feature flags) | `types`, `config` |
+| `service` | Domain business logic and orchestration | `types`, `config`, `repo`, `providers` |
+| `runtime` | HTTP handlers, job runners, tool adapters, agent adapters | `types`, `service`, `providers` |
+| `ui` | HTML/UI rendering and presentation | `types`, `runtime` |
+
+Rules:
+- No backward imports (for example, `repo` cannot import `runtime`).
+- Cross-cutting concerns must be accessed through `providers`, not by importing external clients directly.
+- Shared primitives (`AuthRequiredError`, shared request/context types, etc.) must live in `types` or `providers`, not in runtime files.
+
+---
+
+## Forward-Layer Compliance Review (2026-02-20)
+
+Assessment scope: static review of current repository structure and import edges.
+
+### Summary
+
+The current implementation is functional, but it does **not** yet meet the strict forward-only layered contract above.
+
+| Constraint | Status | Evidence | Impact |
+|------------|--------|----------|--------|
+| Domain-oriented layer packaging | Not met | Code is organized by technical slices (`src/routes`, `src/services`, `src/tools`, `src/orchestrator`) rather than per-domain layered packages. | Hard to enforce domain-local invariants and forward-only edges. |
+| Forward-only dependencies | Not met | Reverse/cross-layer edges exist: `src/tools/utils.ts` imports `src/routes/auth.ts`; `src/services/anthropic/classification.ts` imports `src/tools/index.ts`; `src/services/scheduler/executor.ts` imports `src/tools/index.ts`; `src/orchestrator/response-composer.ts` imports `src/tools/index.ts`; `src/services/media/process.ts` imports `src/tools/types.ts`. | Creates coupling across runtime/service/tool boundaries and encourages drift. |
+| Explicit providers boundary for cross-cutting concerns | Partially met | Some integrations are centralized in `src/services/google/*`, but external/auth/config concerns are still accessed from many layers directly (for example `routes`, `tools`, `services`, `orchestrator`). | Cross-cutting behavior is inconsistent and harder to swap or test in isolation. |
+| Mechanical enforcement (lints + structural tests) | Not met | `package.json` exposes only `lint: eslint src/`; no dependency-boundary linter/structural test is configured to block illegal import directions. | Architecture rules are advisory instead of enforceable. |
+| Strict domain boundary behavior | Partially met | Specialized agents exist, but `general-agent` still has access to all tools. | Useful for fallback, but it weakens strict domain containment if overused. |
+
+### Observed Top-Level Import Edges
+
+A quick import-edge pass shows cross-slice coupling still present:
+- `tools -> services` (28 edges)
+- `services -> tools` (6 edges)
+- `routes -> tools` (2 edges)
+- `tools -> routes` (1 edge)
+- `orchestrator -> tools` (1 edge)
+
+Bidirectional edges (`tools <-> services`) are a direct signal that forward-only constraints are not yet encoded in code structure.
+
+---
+
+## Migration Recommendations
+
+### Priority 0: Define and freeze the dependency contract
+
+1. Add a machine-readable dependency policy (for example, ESLint `no-restricted-imports` per directory or a structural test).
+2. Fail CI when a layer imports disallowed layers.
+3. Keep exceptions in a short explicit allowlist with expiry dates.
+
+### Priority 1: Remove known reverse edges first
+
+1. Move auth-link generation out of runtime route code so `src/tools/utils.ts` no longer imports `src/routes/auth.ts`.
+2. Move shared `MediaAttachment` and similar cross-cutting types out of `src/tools/types.ts` into a neutral domain `types` module.
+3. Stop importing tool registries from service/orchestrator modules; pass needed capabilities via runtime composition.
+
+### Priority 2: Introduce providers as the only cross-cutting ingress
+
+1. Create provider interfaces for Google/Twilio/auth/config/telemetry.
+2. Inject providers into services/runtime instead of importing concrete clients directly.
+3. Keep provider wiring in runtime/bootstrap (`src/index.ts`), not in domain logic.
+
+### Priority 3: Migrate incrementally by domain
+
+1. Start with one high-churn domain (`scheduler` or `email-watcher`) and move it to `src/domains/<domain>/...`.
+2. Migrate `types` and `repo` first, then `service`, then runtime adapters.
+3. Preserve existing behavior with adapter shims until each domain cutover is complete.
+
+### Priority 4: Keep fallback power while containing drift
+
+1. Keep `general-agent` as an explicit escape hatch.
+2. Add planner/runtime rules that prefer specialized agents and require reason logging when general-agent is selected.
+3. Track general-agent usage in quality scoring so boundary erosion is visible.
 
 ---
 
