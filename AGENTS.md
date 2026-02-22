@@ -6,7 +6,7 @@ Canonical instructions for AI agents working with this codebase.
 
 Hermes Assistant is an SMS/WhatsApp personal assistant powered by Anthropic Claude. It uses a multi-agent orchestration pattern to handle requests via Twilio, integrating with Google Workspace (Calendar, Gmail, Drive, Sheets, Docs) and Gemini Vision.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for full system design. See [docs/design-docs/core-beliefs.md](docs/design-docs/core-beliefs.md) for non-negotiable constraints.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for full system design. See [docs/archive/design-docs/core-beliefs.md](docs/archive/design-docs/core-beliefs.md) for non-negotiable constraints.
 
 ## Development Environment
 
@@ -49,20 +49,20 @@ npm run sms              # Send test SMS via script
 | Topic | Source of Truth |
 |-------|----------------|
 | High-level architecture | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| Core beliefs & constraints | [docs/design-docs/core-beliefs.md](docs/design-docs/core-beliefs.md) |
-| Design docs catalog | [docs/design-docs/index.md](docs/design-docs/index.md) |
-| Product specs | [docs/product-specs/index.md](docs/product-specs/index.md) |
-| Design patterns & coding standards | [docs/DESIGN.md](docs/DESIGN.md) |
-| Testing & quality | [docs/QUALITY_SCORE.md](docs/QUALITY_SCORE.md) |
-| Security | [docs/SECURITY.md](docs/SECURITY.md) |
-| Reliability | [docs/RELIABILITY.md](docs/RELIABILITY.md) |
-| Frontend & UI | [docs/FRONTEND.md](docs/FRONTEND.md) |
-| Product sense | [docs/PRODUCT_SENSE.md](docs/PRODUCT_SENSE.md) |
-| ExecPlan methodology | [docs/PLANS.md](docs/PLANS.md) |
+| Core beliefs & constraints | [docs/archive/design-docs/core-beliefs.md](docs/archive/design-docs/core-beliefs.md) |
+| Design docs catalog | [docs/archive/design-docs/index.md](docs/archive/design-docs/index.md) |
+| Product specs | [docs/archive/product-specs/index.md](docs/archive/product-specs/index.md) |
+| Design patterns & coding standards | [docs/archive/DESIGN.md](docs/archive/DESIGN.md) |
+| Testing & quality | [docs/archive/QUALITY_SCORE.md](docs/archive/QUALITY_SCORE.md) |
+| Security | [docs/archive/SECURITY.md](docs/archive/SECURITY.md) |
+| Reliability | [docs/archive/RELIABILITY.md](docs/archive/RELIABILITY.md) |
+| Frontend & UI | [docs/archive/FRONTEND.md](docs/archive/FRONTEND.md) |
+| Product sense | [docs/archive/PRODUCT_SENSE.md](docs/archive/PRODUCT_SENSE.md) |
+| ExecPlan methodology | [docs/archive/PLANS.md](docs/archive/PLANS.md) |
 | Active exec plans | [docs/exec-plans/active/](docs/exec-plans/active/) |
 | Completed exec plans | [docs/exec-plans/completed/](docs/exec-plans/completed/) |
-| Tech debt | [docs/exec-plans/tech-debt-tracker.md](docs/exec-plans/tech-debt-tracker.md) |
-| Database schemas | [docs/generated/db-schema.md](docs/generated/db-schema.md) |
+| Tech debt | [docs/archive/tech-debt-tracker.md](docs/archive/tech-debt-tracker.md) |
+| Database schemas | [docs/archive/generated/db-schema.md](docs/archive/generated/db-schema.md) |
 
 ### When to Read What
 
@@ -71,25 +71,25 @@ Not every doc needs to be in context for every task. Use this guide:
 **Always loaded** (via CLAUDE.md → AGENTS.md): This file. It's the entry point for all work.
 
 **Read before any task:**
-- [core-beliefs.md](docs/design-docs/core-beliefs.md) — Agent-first operating principles. The tiebreaker when two reasonable approaches conflict.
+- [core-beliefs.md](docs/archive/design-docs/core-beliefs.md) — Agent-first operating principles. The tiebreaker when two reasonable approaches conflict.
 
 **Read based on what you're changing:**
 - [ARCHITECTURE.md](ARCHITECTURE.md) — When adding or modifying a system component, or when you need to understand how parts connect.
-- [DESIGN.md](docs/DESIGN.md) — When writing new code. Contains patterns, coding standards, and TypeScript practices.
-- [QUALITY_SCORE.md](docs/QUALITY_SCORE.md) — When writing tests or before committing. Defines testing requirements and verification criteria.
-- [SECURITY.md](docs/SECURITY.md) — When touching auth, credentials, OAuth, input validation, or admin routes.
-- [RELIABILITY.md](docs/RELIABILITY.md) — When touching timeouts, retries, error handling, or graceful degradation paths.
-- [FRONTEND.md](docs/FRONTEND.md) — When touching the ui-agent, generated HTML pages, or anything served to the browser.
-- [PRODUCT_SENSE.md](docs/PRODUCT_SENSE.md) — When designing user-facing behavior, composing SMS responses, or making UX decisions.
-- [db-schema.md](docs/generated/db-schema.md) — When touching database tables or writing migrations.
+- [DESIGN.md](docs/archive/DESIGN.md) — When writing new code. Contains patterns, coding standards, and TypeScript practices.
+- [QUALITY_SCORE.md](docs/archive/QUALITY_SCORE.md) — When writing tests or before committing. Defines testing requirements and verification criteria.
+- [SECURITY.md](docs/archive/SECURITY.md) — When touching auth, credentials, OAuth, input validation, or admin routes.
+- [RELIABILITY.md](docs/archive/RELIABILITY.md) — When touching timeouts, retries, error handling, or graceful degradation paths.
+- [FRONTEND.md](docs/archive/FRONTEND.md) — When touching the ui-agent, generated HTML pages, or anything served to the browser.
+- [PRODUCT_SENSE.md](docs/archive/PRODUCT_SENSE.md) — When designing user-facing behavior, composing SMS responses, or making UX decisions.
+- [db-schema.md](docs/archive/generated/db-schema.md) — When touching database tables or writing migrations.
 
 **Read when starting a complex feature:**
-- [PLANS.md](docs/PLANS.md) — ExecPlan methodology. Read before creating a new plan.
+- [PLANS.md](docs/archive/PLANS.md) — ExecPlan methodology. Read before creating a new plan.
 - [exec-plans/completed/](docs/exec-plans/completed/) — Check for prior art when modifying a subsystem that was built via an ExecPlan.
-- [design-docs/index.md](docs/design-docs/index.md) — Find the relevant design doc for the subsystem you're modifying.
+- [design-docs/index.md](docs/archive/design-docs/index.md) — Find the relevant design doc for the subsystem you're modifying.
 
 **Read when investigating issues:**
-- [tech-debt-tracker.md](docs/exec-plans/tech-debt-tracker.md) — Check for known gaps before introducing workarounds.
+- [tech-debt-tracker.md](docs/archive/tech-debt-tracker.md) — Check for known gaps before introducing workarounds.
 
 ---
 
@@ -97,11 +97,11 @@ Not every doc needs to be in context for every task. Use this guide:
 
 ### ExecPlans
 
-When writing complex features or significant refactors, use an ExecPlan (as described in [docs/PLANS.md](docs/PLANS.md)) from design to implementation. Create the plan in `docs/exec-plans/active/` before writing code. Update it as you go.
+When writing complex features or significant refactors, use an ExecPlan (as described in [docs/archive/PLANS.md](docs/archive/PLANS.md)) from design to implementation. Create the plan in `docs/exec-plans/active/` before writing code. Update it as you go.
 
 ### Design Docs
 
-Design docs describe how a subsystem works and why it was built that way. Create or update a design doc in `docs/design-docs/` when a change alters the architecture, introduces a new subsystem, or invalidates the existing description of how something works. If you're changing behavior that a design doc describes, update the doc in the same PR as the code change.
+Design docs describe how a subsystem works and why it was built that way. Create or update a design doc in `docs/archive/design-docs/` when a change alters the architecture, introduces a new subsystem, or invalidates the existing description of how something works. If you're changing behavior that a design doc describes, update the doc in the same PR as the code change.
 
 ### After Making Code Changes
 
@@ -123,12 +123,12 @@ Design docs describe how a subsystem works and why it was built that way. Create
 
 To add a new specialized agent:
 
-1. Create `src/agents/<name>/index.ts` — export `capability` and `executor`
-2. Create `src/agents/<name>/prompt.ts` — agent system prompt
-3. Define tools in `src/tools/<name>.ts` if needed
+1. Create `src/domains/<name>/capability.ts` and set `exposure: 'agent'`
+2. Create `src/domains/<name>/runtime/agent.ts` and `src/domains/<name>/runtime/prompt.ts`
+3. Define tools in `src/domains/<name>/runtime/tools.ts` if needed
 4. Register tools in `src/tools/index.ts`
-5. Import and add to the `AGENTS` array in `src/agents/index.ts` (before general-agent)
-6. Write tests in `tests/unit/agents/<name>/`
+5. Import and add the domain agent to `AGENTS` in `src/registry/agents.ts` (before `general-agent`)
+6. Write tests in `tests/unit/agents/<name>/` and/or `tests/unit/tools/` as appropriate
 
 The agent will automatically be available to the planner and router.
 
@@ -136,7 +136,7 @@ The agent will automatically be available to the planner and router.
 
 1. Create a `ToolDefinition` in the appropriate `src/tools/*.ts` file
 2. Add it to `allTools` array in `src/tools/index.ts`
-3. Add the tool name to the relevant agent's tool list in `src/agents/*/index.ts`
+3. Add the tool name to the relevant domain agent capability in `src/domains/*/runtime/agent.ts`
 4. If it's safe for scheduled execution, add to `READ_ONLY_TOOLS`
 
 ---

@@ -516,16 +516,12 @@ hermesSaveState({ items: [...], checked: [...] });
 
 ## Adding a New Agent
 
-1. Create a new directory under `agents/` with the agent name
-2. Create `index.ts` with:
-   - `capability` object describing the agent
-   - `executor` function implementing the agent logic
-3. Register in `agents/index.ts`:
-   - Import the capability and executor
-   - Add to the `AGENTS` array
-   - Export the capability and executor
-4. Add tests for the new agent
-5. Update this README with the agent documentation
+1. Create a new domain at `src/domains/<name>/` with `capability.ts` set to `exposure: 'agent'`
+2. Create `runtime/agent.ts` and `runtime/prompt.ts`
+3. Register the domain agent in `src/registry/agents.ts` by importing capability/executor and adding them to `AGENTS`
+4. If needed, add domain tools in `src/domains/<name>/runtime/tools.ts` and wire them in `src/tools/index.ts`
+5. Add tests for the new agent
+6. Update this README with the agent documentation
 
 ## Tool Access Matrix
 

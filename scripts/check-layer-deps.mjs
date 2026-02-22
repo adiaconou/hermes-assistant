@@ -15,6 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -42,25 +43,46 @@ function walkTs(dir) {
 
 /** Extract import targets from a TS file (static + dynamic, skipping type-only). */
 function extractImports(filePath) {
-  const src = fs.readFileSync(filePath, 'utf-8');
+  const sourceText = fs.readFileSync(filePath, 'utf-8');
   const imports = [];
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    sourceText,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS
+  );
 
-  // Static: import ... from '...' or export ... from '...'
-  // Skip lines that start with "import type" (type-only imports)
-  const staticRe = /(?:^|\n)\s*(?:import|export)\s+(?!type\s).*?\s+from\s+['"]([^'"]+)['"]/g;
-  let m;
-  while ((m = staticRe.exec(src)) !== null) {
-    imports.push(m[1]);
+  function pushModuleSpecifier(specifierNode) {
+    if (specifierNode && ts.isStringLiteral(specifierNode)) {
+      imports.push(specifierNode.text);
+    }
   }
 
-  // Also match: import type { ... } from '...' — but SKIP these (type-only)
-  // Already handled by the negative lookahead above.
+  function visit(node) {
+    if (ts.isImportDeclaration(node)) {
+      // Skip import type {...} from '...'
+      if (!node.importClause?.isTypeOnly) {
+        pushModuleSpecifier(node.moduleSpecifier);
+      }
+    } else if (ts.isExportDeclaration(node)) {
+      // Skip export type {...} from '...'
+      if (!node.isTypeOnly) {
+        pushModuleSpecifier(node.moduleSpecifier);
+      }
+    } else if (
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword
+    ) {
+      // Dynamic import('...')
+      const [firstArg] = node.arguments;
+      pushModuleSpecifier(firstArg);
+    }
 
-  // Dynamic: import('...')
-  const dynamicRe = /import\(\s*['"]([^'"]+)['"]\s*\)/g;
-  while ((m = dynamicRe.exec(src)) !== null) {
-    imports.push(m[1]);
+    ts.forEachChild(node, visit);
   }
+
+  visit(sourceFile);
 
   return imports;
 }

@@ -25,7 +25,7 @@ Agents registered in `src/registry/agents.ts`:
 | calendar | agent | calendar-agent | get_calendar_events, create_calendar_event, update_calendar_event, delete_calendar_event, resolve_date |
 | drive | agent | — | — |
 | email | agent | — | — |
-| email-watcher | unknown | — | create_email_skill, list_email_skills, update_email_skill, delete_email_skill, toggle_email_watcher, test_email_skill |
+| email-watcher | tool-only | — | create_email_skill, list_email_skills, update_email_skill, delete_email_skill, toggle_email_watcher, test_email_skill |
 | google-core | internal | — | — |
 | memory | agent | memory-agent | extract_memory, list_memories, update_memory, remove_memory |
 | scheduler | agent | scheduler-agent | create_scheduled_job, list_scheduled_jobs, update_scheduled_job, delete_scheduled_job |

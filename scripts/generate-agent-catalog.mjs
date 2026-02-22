@@ -42,7 +42,7 @@ if (fs.existsSync(DOMAINS_DIR)) {
     if (!fs.existsSync(capPath)) continue;
 
     const capSrc = fs.readFileSync(capPath, 'utf-8');
-    const exposureMatch = capSrc.match(/exposure:\s*['"](\w+)['"]/);
+    const exposureMatch = capSrc.match(/exposure:\s*['"]([\w-]+)['"]/);
     const agentIdMatch = capSrc.match(/agentId:\s*['"]([^'"]+)['"]/);
     const toolsMatch = capSrc.match(/tools:\s*\[([^\]]*)\]/);
 
