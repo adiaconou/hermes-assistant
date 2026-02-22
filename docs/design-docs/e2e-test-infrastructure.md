@@ -42,41 +42,112 @@ The e2e test suite fills this gap by making real Anthropic API calls while mocki
 
 ## Architecture Overview
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│  vitest.e2e.config.ts                                            │
-│  (separate config — no @anthropic-ai/sdk alias, 2min timeout)    │
-└──────────────────┬───────────────────────────────────────────────┘
-                   │
-    ┌──────────────┴──────────────┐
-    │     tests/e2e/setup.ts      │
-    │  • Temp dir for all state   │
-    │  • Env vars before config   │
-    │  • Import e2e mocks         │
-    │  • Wire all domain providers│
-    └──────────────┬──────────────┘
-                   │
-    ┌──────────────┴──────────────┐
-    │    tests/e2e/harness.ts     │
-    │  • sendMessage(text)        │
-    │  • extractShortUrl()        │
-    │  • fetchPageHtml()          │
-    │  • getConversationHistory() │
-    │  • judgeConversation()      │
-    │  • getTurnLogs()            │
-    └──────────┬──────────────────┘
-               │ delegates
-    ┌──────────┴──────────────────┐
-    │    tests/e2e/judge.ts       │    ┌─────────────────────────┐
-    │  • judge(input) → verdict   │────│  Real Anthropic SDK     │
-    │  • fromDatabase() adapter   │    │  (Sonnet for judge)     │
-    └─────────────────────────────┘    └─────────────────────────┘
+### How an E2E Test Works
 
-    ┌─────────────────────────────┐    ┌─────────────────────────┐
-    │  tests/e2e/mocks/twilio.ts  │    │ tests/e2e/mocks/google.ts│
-    │  • Captures outbound SMS    │    │ • Fake OAuth credentials │
-    │  • Real signature validation│    │ • Stub provider functions│
-    └─────────────────────────────┘    └─────────────────────────┘
+Sequence diagram for `harness.sendMessage("Create a grocery list")`:
+
+```mermaid
+sequenceDiagram
+    participant Test as Test File
+    participant H as Harness
+    participant SMS as handleSmsWebhook
+    participant C as Classifier
+    participant P as Planner
+    participant A as Agent (ui-agent)
+    participant Comp as Composer
+    participant Claude as Claude API
+    participant TW as Twilio Mock
+    participant DB as SQLite (temp)
+    participant UI as UI Storage (temp)
+
+    Test->>H: sendMessage("Create a grocery list")
+    H->>H: Build fake webhook payload + Twilio signature
+    H->>SMS: handleSmsWebhook(req, res)
+
+    Note over SMS: Phase 1: Sync classification (<5s)
+    SMS->>C: classifyMessage()
+    C->>Claude: Real LLM call
+    Claude-->>C: {needsAsyncWork: true, immediateResponse: "Working on it!"}
+    SMS->>DB: Store user message
+    SMS-->>H: TwiML response ("Working on it!")
+
+    Note over SMS: Phase 2: Async orchestration (background)
+    SMS->>P: createPlan()
+    P->>Claude: Real LLM call
+    Claude-->>P: {steps: [{agent: "ui-agent", task: "create grocery list"}]}
+
+    P->>A: Execute step → ui-agent
+    A->>Claude: Real LLM call (with generate_ui tool)
+    Claude-->>A: Tool call: generate_ui(html="<grocery list>")
+    A->>UI: Write HTML page to temp dir
+    UI-->>A: Short URL /u/abc123
+
+    A->>Comp: synthesizeResponse()
+    Comp->>Claude: Real LLM call
+    Claude-->>Comp: "Here's your grocery list: .../u/abc123"
+
+    Comp->>DB: Store assistant response
+    Comp->>TW: Send SMS (captured, not actually sent)
+
+    Note over H: Polling loop (every 500ms)
+    H->>TW: getSentMessages()
+    TW-->>H: [{body: "Here's your grocery list: .../u/abc123"}]
+
+    H-->>Test: E2EResponse {syncResponse, asyncResponse, finalResponse}
+
+    Note over Test: Deterministic assertions
+    Test->>H: extractShortUrl(response)
+    H-->>Test: "/u/abc123"
+    Test->>H: fetchPageHtml("/u/abc123")
+    H->>UI: Resolve short URL → read HTML
+    UI-->>H: "<html>...eggs, milk, bread, butter...</html>"
+    H-->>Test: HTML content
+    Test->>Test: expect(html).toContain("eggs") ✓
+
+    Note over Test: Diagnostic (non-blocking)
+    Test->>H: judgeConversation(criteria)
+    H->>Claude: LLM judge call (Sonnet)
+    Claude-->>H: {overall: "PASS", summary: "..."}
+    H-->>Test: JudgeVerdict (logged, not asserted)
+```
+
+### What's Real vs. Mocked
+
+```
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                        REAL (not mocked)                        │
+  │                                                                 │
+  │   Claude API    Orchestrator    Agents    UI generation    DBs   │
+  │   (classifier,  (planner,       (all 6   (HTML pages,    (SQLite │
+  │    agent calls,  replanner,      domain    short URLs)    in temp │
+  │    composer)     executor)       agents)                  dir)    │
+  └─────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                        MOCKED                                   │
+  │                                                                 │
+  │   Twilio outbound          Google APIs (Drive, Calendar, Gmail) │
+  │   (captures sent SMS       (fake OAuth tokens, stub responses   │
+  │    in an array)             at provider level)                   │
+  └─────────────────────────────────────────────────────────────────┘
+```
+
+### Module Structure
+
+```
+vitest.e2e.config.ts ─── Separate config (real Anthropic SDK, 2min timeout)
+       │
+       ▼
+tests/e2e/
+  setup.ts ──────── Temp dirs, env vars, mocks, provider wiring
+  harness.ts ────── E2EHarness class (send messages, extract URLs, fetch pages)
+  judge.ts ──────── LLM judge module (reusable for production diagnosis)
+  mocks/
+    twilio.ts ──── Captures outbound SMS, preserves signature validation
+    google.ts ──── Fake credentials + provider-level API stubs
+  smoke.test.ts ── "Hello" → any response (validates infrastructure)
+  multi-turn/
+    grocery-list.test.ts ── Full multi-turn scenario with assertions
 ```
 
 ### File Layout
