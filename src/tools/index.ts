@@ -17,10 +17,9 @@ import { uploadToDrive, listDriveFiles, createDriveFolder, readDriveFile, search
 import { createSpreadsheetTool, readSpreadsheet, writeSpreadsheet, appendToSpreadsheet, findSpreadsheetTool } from '../domains/drive/runtime/tools.js';
 import { createDocumentTool, readDocument, appendToDocument, findDocumentTool } from '../domains/drive/runtime/tools.js';
 import { analyzeImageTool } from '../domains/drive/runtime/tools.js';
-// Email skill management
+// Email watcher toggle (retained)
 import {
-  createEmailSkill, listEmailSkills, updateEmailSkill,
-  deleteEmailSkill, toggleEmailWatcher, testEmailSkill,
+  toggleEmailWatcher,
 } from '../domains/email-watcher/runtime/tools.js';
 
 /**
@@ -74,13 +73,8 @@ const allTools: ToolDefinition[] = [
   findDocumentTool,
   // Vision
   analyzeImageTool,
-  // Email skill management
-  createEmailSkill,
-  listEmailSkills,
-  updateEmailSkill,
-  deleteEmailSkill,
+  // Email watcher toggle
   toggleEmailWatcher,
-  testEmailSkill,
 ];
 
 /**

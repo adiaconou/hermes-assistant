@@ -23,11 +23,13 @@ import type {
   PlanStep,
   PlanContext,
   AgentRegistry,
+  PlanStepTargetType,
 } from './types.js';
 import { ORCHESTRATOR_LIMITS } from './types.js';
 import { formatAgentsForPrompt } from '../executor/registry.js';
 import { formatHistoryForPrompt } from './conversation-window.js';
 import { formatCurrentMediaContext } from './media-context.js';
+import { getSkillsRegistry } from '../registry/skills.js';
 import type { TraceLogger } from '../utils/trace-logger.js';
 
 /**
@@ -45,6 +47,8 @@ Analyze the user's request and create a plan with sequential steps.
 <available_agents>
 {agents}
 </available_agents>
+
+{skillCatalog}
 
 <user_context>
 {userContext}
@@ -74,6 +78,7 @@ Analyze the user's request and create a plan with sequential steps.
 12. The ui-agent has NO network access - it can only render data provided to it from previous steps or create standalone tools (calculators, forms, timers)
 13. If <current_media> exists, resolve "this/that/it" to current-turn media before conversation history.
 14. Intent priority: explicit user text first, then <current_media>, then history. If the request is media-only or still ambiguous, create one general-agent step that asks a concise clarification question.
+15. Skills vs agents: Prefer a SKILL when the task matches a structured workflow (extraction, checklists, transforms, reports). Prefer an AGENT when the task needs open-ended domain reasoning or complex tool orchestration. If a skill matches the request well, use "targetType": "skill".
 </rules>
 
 <output_format>
@@ -84,11 +89,15 @@ Respond with ONLY a JSON object (no markdown, no explanation):
   "steps": [
     {
       "id": "step_1",
+      "targetType": "agent",
       "agent": "agent-name",
-      "task": "Specific task with resolved dates (e.g., 'List events on 2026-01-30' not 'List events on friday')"
+      "task": "Specific task with resolved dates"
     }
   ]
 }
+
+Each step must include "targetType": either "agent" (for domain agents) or "skill" (for filesystem skills).
+When targetType is "skill", the "agent" field should contain the skill name instead.
 
 For simple requests, return a single step:
 {
@@ -97,6 +106,7 @@ For simple requests, return a single step:
   "steps": [
     {
       "id": "step_1",
+      "targetType": "agent",
       "agent": "calendar-agent",
       "task": "List all calendar events for 2026-01-30 (tomorrow)"
     }
@@ -107,7 +117,7 @@ For simple requests, return a single step:
 type ParsedPlanResponse = {
   analysis: string;
   goal: string;
-  steps: Array<{ id: string; agent: string; task: string }>;
+  steps: Array<{ id: string; targetType?: PlanStepTargetType; agent: string; task: string }>;
 };
 
 function createGeneralFallbackPlan(userMessage: string, reason: string, timezone?: string): ParsedPlanResponse {
@@ -129,6 +139,7 @@ function createGeneralFallbackPlan(userMessage: string, reason: string, timezone
     goal: 'Handle user request',
     steps: [{
       id: 'step_1',
+      targetType: 'agent',
       agent: 'general-agent',
       task: `Handle the user request directly: "${resolvedMessage}"`,
     }],
@@ -156,6 +167,27 @@ function parsePlanResponse(text: string): ParsedPlanResponse | null {
     }));
     return null;
   }
+}
+
+/**
+ * Format the skill catalog for planner context.
+ * Uses compact metadata only — no full SKILL.md bodies.
+ */
+function formatSkillCatalogForPrompt(): string {
+  const skillsRegistry = getSkillsRegistry();
+  const skills = skillsRegistry.list().filter(s => s.enabled);
+
+  if (skills.length === 0) {
+    return '';
+  }
+
+  const entries = skills.map(s => {
+    const hints = s.matchHints.length > 0 ? `\n    Triggers: ${s.matchHints.join(', ')}` : '';
+    const tools = s.tools.length > 0 ? `\n    Tools: ${s.tools.join(', ')}` : '';
+    return `  - ${s.name}: ${s.description}${hints}${tools}`;
+  }).join('\n');
+
+  return `<available_skills>\n${entries}\n</available_skills>`;
 }
 
 /**
@@ -196,10 +228,14 @@ export async function createPlan(
     ? formatCurrentMediaContext(context.currentMediaSummaries)
     : '';
 
+  // Build skill catalog for planner context
+  const skillCatalogBlock = formatSkillCatalogForPrompt();
+
   // Build the prompt
   const prompt = PLANNING_PROMPT
     .replace('{timeContext}', timeContext)
     .replace('{agents}', agentDescriptions)
+    .replace('{skillCatalog}', skillCatalogBlock)
     .replace('{userContext}', userContextText)
     .replace('{history}', historyText)
     .replace('{currentMedia}', currentMediaBlock)
@@ -262,6 +298,7 @@ export async function createPlan(
   // Convert to PlanSteps
   const steps: PlanStep[] = parsed.steps.map((s, i) => ({
     id: s.id || `step_${i + 1}`,
+    targetType: (s.targetType === 'skill' ? 'skill' : 'agent') as PlanStepTargetType,
     agent: s.agent,
     task: s.task,
     status: 'pending' as const,

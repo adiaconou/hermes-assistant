@@ -33,13 +33,21 @@ import type { StepResult, MediaAttachment } from '../executor/types.js';
 export type StepStatus = 'pending' | 'running' | 'completed' | 'failed';
 
 /**
+ * Discriminates whether a step targets an agent or a filesystem skill.
+ */
+export type PlanStepTargetType = 'agent' | 'skill';
+
+/**
  * A single step in the execution plan.
  */
 export interface PlanStep {
   /** Unique identifier (e.g., "step_1") */
   id: string;
 
-  /** Which agent handles this step (e.g., "calendar-agent") */
+  /** Dispatch target type — 'agent' for domain agents, 'skill' for filesystem skills */
+  targetType: PlanStepTargetType;
+
+  /** Target identifier: agent name (e.g., "calendar-agent") or skill name (e.g., "receipt-summarizer") */
   agent: string;
 
   /** Natural language description of the task */

@@ -111,7 +111,7 @@ function formatErrors(errors: Array<{ stepId: string; error: string }>): string 
  */
 function parseReplanResponse(text: string): {
   analysis: string;
-  steps: Array<{ id: string; agent: string; task: string; status?: string }>;
+  steps: Array<{ id: string; targetType?: string; agent: string; task: string; status?: string }>;
 } {
   // Try to extract JSON from markdown code blocks if present
   const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -133,6 +133,7 @@ function parseReplanResponse(text: string): {
       analysis: 'Could not parse replan response, falling back to general agent',
       steps: [{
         id: 'step_fallback',
+        targetType: 'agent',
         agent: 'general-agent',
         task: 'Summarize what was accomplished so far and let the user know if anything failed.',
         status: 'pending',
@@ -259,6 +260,7 @@ export async function replan(
     if (!isDuplicate) {
       newSteps.push({
         id: parsedStep.id || `step_${newSteps.length + 1}_v${priorPlan.version + 1}`,
+        targetType: (parsedStep.targetType === 'skill' ? 'skill' : 'agent') as 'agent' | 'skill',
         agent: parsedStep.agent,
         task: parsedStep.task,
         status: 'pending',

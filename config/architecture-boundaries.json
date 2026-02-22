@@ -77,6 +77,18 @@
         "to": "src/domains/email/",
         "via": "providers/email.ts",
         "reason": "Email-watcher test tool uses listEmails from email domain"
+      },
+      {
+        "from": "src/domains/scheduler/",
+        "to": "src/domains/skills/",
+        "via": "providers/skills.ts",
+        "reason": "Scheduler executor needs skill lookup and execution for scheduled skill jobs"
+      },
+      {
+        "from": "src/domains/email-watcher/",
+        "to": "src/domains/skills/",
+        "via": "providers/skills.ts",
+        "reason": "Email-watcher needs skill matching and execution against filesystem skills"
       }
     ]
   },

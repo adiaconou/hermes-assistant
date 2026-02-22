@@ -20,6 +20,7 @@ import type {
 import { ORCHESTRATOR_LIMITS } from './types.js';
 import type { StepResult, AgentExecutionContext } from '../executor/types.js';
 import { routeToAgent } from '../executor/router.js';
+import { getSkillsRegistry } from '../registry/skills.js';
 import type { TraceLogger } from '../utils/trace-logger.js';
 
 /** Per-step timeout from design constraints (C-5) */
@@ -63,16 +64,81 @@ export async function executeStep(
 ): Promise<StepResult> {
   const startTime = Date.now();
 
+  const targetType = step.targetType || 'agent';
+
   console.log(JSON.stringify({
     level: 'info',
     message: 'Executing step',
     stepId: step.id,
+    targetType,
     agent: step.agent,
     taskPreview: step.task.substring(0, 100),
     timestamp: new Date().toISOString(),
   }));
 
-  // Look up the agent
+  // Build execution context
+  const executionContext: AgentExecutionContext = {
+    phoneNumber: context.phoneNumber,
+    channel: context.channel,
+    userConfig: context.userConfig,
+    userFacts: context.userFacts,
+    previousStepResults: context.stepResults,
+    mediaAttachments: context.mediaAttachments,
+    storedMedia: context.storedMedia,
+    messageId: context.messageId,
+    mediaContext: context.mediaContext,
+    logger,
+  };
+
+  // Skill dispatch path
+  if (targetType === 'skill') {
+    try {
+      const skillsRegistry = getSkillsRegistry();
+      const result = await withTimeout(
+        skillsRegistry.executeByName(step.agent, step.task, executionContext),
+        STEP_TIMEOUT_MS
+      );
+
+      const durationMs = Date.now() - startTime;
+
+      console.log(JSON.stringify({
+        level: 'info',
+        message: 'Skill step completed',
+        stepId: step.id,
+        skill: step.agent,
+        success: result.success,
+        durationMs,
+        timestamp: new Date().toISOString(),
+      }));
+
+      return {
+        success: result.success,
+        output: result.output,
+        error: result.error,
+      };
+    } catch (error) {
+      const durationMs = Date.now() - startTime;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      console.error(JSON.stringify({
+        level: 'error',
+        message: 'Skill step execution failed',
+        stepId: step.id,
+        skill: step.agent,
+        error: errorMessage,
+        durationMs,
+        timestamp: new Date().toISOString(),
+      }));
+
+      return {
+        success: false,
+        output: null,
+        error: errorMessage,
+      };
+    }
+  }
+
+  // Agent dispatch path
   const agent = registry.getAgent(step.agent);
   if (!agent) {
     console.error(JSON.stringify({
@@ -89,20 +155,6 @@ export async function executeStep(
       error: `Unknown agent: ${step.agent}`,
     };
   }
-
-  // Build execution context
-  const executionContext: AgentExecutionContext = {
-    phoneNumber: context.phoneNumber,
-    channel: context.channel,
-    userConfig: context.userConfig,
-    userFacts: context.userFacts,
-    previousStepResults: context.stepResults,
-    mediaAttachments: context.mediaAttachments,
-    storedMedia: context.storedMedia,
-    messageId: context.messageId,
-    mediaContext: context.mediaContext,
-    logger,
-  };
 
   try {
     // Route to the appropriate agent with timeout

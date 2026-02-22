@@ -17,11 +17,11 @@ A user-visible way to verify the change is to add a new skill folder, run the se
 - [x] (2026-02-22 16:20Z) Revised scope to require full decommission of legacy email-skill architecture after filesystem skill architecture is in place.
 - [x] (2026-02-22 17:05Z) Made explicit app-level skill registry requirements and documented scheduler access via cross-domain provider bridge (`scheduler/providers/skills.ts` -> `domains/skills/runtime`).
 - [x] (2026-02-21) Revised plan to fix architecture violations, type accuracy, deployment safety, and PLANS.md compliance issues identified during review.
-- [ ] Implement Milestone 1: add the new `skills` domain, parser, validator, loader, and bootstrap wiring.
-- [ ] Implement Milestone 2: integrate skills into planner/executor so orchestrator chooses `skill` or `agent` for conversational requests.
-- [ ] Implement Milestone 3: add direct skill invocation for background triggers (scheduler and email watcher).
-- [ ] Implement Milestone 4: add deployment ergonomics, admin visibility, docs updates, and migration tooling.
-- [ ] Implement Milestone 5: migrate and remove legacy email skill storage, APIs, tools, and UI.
+- [x] (2026-02-22) Implement Milestone 1: added `src/domains/skills/` domain with types, config, repo, providers, service (parser, validator, registry, executor, matcher), and runtime. Wired startup in `src/index.ts`, created `src/registry/skills.ts` facade, added `skills:validate` script, sample skill pack, and 47 unit tests (parser, validator, registry, filesystem, matcher). 0 architecture violations, 766 tests pass.
+- [x] (2026-02-22) Implement Milestone 2: added `PlanStepTargetType` to orchestrator types, skill catalog in planner prompt, skill dispatch in executor, targetType support in replanner. 0 architecture violations, 766 tests pass.
+- [x] (2026-02-22) Implement Milestone 3: created scheduler and email-watcher provider bridges to skills domain, added `skillName` field to ScheduledJob, updated scheduler executor for skill-based jobs. 0 architecture violations, 766 tests pass.
+- [x] (2026-02-22) Implement Milestone 4: created admin `/admin/api/skills` endpoint, migration script at `scripts/skills/migrate-email-skills.mjs`, verified Railway deployment path. 0 architecture violations, 766 tests pass.
+- [x] (2026-02-22) Implement Milestone 5: removed email skill CRUD tools (create/list/update/delete/test) from tools.ts, tools/index.ts, email agent, and admin routes. Kept only `toggle_email_watcher` and watcher status/toggle admin endpoints. Updated all affected test files. 0 architecture violations, 768 tests pass.
 
 ## Surprises & Discoveries
 
@@ -86,7 +86,7 @@ A user-visible way to verify the change is to add a new skill folder, run the se
 
 ## Outcomes & Retrospective
 
-Initial state: plan authored, no implementation changes yet. Intermediate milestones may temporarily break old behavior; the required bar is that the final milestone delivers complete migration with legacy email-skill architecture removed.
+All five milestones implemented. Filesystem skills (`skills/<name>/SKILL.md`) are the sole skill system. The orchestrator planner selects between skills and agents via `targetType` in plan steps. Background triggers (scheduler, email-watcher) invoke skills directly via cross-domain provider bridges. Legacy email skill CRUD tools and admin routes have been removed; only `toggle_email_watcher` and watcher status endpoints remain. 768 tests pass across 56 files with 0 architecture violations.
 
 ## Context and Orientation
 

@@ -8,6 +8,7 @@
 import { Cron } from 'croner';
 import type Database from 'better-sqlite3';
 import { getExecuteWithTools } from '../providers/executor.js';
+import { findFilesystemSkill, executeFilesystemSkillByName } from '../providers/skills.js';
 import { sendScheduledMessage } from '../providers/sms.js';
 import { getUserConfigStore } from '../../../services/user-config/index.js';
 import { getMemoryStore } from '../providers/memory.js';
@@ -52,6 +53,49 @@ export async function executeJob(
     const userConfig = await userConfigStore.get(job.phoneNumber);
     const memoryStore = getMemoryStore();
     const userFacts = await memoryStore.getFacts(job.phoneNumber);
+
+    // Skill-based execution path
+    if (job.skillName) {
+      const skill = findFilesystemSkill(job.skillName);
+      if (!skill) {
+        console.warn(JSON.stringify({
+          event: 'scheduled_skill_not_found',
+          jobId: job.id,
+          skillName: job.skillName,
+          timestamp: new Date().toISOString(),
+        }));
+        return { success: false, error: new Error(`Skill not found: ${job.skillName}`) };
+      }
+
+      const skillResult = await executeFilesystemSkillByName(
+        job.skillName,
+        job.prompt,
+        {
+          phoneNumber: job.phoneNumber,
+          channel: job.channel,
+          userConfig,
+          userFacts,
+          previousStepResults: {},
+        }
+      );
+
+      const response = skillResult.success
+        ? skillResult.output ?? 'Done.'
+        : `I hit an error running your scheduled skill: ${skillResult.error ?? 'unknown error'}`;
+
+      await sendScheduledMessage(job.phoneNumber, job.channel, response);
+
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      if (job.isRecurring) {
+        const nextRunAt = calculateNextRun(job.cronExpression, job.timezone);
+        await updateJob(db, job.id, { nextRunAt, lastRunAt: nowSeconds });
+        logJobSuccess(job, Date.now() - startTime, nextRunAt);
+      } else {
+        deleteJob(db, job.id);
+        logOneTimeComplete(job, Date.now() - startTime);
+      }
+      return { success: true };
+    }
 
     // Build time context for the prompt
     const now = new Date();

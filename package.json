@@ -19,7 +19,8 @@
     "sms": "npx tsx scripts/send-sms.ts",
     "lint:architecture": "node scripts/check-layer-deps.mjs --strict",
     "lint:agents": "node scripts/check-agent-registry.mjs",
-    "docs:agents": "node scripts/generate-agent-catalog.mjs"
+    "docs:agents": "node scripts/generate-agent-catalog.mjs",
+    "skills:validate": "node scripts/skills/validate.mjs"
   },
   "keywords": [
     "assistant",
@@ -47,6 +48,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
     "@google/generative-ai": "^0.21.0",
+    "@rollup/rollup-linux-x64-gnu": "^4.58.0",
     "@types/luxon": "^3.4.2",
     "better-sqlite3": "^12.6.2",
     "chrono-node": "^2.9.0",
@@ -55,6 +57,7 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.0",
     "googleapis": "^170.1.0",
+    "gray-matter": "^4.0.3",
     "https-proxy-agent": "^5.0.1",
     "luxon": "^3.5.0",
     "personal-assistant": "file:",

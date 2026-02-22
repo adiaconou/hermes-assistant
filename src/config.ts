@@ -149,6 +149,14 @@ const config = {
   redis: {
     url: process.env.REDIS_URL,
   },
+
+  /** Filesystem skills configuration */
+  skills: {
+    enabled: optionalBool('SKILLS_ENABLED', false),
+    bundledDir: optional('SKILLS_BUNDLED_DIR', process.env.NODE_ENV === 'production' ? '/app/skills' : './skills'),
+    importedDir: optional('SKILLS_IMPORTED_DIR', process.env.NODE_ENV === 'production' ? '/app/data/skills/imported' : './data/skills/imported'),
+    confidenceThreshold: optionalFloat('SKILLS_CONFIDENCE_THRESHOLD', 0.6),
+  },
 };
 
 /**

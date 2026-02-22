@@ -1,7 +1,6 @@
 import type { DomainCapability } from '../../types/domain.js';
 
 export const capability: DomainCapability = {
-  domain: 'email-watcher',
-  exposure: 'tool-only',
-  tools: ['toggle_email_watcher'],
+  domain: 'skills',
+  exposure: 'internal',
 };

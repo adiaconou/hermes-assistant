@@ -25,6 +25,7 @@ export interface ScheduledJob {
   lastRunAt?: number; // Unix timestamp (seconds)
   enabled: boolean;
   isRecurring: boolean; // true for cron jobs, false for one-time reminders
+  skillName?: string; // Filesystem skill to invoke instead of LLM prompt (optional)
   createdAt: number; // Unix timestamp (seconds)
   updatedAt: number; // Unix timestamp (seconds)
 }

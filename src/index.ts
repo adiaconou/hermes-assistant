@@ -30,6 +30,8 @@ import { setMemoryExecuteWithTools } from './domains/memory/providers/executor.j
 import { setEmailExecuteWithTools } from './domains/email/providers/executor.js';
 import { setDriveExecuteWithTools } from './domains/drive/providers/executor.js';
 import { setUiExecuteWithTools } from './domains/ui/providers/executor.js';
+import { setSkillsExecuteWithTools } from './domains/skills/providers/executor.js';
+import { initFilesystemSkills } from './domains/skills/runtime/index.js';
 import { executeWithTools } from './executor/tool-executor.js';
 import { closeConversationStore } from './services/conversation/index.js';
 import { startMemoryProcessor, stopMemoryProcessor } from './domains/memory/service/processor.js';
@@ -72,6 +74,10 @@ setMemoryExecuteWithTools(executeWithTools);
 setEmailExecuteWithTools(executeWithTools);
 setDriveExecuteWithTools(executeWithTools);
 setUiExecuteWithTools(executeWithTools);
+setSkillsExecuteWithTools(executeWithTools);
+
+// Initialize filesystem skills registry
+initFilesystemSkills();
 
 // Initialize scheduler (creates tables, sets up poller)
 const poller = initScheduler(db, undefined, READ_ONLY_TOOLS.map(t => t.name));
