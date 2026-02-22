@@ -6,22 +6,24 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-vi.mock('../../../src/services/google/calendar.js', () => {
-  class AuthRequiredError extends Error {}
-
+vi.mock('../../../src/domains/calendar/providers/google-calendar.js', () => {
   return {
     listEvents: vi.fn(async () => []),
     createEvent: vi.fn(),
     updateEvent: vi.fn(),
     deleteEvent: vi.fn(),
     getEvent: vi.fn(),
-    AuthRequiredError,
   };
 });
 
-import { getCalendarEvents } from '../../../src/tools/calendar.js';
+vi.mock('../../../src/providers/auth.js', () => {
+  class AuthRequiredError extends Error {}
+  return { AuthRequiredError };
+});
+
+import { getCalendarEvents } from '../../../src/domains/calendar/runtime/tools.js';
 import type { ToolContext } from '../../../src/tools/types.js';
-import { listEvents } from '../../../src/services/google/calendar.js';
+import { listEvents } from '../../../src/domains/calendar/providers/google-calendar.js';
 
 describe('getCalendarEvents', () => {
   const baseContext: ToolContext = {

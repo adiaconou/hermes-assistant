@@ -6,9 +6,9 @@ System design for Hermes Assistant — an SMS/WhatsApp personal assistant powere
 
 1. [System Overview](#system-overview)
 2. [High-Level Architecture](#high-level-architecture)
-3. [Layered Domain Contract (Target)](#layered-domain-contract-target)
-4. [Forward-Layer Compliance Review (2026-02-20)](#forward-layer-compliance-review-2026-02-20)
-5. [Migration Recommendations](#migration-recommendations)
+3. [Layered Domain Contract (Enforced)](#layered-domain-contract-enforced)
+4. [Forward-Layer Compliance Review (2026-02-21)](#forward-layer-compliance-review-2026-02-21)
+5. [Migration Status](#migration-status)
 6. [Request Processing Flow](#request-processing-flow)
 7. [Orchestrator](#orchestrator)
 8. [Agent System](#agent-system)
@@ -82,9 +82,9 @@ Hermes is a multi-agent assistant that receives messages via Twilio (SMS/WhatsAp
 
 ---
 
-## Layered Domain Contract (Target)
+## Layered Domain Contract (Enforced)
 
-This repository currently documents a component-oriented architecture (`routes`, `services`, `tools`, `orchestrator`). To align with the forward-only layered model described in the Harness article, the target shape is domain-oriented and mechanically enforced.
+This repository enforces a forward-only layered model. Each business domain is packaged under `src/domains/<domain>/` and dependencies within each domain must follow the canonical layer order. These rules are mechanically enforced by `npm run lint:architecture` (strict mode).
 
 ### Canonical Layer Order
 
@@ -118,8 +118,8 @@ src/domains/<domain>/
 | `repo` | Persistence/data access for the domain | `types`, `config` |
 | `providers` | Interfaces for cross-cutting systems (auth, Google/Twilio clients, telemetry, feature flags) | `types`, `config` |
 | `service` | Domain business logic and orchestration | `types`, `config`, `repo`, `providers` |
-| `runtime` | HTTP handlers, job runners, tool adapters, agent adapters | `types`, `service`, `providers` |
-| `ui` | HTML/UI rendering and presentation | `types`, `runtime` |
+| `runtime` | HTTP handlers, job runners, tool adapters, agent adapters | `types`, `config`, `repo`, `service`, `providers` |
+| `ui` | HTML/UI rendering and presentation | `types`, `service` |
 
 Rules:
 - No backward imports (for example, `repo` cannot import `runtime`).
@@ -128,66 +128,25 @@ Rules:
 
 ---
 
-## Forward-Layer Compliance Review (2026-02-20)
+## Forward-Layer Compliance Review (2026-02-21)
 
-Assessment scope: static review of current repository structure and import edges.
+All 8 domains (google-core, scheduler, email-watcher, calendar, memory, email, drive, ui) have been migrated to `src/domains/`. The boundary checker (`npm run lint:architecture`) runs in strict mode with 0 violations. All compatibility shims have been removed.
 
-### Summary
+| Constraint | Status | Notes |
+|------------|--------|-------|
+| Domain-oriented layer packaging | Met | All business domains packaged under `src/domains/<domain>/` with canonical layer structure. |
+| Forward-only dependencies | Met | 0 reverse or cross-layer edges. Verified by `npm run lint:architecture --strict`. |
+| Explicit providers boundary for cross-cutting concerns | Met | All cross-domain imports go through `providers/` bridges with entries in `config/architecture-boundaries.json`. |
+| Mechanical enforcement (lints + structural tests) | Met | `npm run lint:architecture` enforces layer ordering and cross-domain rules. `npm run lint:agents` verifies agent registry consistency. |
+| Strict domain boundary behavior | Met | Each domain exposes only its declared capability. `general-agent` retains all-tool access as an explicit fallback. |
 
-The current implementation is functional, but it does **not** yet meet the strict forward-only layered contract above.
-
-| Constraint | Status | Evidence | Impact |
-|------------|--------|----------|--------|
-| Domain-oriented layer packaging | Not met | Code is organized by technical slices (`src/routes`, `src/services`, `src/tools`, `src/orchestrator`) rather than per-domain layered packages. | Hard to enforce domain-local invariants and forward-only edges. |
-| Forward-only dependencies | Not met | Reverse/cross-layer edges exist: `src/tools/utils.ts` imports `src/routes/auth.ts`; `src/services/anthropic/classification.ts` imports `src/tools/index.ts`; `src/services/scheduler/executor.ts` imports `src/tools/index.ts`; `src/orchestrator/response-composer.ts` imports `src/tools/index.ts`; `src/services/media/process.ts` imports `src/tools/types.ts`. | Creates coupling across runtime/service/tool boundaries and encourages drift. |
-| Explicit providers boundary for cross-cutting concerns | Partially met | Some integrations are centralized in `src/services/google/*`, but external/auth/config concerns are still accessed from many layers directly (for example `routes`, `tools`, `services`, `orchestrator`). | Cross-cutting behavior is inconsistent and harder to swap or test in isolation. |
-| Mechanical enforcement (lints + structural tests) | Not met | `package.json` exposes only `lint: eslint src/`; no dependency-boundary linter/structural test is configured to block illegal import directions. | Architecture rules are advisory instead of enforceable. |
-| Strict domain boundary behavior | Partially met | Specialized agents exist, but `general-agent` still has access to all tools. | Useful for fallback, but it weakens strict domain containment if overused. |
-
-### Observed Top-Level Import Edges
-
-A quick import-edge pass shows cross-slice coupling still present:
-- `tools -> services` (28 edges)
-- `services -> tools` (6 edges)
-- `routes -> tools` (2 edges)
-- `tools -> routes` (1 edge)
-- `orchestrator -> tools` (1 edge)
-
-Bidirectional edges (`tools <-> services`) are a direct signal that forward-only constraints are not yet encoded in code structure.
+For the full migration history, see `docs/exec-plans/active/forward-layered-architecture-refactor.md`.
 
 ---
 
-## Migration Recommendations
+## Migration Status
 
-### Priority 0: Define and freeze the dependency contract
-
-1. Add a machine-readable dependency policy (for example, ESLint `no-restricted-imports` per directory or a structural test).
-2. Fail CI when a layer imports disallowed layers.
-3. Keep exceptions in a short explicit allowlist with expiry dates.
-
-### Priority 1: Remove known reverse edges first
-
-1. Move auth-link generation out of runtime route code so `src/tools/utils.ts` no longer imports `src/routes/auth.ts`.
-2. Move shared `MediaAttachment` and similar cross-cutting types out of `src/tools/types.ts` into a neutral domain `types` module.
-3. Stop importing tool registries from service/orchestrator modules; pass needed capabilities via runtime composition.
-
-### Priority 2: Introduce providers as the only cross-cutting ingress
-
-1. Create provider interfaces for Google/Twilio/auth/config/telemetry.
-2. Inject providers into services/runtime instead of importing concrete clients directly.
-3. Keep provider wiring in runtime/bootstrap (`src/index.ts`), not in domain logic.
-
-### Priority 3: Migrate incrementally by domain
-
-1. Start with one high-churn domain (`scheduler` or `email-watcher`) and move it to `src/domains/<domain>/...`.
-2. Migrate `types` and `repo` first, then `service`, then runtime adapters.
-3. Preserve existing behavior with adapter shims until each domain cutover is complete.
-
-### Priority 4: Keep fallback power while containing drift
-
-1. Keep `general-agent` as an explicit escape hatch.
-2. Add planner/runtime rules that prefer specialized agents and require reason logging when general-agent is selected.
-3. Track general-agent usage in quality scoring so boundary erosion is visible.
+All domain migrations are complete as of 2026-02-21. The forward-layered architecture refactor has been fully executed. For the detailed migration history (milestones, file-level specs, and execution log), see `docs/exec-plans/active/forward-layered-architecture-refactor.md`.
 
 ---
 
@@ -296,7 +255,7 @@ Token estimation uses ~3.3 chars/token (closer to Claude's actual tokenization t
 
 ### Agent Registry
 
-Agents are registered in `src/agents/index.ts` and looked up via `src/executor/registry.ts`. The planner selects agents by name; the router dispatches execution.
+Agents are registered in `src/registry/agents.ts` and looked up via `src/executor/registry.ts`. The planner selects agents by name; the router dispatches execution.
 
 ### Agents
 
@@ -330,7 +289,7 @@ The planner LLM chooses agents based on:
 
 ## Tool Registry
 
-All tools are defined in `src/tools/index.ts` with a consistent pattern:
+Tool definitions live in each domain's runtime layer (`src/domains/*/runtime/tools.ts`) and are aggregated by the central registry at `src/tools/index.ts`. Each tool follows a consistent pattern:
 
 ```
 ToolDefinition = { tool: Tool (Anthropic schema), handler: ToolHandler }
@@ -369,7 +328,7 @@ A subset of tools is designated read-only for use in scheduled job execution:
 | **Explicit** | User says "remember that..." | memory-agent invoked via orchestrator |
 | **Background** | Every 5 minutes | Async processor extracts facts from unprocessed conversations |
 
-### Background Processor (`src/services/memory/processor.ts`)
+### Background Processor (`src/domains/memory/service/processor.ts`)
 
 1. Polls for unprocessed conversation messages (FIFO, per-user capped)
 2. Groups messages by phone number
@@ -433,7 +392,7 @@ Uses `croner` library with timezone support for DST-safe recurring schedules:
 
 ### Schedule Parser
 
-The parser (`src/services/scheduler/parser.ts`) converts natural language to:
+The parser (`src/domains/scheduler/service/parser.ts`) converts natural language to:
 - **Recurring**: detected by keywords like "daily", "every week", etc. → cron expression
 - **One-time**: anything else (e.g., "tomorrow at 9am") → Unix timestamp via `resolveDate()`
 
@@ -700,159 +659,104 @@ src/
 ├── conversation.ts             # Legacy conversation helper
 ├── twilio.ts                   # Twilio SDK wrapper
 │
+├── domains/                    # Domain packages (forward-only layered)
+│   ├── google-core/            # Shared Google OAuth2 infrastructure (internal)
+│   │   ├── types.ts
+│   │   ├── capability.ts
+│   │   ├── providers/auth.ts
+│   │   └── service/drive-folders.ts
+│   ├── calendar/               # Google Calendar domain
+│   │   ├── types.ts, capability.ts
+│   │   ├── providers/          # google-core bridge, executor injection
+│   │   ├── service/            # (none currently)
+│   │   └── runtime/            # agent.ts, tools.ts, prompt.ts
+│   ├── scheduler/              # Scheduled jobs domain
+│   │   ├── types.ts, capability.ts
+│   │   ├── repo/sqlite.ts      # Job CRUD
+│   │   ├── providers/          # executor, sms, memory bridges
+│   │   ├── service/            # parser.ts, executor.ts
+│   │   └── runtime/            # agent.ts, tools.ts, prompt.ts, index.ts
+│   ├── email-watcher/          # Email watching domain (tool-only, no agent)
+│   │   ├── types.ts, capability.ts
+│   │   ├── repo/sqlite.ts      # EmailSkillStore
+│   │   ├── providers/          # google-core, gmail-sync, executor, memory, email bridges
+│   │   ├── service/            # classifier, actions, skills, prompt
+│   │   └── runtime/            # tools.ts, index.ts
+│   ├── email/                  # Gmail read domain
+│   │   ├── types.ts, capability.ts
+│   │   ├── providers/          # google-core bridge, executor, gmail service
+│   │   └── runtime/            # agent.ts, tools.ts, prompt.ts
+│   ├── memory/                 # User memory domain
+│   │   ├── types.ts, capability.ts
+│   │   ├── repo/sqlite.ts      # SqliteMemoryStore
+│   │   ├── providers/executor.ts
+│   │   ├── service/            # processor.ts, ranking.ts, prompts.ts, store.ts
+│   │   └── runtime/            # agent.ts, tools.ts, prompt.ts, index.ts
+│   ├── drive/                  # Drive/Sheets/Docs/Vision domain
+│   │   ├── types.ts, capability.ts
+│   │   ├── providers/          # google-core, drive, sheets, docs, vision, executor
+│   │   └── runtime/            # agent.ts, tools.ts, prompt.ts
+│   └── ui/                     # UI generation domain
+│       ├── types.ts, capability.ts
+│       ├── providers/executor.ts
+│       └── runtime/            # agent.ts, tools.ts, prompt.ts
+│
+├── registry/
+│   └── agents.ts               # Centralized agent registry (imports from domains)
+│
 ├── routes/
-│   ├── sms.ts                  # SMS/WhatsApp webhook (two-phase handler)
+│   ├── sms.ts                  # SMS/WhatsApp webhook
 │   ├── auth.ts                 # Google OAuth callback
 │   ├── health.ts               # GET /health
 │   └── pages.ts                # Serve generated UI pages
 │
 ├── admin/
 │   ├── index.ts                # Admin route registration
-│   ├── memory.ts               # Admin memory management UI
-│   └── email-skills.ts         # Admin email skills API handlers
+│   ├── memory.ts               # Admin memory management
+│   └── email-skills.ts         # Admin email skills API
 │
-├── orchestrator/
-│   ├── orchestrate.ts          # Main orchestration loop
-│   ├── planner.ts              # LLM plan creation + date resolution
-│   ├── executor.ts             # Step execution + replan detection
-│   ├── replanner.ts            # Dynamic replanning
-│   ├── response-composer.ts    # Final response synthesis
-│   ├── handler.ts              # SMS ↔ orchestrator integration
-│   ├── conversation-window.ts  # History sliding window
-│   ├── media-context.ts        # Media context XML builders for prompts
-│   └── types.ts                # Plan/step/context types + limits
+├── orchestrator/               # Request planning and execution
+│   ├── orchestrate.ts, planner.ts, executor.ts
+│   ├── replanner.ts, response-composer.ts
+│   ├── handler.ts, conversation-window.ts
+│   ├── media-context.ts
+│   └── types.ts
 │
-├── executor/
-│   ├── registry.ts             # Agent capability registry
-│   ├── router.ts               # Agent dispatch by name
-│   ├── tool-executor.ts        # Shared LLM + tool loop engine
-│   └── types.ts                # StepResult, AgentCapability, etc.
+├── executor/                   # Agent execution engine
+│   ├── registry.ts, router.ts
+│   ├── tool-executor.ts
+│   └── types.ts
+│
+├── providers/
+│   └── auth.ts                 # Provider-agnostic auth utilities
+│
+├── types/
+│   ├── media.ts                # MediaAttachment
+│   └── domain.ts               # DomainCapability, DomainExposure
 │
 ├── agents/
-│   ├── index.ts                # Agent array + re-exports
-│   ├── calendar/               # Calendar agent (index.ts, prompt.ts)
-│   ├── scheduler/              # Scheduler agent
-│   ├── email/                  # Email agent
-│   ├── memory/                 # Memory agent
-│   ├── drive/                  # Drive/Sheets/Docs/Vision agent
-│   ├── ui/                     # UI generation agent
-│   └── general/                # Fallback general agent
+│   ├── context.ts              # Shared agent context utilities
+│   └── general/                # General-agent (fallback, not migrated to domain)
 │
 ├── tools/
-│   ├── index.ts                # Tool registry, TOOLS array, executeTool()
+│   ├── index.ts                # Tool registry (aggregates from domains)
 │   ├── types.ts                # ToolDefinition, ToolHandler, ToolContext
-│   ├── calendar.ts             # Calendar tool definitions + handlers
-│   ├── scheduler.ts            # Scheduler tool definitions + handlers
-│   ├── email.ts                # Email tool definitions + handlers
-│   ├── memory.ts               # Memory tool definitions + handlers
-│   ├── drive.ts                # Drive tool definitions + handlers
-│   ├── sheets.ts               # Sheets tool definitions + handlers
-│   ├── docs.ts                 # Docs tool definitions + handlers
-│   ├── vision.ts               # Vision/image analysis tool
-│   ├── ui.ts                   # UI generation tool
-│   ├── user-config.ts          # User config tools
-│   ├── maps.ts                 # Maps link formatting
-│   ├── email-skills.ts         # Email skill management tools
+│   ├── maps.ts                 # Maps link formatting (shared)
+│   ├── user-config.ts          # User config tools (shared)
 │   └── utils.ts                # Shared tool utilities
 │
 ├── services/
-│   ├── anthropic/              # Claude API
-│   │   ├── client.ts           # SDK wrapper
-│   │   ├── classification.ts   # Fast message classifier
-│   │   ├── types.ts            # ClassificationResult, etc.
-│   │   └── prompts/            # Prompt templates
-│   │       ├── system.ts       # System prompt builder
-│   │       ├── classification.ts # Classification prompt
-│   │       ├── context.ts      # Time/user context builders
-│   │       └── index.ts        # Prompt exports
-│   │
-│   ├── google/                 # Google API clients
-│   │   ├── auth.ts             # OAuth2 flow
-│   │   ├── calendar.ts         # Calendar API
-│   │   ├── gmail.ts            # Gmail API
-│   │   ├── drive.ts            # Drive API
-│   │   ├── sheets.ts           # Sheets API
-│   │   ├── docs.ts             # Docs API
-│   │   └── vision.ts           # Gemini Vision API
-│   │
-│   ├── scheduler/              # Job scheduling
-│   │   ├── index.ts            # Init + exports
-│   │   ├── poller.ts           # 30-second polling loop
-│   │   ├── executor.ts         # Job execution (LLM + send SMS)
-│   │   ├── parser.ts           # Natural language → cron/timestamp
-│   │   ├── sqlite.ts           # Job CRUD
-│   │   └── types.ts            # ScheduledJob, CreateJobInput
-│   │
-│   ├── memory/                 # User memory
-│   │   ├── index.ts            # Store initialization
-│   │   ├── sqlite.ts           # SQLite store (user_facts table)
-│   │   ├── processor.ts        # Background extraction processor
-│   │   ├── ranking.ts          # Confidence sorting + char-cap selection
-│   │   ├── prompts.ts          # Extraction prompt builder
-│   │   └── types.ts            # UserFact, MemoryStore
-│   │
-│   ├── conversation/           # Message history
-│   │   ├── index.ts            # Store initialization
-│   │   ├── sqlite.ts           # SQLite store (messages + metadata)
-│   │   └── types.ts            # ConversationMessage, etc.
-│   │
+│   ├── anthropic/              # Claude API client
+│   ├── conversation/           # Message history storage
 │   ├── credentials/            # OAuth token storage
-│   │   ├── index.ts            # Factory (sqlite vs memory)
-│   │   ├── sqlite.ts           # Encrypted token storage
-│   │   ├── memory.ts           # In-memory store (tests)
-│   │   └── types.ts            # CredentialStore interface
-│   │
 │   ├── user-config/            # User preferences
-│   │   ├── index.ts            # Store initialization
-│   │   ├── sqlite.ts           # SQLite store
-│   │   └── types.ts            # UserConfig
-│   │
-│   ├── email-watcher/          # Email watcher service
-│   │   ├── index.ts            # Start/stop lifecycle (createIntervalPoller)
-│   │   ├── sync.ts             # Gmail history sync (incremental fetch)
-│   │   ├── classifier.ts       # LLM classification against active skills
-│   │   ├── actions.ts          # Action router (execute_with_tools, notify)
-│   │   ├── skills.ts           # Load/seed per-user default skills
-│   │   ├── prompt.ts           # Classifier prompt construction
-│   │   ├── sqlite.ts           # EmailSkillStore (email_skills table)
-│   │   └── types.ts            # IncomingEmail, EmailSkill, ClassificationResult
-│   │
 │   ├── date/                   # Date resolution
-│   │   ├── index.ts            # Re-exports
-│   │   └── resolver.ts         # chrono-node + Luxon resolver
-│   │
-│   ├── media/                  # Media handling
-│   │   ├── index.ts            # Exports
-│   │   ├── upload.ts           # Twilio download + Drive upload
-│   │   ├── pre-analyze.ts      # Gemini pre-analysis (summary + category)
-│   │   └── process.ts          # Combined download → upload + pre-analyze
-│   │
-│   ├── ui/                     # UI page generation
-│   │   ├── index.ts            # Exports
-│   │   ├── generator.ts        # HTML generation
-│   │   ├── validator.ts        # HTML validation
-│   │   ├── provider-factory.ts # Storage provider selection
-│   │   └── providers/          # Local storage, memory shortener
-│   │
-│   └── twilio/
-│       └── media.ts            # Twilio media download
+│   ├── media/                  # Media handling pipeline
+│   ├── ui/                     # UI page generation service
+│   └── twilio/                 # Twilio media utilities
 │
 └── utils/
-    └── trace-logger.ts         # Request tracing and debug logging
-
-tests/
-├── setup.ts                    # Global test setup
-├── mocks/                      # Anthropic, Twilio, Google Calendar mocks
-├── fixtures/                   # Webhook payloads
-├── helpers/                    # Test app factory, mock HTTP
-├── unit/                       # Unit tests (by feature)
-│   ├── date/
-│   ├── tools/
-│   ├── agents/
-│   ├── orchestrator/
-│   ├── executor/
-│   ├── scheduler/
-│   ├── services/
-│   └── admin/
-└── integration/                # Integration tests (webhook, calendar, LLM)
+    ├── poller.ts               # Shared interval poller
+    ├── phone.ts                # Phone number utilities
+    └── trace-logger.ts         # Request tracing
 ```

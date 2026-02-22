@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { SqliteMemoryStore } from '../../src/services/memory/sqlite.js';
+import { SqliteMemoryStore } from '../../src/domains/memory/repo/sqlite.js';
 import fs from 'fs';
 import path from 'path';
 

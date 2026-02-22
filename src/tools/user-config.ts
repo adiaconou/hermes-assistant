@@ -4,7 +4,7 @@
 
 import type { ToolDefinition } from './types.js';
 import { getUserConfigStore } from '../services/user-config/index.js';
-import { getMemoryStore } from '../services/memory/index.js';
+import { getMemoryStore } from '../domains/memory/runtime/index.js';
 import { getConversationStore } from '../services/conversation/index.js';
 import { isValidTimezone } from '../services/date/resolver.js';
 import { requirePhoneNumber } from './utils.js';

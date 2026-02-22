@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { UI_AGENT_PROMPT } from '../../../../src/agents/ui/prompts.js';
+import { UI_AGENT_PROMPT } from '../../../../src/domains/ui/runtime/prompt.js';
 
 describe('UI_AGENT_PROMPT', () => {
   describe('content requirements', () => {

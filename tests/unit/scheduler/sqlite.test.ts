@@ -14,7 +14,7 @@ import {
   getDueJobs,
   updateJob,
   deleteJob,
-} from '../../../src/services/scheduler/sqlite.js';
+} from '../../../src/domains/scheduler/repo/sqlite.js';
 
 const TEST_DB_PATH = './data/test-scheduler.db';
 

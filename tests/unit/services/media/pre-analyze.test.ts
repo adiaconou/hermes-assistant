@@ -8,7 +8,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock the vision service
-vi.mock('../../../../src/services/google/vision.js', () => ({
+vi.mock('../../../../src/domains/drive/providers/gemini-vision.js', () => ({
   analyzeImage: vi.fn(),
   isAnalyzableImage: vi.fn((ct: string) => ct.startsWith('image/')),
   GeminiNotConfiguredError: class GeminiNotConfiguredError extends Error {
@@ -34,7 +34,7 @@ vi.mock('../../../../src/config.js', () => ({
 }));
 
 import { preAnalyzeMedia, type ImageBufferEntry } from '../../../../src/services/media/pre-analyze.js';
-import { analyzeImage } from '../../../../src/services/google/vision.js';
+import { analyzeImage } from '../../../../src/domains/drive/providers/gemini-vision.js';
 
 const mockAnalyzeImage = vi.mocked(analyzeImage);
 

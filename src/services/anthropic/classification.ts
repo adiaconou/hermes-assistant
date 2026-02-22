@@ -6,15 +6,14 @@
  * classifyMessage used by the SMS router.
  */
 
-import type { TextBlock, MessageParam } from '@anthropic-ai/sdk/resources/messages';
+import type { TextBlock, MessageParam, Tool } from '@anthropic-ai/sdk/resources/messages';
 import type { Message } from '../../conversation.js';
 import type { UserConfig } from '../user-config/index.js';
-import type { UserFact } from '../memory/types.js';
+import type { UserFact } from '../../domains/memory/types.js';
 
 import config from '../../config.js';
 import { getClient } from './client.js';
 import { buildClassificationPrompt } from './prompts/index.js';
-import { TOOLS } from '../../tools/index.js';
 
 export type { ClassificationResult } from './types.js';
 
@@ -27,6 +26,7 @@ export type { ClassificationResult } from './types.js';
  * - Only looks at recent history (last 4 messages)
  */
 export async function classifyMessage(
+  tools: Tool[],
   userMessage: string,
   conversationHistory: Message[],
   userConfig?: UserConfig | null,
@@ -44,7 +44,7 @@ export async function classifyMessage(
   const response = await anthropic.messages.create({
     model: config.models.classifier,
     max_tokens: 512,
-    system: buildClassificationPrompt(TOOLS, userConfig ?? null, userFacts),
+    system: buildClassificationPrompt(tools, userConfig ?? null, userFacts),
     messages,
   });
 

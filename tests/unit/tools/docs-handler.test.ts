@@ -1,15 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-vi.mock('../../../src/services/google/docs.js', () => ({
+vi.mock('../../../src/domains/drive/providers/google-docs.js', () => ({
   createDocument: vi.fn(),
   readDocumentContent: vi.fn(),
   appendText: vi.fn(),
   findDocument: vi.fn(),
 }));
 
-import { createDocumentTool, readDocument } from '../../../src/tools/docs.js';
-import { AuthRequiredError } from '../../../src/services/google/calendar.js';
-import { createDocument, readDocumentContent } from '../../../src/services/google/docs.js';
+import { createDocumentTool, readDocument } from '../../../src/domains/drive/runtime/tools.js';
+import { AuthRequiredError } from '../../../src/providers/auth.js';
+import { createDocument, readDocumentContent } from '../../../src/domains/drive/providers/google-docs.js';
 import type { ToolContext } from '../../../src/tools/types.js';
 
 describe('docs tool handlers', () => {

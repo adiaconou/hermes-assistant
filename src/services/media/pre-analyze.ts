@@ -13,8 +13,8 @@
  */
 
 import config from '../../config.js';
-import { analyzeImage, isAnalyzableImage } from '../google/vision.js';
-import { GeminiNotConfiguredError } from '../google/vision.js';
+import { analyzeImage, isAnalyzableImage } from '../../domains/drive/providers/gemini-vision.js';
+import { GeminiNotConfiguredError } from '../../domains/drive/types.js';
 import type { CurrentMediaSummary, MediaCategory } from '../conversation/types.js';
 
 /**

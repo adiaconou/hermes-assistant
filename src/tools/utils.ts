@@ -3,8 +3,7 @@
  */
 
 import type { ToolContext } from './types.js';
-import { AuthRequiredError } from '../services/google/calendar.js';
-import { generateAuthUrl } from '../routes/auth.js';
+import { AuthRequiredError, generateAuthUrl } from '../providers/auth.js';
 import { isValidTimezone as isValidIanaTimezone } from '../services/date/resolver.js';
 
 /**

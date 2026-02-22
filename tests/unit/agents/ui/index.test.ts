@@ -10,20 +10,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock dependencies
-vi.mock('../../../../src/executor/tool-executor.js', () => ({
-  executeWithTools: vi.fn(),
+const mockExecuteWithToolsFn = vi.fn();
+vi.mock('../../../../src/domains/ui/providers/executor.js', () => ({
+  getUiExecuteWithTools: vi.fn(() => mockExecuteWithToolsFn),
 }));
 
 vi.mock('../../../../src/services/anthropic/prompts/context.js', () => ({
   buildTimeContext: vi.fn(() => 'Friday, January 30, 2026 at 8:00 PM PST'),
 }));
 
-import { executor, capability } from '../../../../src/agents/ui/index.js';
-import { executeWithTools } from '../../../../src/executor/tool-executor.js';
+import { executor, capability } from '../../../../src/domains/ui/runtime/agent.js';
 import { buildTimeContext } from '../../../../src/services/anthropic/prompts/context.js';
 import type { AgentExecutionContext } from '../../../../src/executor/types.js';
 
-const mockExecuteWithTools = vi.mocked(executeWithTools);
+const mockExecuteWithTools = mockExecuteWithToolsFn;
 const mockBuildTimeContext = vi.mocked(buildTimeContext);
 
 describe('UI agent', () => {

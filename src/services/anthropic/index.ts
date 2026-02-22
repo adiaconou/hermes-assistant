@@ -17,6 +17,3 @@ export {
   buildUserContext,
   buildClassificationPrompt,
 } from './prompts/index.js';
-
-// Re-export tools for backward compatibility
-export { TOOLS, READ_ONLY_TOOLS } from '../../tools/index.js';

@@ -10,7 +10,7 @@ import {
   readDocument,
   appendToDocument,
   findDocumentTool,
-} from '../../../src/tools/docs.js';
+} from '../../../src/domains/drive/runtime/tools.js';
 
 describe('docs tools', () => {
   describe('create_document tool definition', () => {

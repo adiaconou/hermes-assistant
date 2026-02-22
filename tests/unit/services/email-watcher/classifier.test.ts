@@ -21,11 +21,11 @@ vi.mock('../../../../src/services/anthropic/client.js', () => ({
 }));
 
 // Mock dependencies
-vi.mock('../../../../src/services/email-watcher/sqlite.js', () => ({
+vi.mock('../../../../src/domains/email-watcher/repo/sqlite.js', () => ({
   getEmailSkillStore: vi.fn(),
 }));
 
-vi.mock('../../../../src/services/memory/index.js', () => ({
+vi.mock('../../../../src/domains/memory/runtime/index.js', () => ({
   getMemoryStore: vi.fn(() => ({
     getFacts: vi.fn().mockResolvedValue([]),
   })),
@@ -42,9 +42,9 @@ vi.mock('../../../../src/config.js', () => ({
   },
 }));
 
-import { classifyEmails } from '../../../../src/services/email-watcher/classifier.js';
-import { getEmailSkillStore } from '../../../../src/services/email-watcher/sqlite.js';
-import type { IncomingEmail, EmailSkill } from '../../../../src/services/email-watcher/types.js';
+import { classifyEmails } from '../../../../src/domains/email-watcher/service/classifier.js';
+import { getEmailSkillStore } from '../../../../src/domains/email-watcher/repo/sqlite.js';
+import type { IncomingEmail, EmailSkill } from '../../../../src/domains/email-watcher/types.js';
 
 function makeEmail(overrides: Partial<IncomingEmail> = {}): IncomingEmail {
   return {

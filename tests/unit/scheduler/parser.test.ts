@@ -9,7 +9,7 @@ import {
   parseReminderTime,
   isValidCron,
   cronToHuman,
-} from '../../../src/services/scheduler/parser.js';
+} from '../../../src/domains/scheduler/service/parser.js';
 
 describe('parseScheduleToCron', () => {
   describe('happy paths', () => {

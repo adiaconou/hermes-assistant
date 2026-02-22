@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import Database from 'better-sqlite3';
-import { EmailSkillStore, resetEmailSkillStore } from '../../../../src/services/email-watcher/sqlite.js';
+import { EmailSkillStore, resetEmailSkillStore } from '../../../../src/domains/email-watcher/repo/sqlite.js';
 
 // Mock user config store
 vi.mock('../../../../src/services/user-config/index.js', () => ({
@@ -14,7 +14,7 @@ vi.mock('../../../../src/services/user-config/index.js', () => ({
 }));
 
 // We need to provide the store to the singleton before importing skills module
-vi.mock('../../../../src/services/email-watcher/sqlite.js', async (importOriginal) => {
+vi.mock('../../../../src/domains/email-watcher/repo/sqlite.js', async (importOriginal) => {
   const original = await importOriginal() as Record<string, unknown>;
   return {
     ...original,
@@ -26,8 +26,8 @@ import {
   seedDefaultSkills,
   validateSkillDefinition,
   initEmailWatcherState,
-} from '../../../../src/services/email-watcher/skills.js';
-import { getEmailSkillStore } from '../../../../src/services/email-watcher/sqlite.js';
+} from '../../../../src/domains/email-watcher/service/skills.js';
+import { getEmailSkillStore } from '../../../../src/domains/email-watcher/repo/sqlite.js';
 import { getUserConfigStore } from '../../../../src/services/user-config/index.js';
 
 describe('seedDefaultSkills', () => {

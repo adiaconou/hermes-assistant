@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
-import { EmailSkillStore, resetEmailSkillStore } from '../../../../src/services/email-watcher/sqlite.js';
+import { EmailSkillStore, resetEmailSkillStore } from '../../../../src/domains/email-watcher/repo/sqlite.js';
 
 describe('EmailSkillStore', () => {
   let db: Database.Database;

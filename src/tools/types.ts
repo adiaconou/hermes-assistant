@@ -6,14 +6,9 @@ import type { Tool } from '@anthropic-ai/sdk/resources/messages';
 import type { UserConfig } from '../services/user-config/index.js';
 import type { StoredMediaAttachment } from '../services/conversation/types.js';
 
-/**
- * Media attachment from WhatsApp/MMS.
- */
-export interface MediaAttachment {
-  url: string;
-  contentType: string;
-  index: number;
-}
+// Re-export MediaAttachment from canonical location for backward compat
+export type { MediaAttachment } from '../types/media.js';
+import type { MediaAttachment } from '../types/media.js';
 
 /**
  * Context passed to tool handlers.

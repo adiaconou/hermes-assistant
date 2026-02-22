@@ -16,7 +16,20 @@ import {
 
 // Import after mock is loaded
 import { synthesizeResponse } from '../../../src/orchestrator/response-composer.js';
+import type { ComposerDeps } from '../../../src/orchestrator/response-composer.js';
 import type { ExecutionPlan, PlanContext } from '../../../src/orchestrator/types.js';
+
+// Mock composer deps (injected tools for response composition)
+const mockComposerDeps: ComposerDeps = {
+  compositionTools: [{
+    name: 'format_maps_link',
+    description: 'Convert an address to a Google Maps link',
+    input_schema: { type: 'object' as const, properties: {} },
+  }],
+  executeTool: vi.fn().mockResolvedValue(
+    JSON.stringify({ text: 'Office: https://www.google.com/maps/search/?api=1&query=123%20Main%20St', url: 'https://www.google.com/maps/search/?api=1&query=123%20Main%20St', label: 'Office' })
+  ),
+};
 
 describe('synthesizeResponse', () => {
   const createBasePlan = (overrides: Partial<ExecutionPlan> = {}): ExecutionPlan => ({
@@ -78,7 +91,7 @@ describe('synthesizeResponse', () => {
       const context = createBaseContext();
       const plan = createBasePlan();
 
-      const response = await synthesizeResponse(context, plan);
+      const response = await synthesizeResponse(context, plan, mockComposerDeps);
 
       expect(response).toBe('You have 3 events today!');
     });
@@ -91,7 +104,7 @@ describe('synthesizeResponse', () => {
       const context = createBaseContext({ userMessage: 'What meetings do I have?' });
       const plan = createBasePlan({ userRequest: 'What meetings do I have?' });
 
-      await synthesizeResponse(context, plan);
+      await synthesizeResponse(context, plan, mockComposerDeps);
 
       const calls = getCreateCalls();
       expect(calls[0].system).toContain('What meetings do I have?');
@@ -105,7 +118,7 @@ describe('synthesizeResponse', () => {
       const context = createBaseContext();
       const plan = createBasePlan({ goal: 'Display all calendar events' });
 
-      await synthesizeResponse(context, plan);
+      await synthesizeResponse(context, plan, mockComposerDeps);
 
       const calls = getCreateCalls();
       expect(calls[0].system).toContain('Display all calendar events');
@@ -123,7 +136,7 @@ describe('synthesizeResponse', () => {
       });
       const plan = createBasePlan();
 
-      await synthesizeResponse(context, plan);
+      await synthesizeResponse(context, plan, mockComposerDeps);
 
       const calls = getCreateCalls();
       expect(calls[0].system).toContain('Meeting at 2pm with John');
@@ -145,7 +158,7 @@ describe('synthesizeResponse', () => {
       });
       const plan = createBasePlan();
 
-      const response = await synthesizeResponse(context, plan);
+      const response = await synthesizeResponse(context, plan, mockComposerDeps);
 
       expect(response).toContain('Office: https://www.google.com/maps/search/?api=1&query=123%20Main%20St');
       expect(getCreateCalls().length).toBe(2);
@@ -163,7 +176,7 @@ describe('synthesizeResponse', () => {
       });
       const plan = createBasePlan();
 
-      await synthesizeResponse(context, plan);
+      await synthesizeResponse(context, plan, mockComposerDeps);
 
       const calls = getCreateCalls();
       expect(calls[0].system).toContain('Sarah');
@@ -190,7 +203,7 @@ describe('synthesizeResponse', () => {
       });
       const plan = createBasePlan();
 
-      await synthesizeResponse(context, plan);
+      await synthesizeResponse(context, plan, mockComposerDeps);
 
       const calls = getCreateCalls();
       expect(calls[0].system).toContain('<user_memory>');
@@ -207,7 +220,7 @@ describe('synthesizeResponse', () => {
       const context = createBaseContext();
       const plan = createBasePlan();
 
-      const response = await synthesizeResponse(context, plan, 'timeout');
+      const response = await synthesizeResponse(context, plan, mockComposerDeps, 'timeout');
 
       expect(response).toContain('timed out');
 
@@ -244,7 +257,7 @@ describe('synthesizeResponse', () => {
         ],
       });
 
-      await synthesizeResponse(context, plan, 'step_failed');
+      await synthesizeResponse(context, plan, mockComposerDeps, 'step_failed');
 
       const calls = getCreateCalls();
       expect(calls[0].system).toContain('Email service unavailable');
@@ -261,7 +274,7 @@ describe('synthesizeResponse', () => {
       const context = createBaseContext({ stepResults: {} });
       const plan = createBasePlan();
 
-      await synthesizeResponse(context, plan);
+      await synthesizeResponse(context, plan, mockComposerDeps);
 
       const calls = getCreateCalls();
       expect(calls[0].system).toContain('No step results');
@@ -282,7 +295,7 @@ describe('synthesizeResponse', () => {
       });
       const plan = createBasePlan();
 
-      await synthesizeResponse(context, plan);
+      await synthesizeResponse(context, plan, mockComposerDeps);
 
       const calls = getCreateCalls();
       // Output should be truncated to 2000 chars
@@ -303,7 +316,7 @@ describe('synthesizeResponse', () => {
       const context = createBaseContext();
       const plan = createBasePlan();
 
-      const response = await synthesizeResponse(context, plan);
+      const response = await synthesizeResponse(context, plan, mockComposerDeps);
 
       expect(response).toBe('I completed your request.');
     });
@@ -317,7 +330,7 @@ describe('synthesizeResponse', () => {
       const context = createBaseContext();
       const plan = createBasePlan();
 
-      const response = await synthesizeResponse(context, plan, 'timeout');
+      const response = await synthesizeResponse(context, plan, mockComposerDeps, 'timeout');
 
       expect(response).toContain('issues');
     });
@@ -333,7 +346,7 @@ describe('synthesizeResponse', () => {
       });
       const plan = createBasePlan();
 
-      const response = await synthesizeResponse(context, plan);
+      const response = await synthesizeResponse(context, plan, mockComposerDeps);
 
       expect(response).toContain('https://short.url/abc');
     });
@@ -349,7 +362,7 @@ describe('synthesizeResponse', () => {
       });
       const plan = createBasePlan();
 
-      const response = await synthesizeResponse(context, plan);
+      const response = await synthesizeResponse(context, plan, mockComposerDeps);
 
       expect(response).toContain('Event created successfully');
     });
@@ -365,7 +378,7 @@ describe('synthesizeResponse', () => {
       });
       const plan = createBasePlan();
 
-      const response = await synthesizeResponse(context, plan);
+      const response = await synthesizeResponse(context, plan, mockComposerDeps);
 
       expect(response).toContain('Done');
     });

@@ -22,14 +22,14 @@
  */
 
 import type { UserConfig } from '../../user-config/index.js';
-import type { UserFact } from '../../memory/types.js';
+import type { UserFact } from '../../../domains/memory/types.js';
 import config from '../../../config.js';
-import { getMemoryStore } from '../../memory/index.js';
+import { getMemoryStore } from '../../../domains/memory/runtime/index.js';
 import {
   DEFAULT_FACT_CHAR_CAP,
   selectFactsWithCharCap,
   clampConfidence,
-} from '../../memory/ranking.js';
+} from '../../../domains/memory/service/ranking.js';
 
 /**
  * Build time context string from user config.

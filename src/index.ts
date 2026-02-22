@@ -21,11 +21,20 @@ import pagesRouter from './routes/pages.js';
 import authRouter from './routes/auth.js';
 import adminRouter from './admin/index.js';
 import { healthHandler } from './routes/health.js';
-import { initScheduler, stopScheduler } from './services/scheduler/index.js';
+import { initScheduler, stopScheduler } from './domains/scheduler/runtime/index.js';
+import { READ_ONLY_TOOLS } from './tools/index.js';
+import { setExecuteWithTools } from './domains/scheduler/providers/executor.js';
+import { setEmailWatcherExecuteWithTools } from './domains/email-watcher/providers/executor.js';
+import { setCalendarExecuteWithTools } from './domains/calendar/providers/executor.js';
+import { setMemoryExecuteWithTools } from './domains/memory/providers/executor.js';
+import { setEmailExecuteWithTools } from './domains/email/providers/executor.js';
+import { setDriveExecuteWithTools } from './domains/drive/providers/executor.js';
+import { setUiExecuteWithTools } from './domains/ui/providers/executor.js';
+import { executeWithTools } from './executor/tool-executor.js';
 import { closeConversationStore } from './services/conversation/index.js';
-import { startMemoryProcessor, stopMemoryProcessor } from './services/memory/processor.js';
-import { closeMemoryStore } from './services/memory/index.js';
-import { startEmailWatcher, stopEmailWatcher } from './services/email-watcher/index.js';
+import { startMemoryProcessor, stopMemoryProcessor } from './domains/memory/service/processor.js';
+import { closeMemoryStore } from './domains/memory/runtime/index.js';
+import { startEmailWatcher, stopEmailWatcher } from './domains/email-watcher/runtime/index.js';
 
 const app = express();
 
@@ -55,8 +64,17 @@ if (!fs.existsSync(dbDir)) {
 }
 const db = new Database(dbPath);
 
+// Wire executor for all domains (provider injection)
+setExecuteWithTools(executeWithTools);
+setEmailWatcherExecuteWithTools(executeWithTools);
+setCalendarExecuteWithTools(executeWithTools);
+setMemoryExecuteWithTools(executeWithTools);
+setEmailExecuteWithTools(executeWithTools);
+setDriveExecuteWithTools(executeWithTools);
+setUiExecuteWithTools(executeWithTools);
+
 // Initialize scheduler (creates tables, sets up poller)
-const poller = initScheduler(db);
+const poller = initScheduler(db, undefined, READ_ONLY_TOOLS.map(t => t.name));
 
 const server = app.listen(config.port, () => {
   console.log(

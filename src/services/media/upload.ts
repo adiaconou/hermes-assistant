@@ -6,10 +6,10 @@
  */
 
 import config from '../../config.js';
-import { uploadFile, findFolder, createFolder } from '../google/drive.js';
-import type { MediaAttachment } from '../../tools/types.js';
+import { uploadFile, findFolder, createFolder } from '../../domains/drive/providers/google-drive.js';
+import type { MediaAttachment } from '../../types/media.js';
 import type { StoredMediaAttachment } from '../conversation/types.js';
-import { AuthRequiredError } from '../google/calendar.js';
+import { AuthRequiredError } from '../../providers/auth.js';
 import { fetchWithRetry } from '../twilio/fetch-with-retry.js';
 
 /** Folder name for media attachments */

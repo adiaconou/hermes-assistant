@@ -6,7 +6,7 @@
  */
 
 import type { ConversationMessage, StoredMediaAttachment, CurrentMediaSummary } from '../services/conversation/types.js';
-import type { UserFact } from '../services/memory/types.js';
+import type { UserFact } from '../domains/memory/types.js';
 import type { UserConfig } from '../services/user-config/types.js';
 
 // Re-export agent types for backwards compatibility

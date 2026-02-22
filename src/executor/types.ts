@@ -7,13 +7,13 @@
 
 import type { ToolUseBlock } from '@anthropic-ai/sdk/resources/messages';
 import type { UserConfig } from '../services/user-config/types.js';
-import type { UserFact } from '../services/memory/types.js';
+import type { UserFact } from '../domains/memory/types.js';
 import type { TraceLogger } from '../utils/trace-logger.js';
-import type { MediaAttachment } from '../tools/types.js';
+import type { MediaAttachment } from '../types/media.js';
 import type { StoredMediaAttachment } from '../services/conversation/types.js';
 
 // Re-export for convenience
-export type { MediaAttachment } from '../tools/types.js';
+export type { MediaAttachment } from '../types/media.js';
 export type { StoredMediaAttachment } from '../services/conversation/types.js';
 
 // ============================================================================

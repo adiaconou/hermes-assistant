@@ -11,7 +11,7 @@
  */
 
 import type { ConversationMessage, StoredMediaAttachment, CurrentMediaSummary } from '../services/conversation/types.js';
-import type { UserFact } from '../services/memory/types.js';
+import type { UserFact } from '../domains/memory/types.js';
 import type { UserConfig } from '../services/user-config/types.js';
 import type {
   ExecutionPlan,
@@ -26,6 +26,8 @@ import { createPlan } from './planner.js';
 import { executeStep, shouldReplan } from './executor.js';
 import { replan, canReplan } from './replanner.js';
 import { synthesizeResponse } from './response-composer.js';
+import type { ComposerDeps } from './response-composer.js';
+import { formatMapsLink, executeTool } from '../tools/index.js';
 import type { TraceLogger } from '../utils/trace-logger.js';
 
 /**
@@ -127,6 +129,12 @@ export async function orchestrate(
     errors: [],
   };
 
+  // Build composer deps (inject tools so response-composer avoids direct tools import)
+  const composerDeps: ComposerDeps = {
+    compositionTools: [formatMapsLink.tool],
+    executeTool,
+  };
+
   try {
     // Phase 1: Create the initial plan
     logger.log('INFO', 'Creating execution plan');
@@ -143,7 +151,7 @@ export async function orchestrate(
       logPlanEvent('plan_empty', plan);
       return {
         success: true,
-        response: await synthesizeResponse(context, plan, undefined, logger),
+        response: await synthesizeResponse(context, plan, composerDeps, undefined, logger),
         stepResults: {},
         plan,
       };
@@ -162,7 +170,7 @@ export async function orchestrate(
 
         return {
           success: false,
-          response: await synthesizeResponse(context, plan, 'timeout', logger),
+          response: await synthesizeResponse(context, plan, composerDeps, 'timeout', logger),
           stepResults: context.stepResults,
           error: `Execution timeout after ${Math.round(elapsed / 1000)}s`,
           plan,
@@ -307,7 +315,7 @@ export async function orchestrate(
 
         return {
           success: false,
-          response: await synthesizeResponse(context, plan, 'step_failed', logger),
+          response: await synthesizeResponse(context, plan, composerDeps, 'step_failed', logger),
           stepResults: context.stepResults,
           error: result.error || 'Step failed after max retries',
           plan,
@@ -332,7 +340,7 @@ export async function orchestrate(
     logger.log('INFO', 'Composing final response');
     return {
       success: true,
-      response: await synthesizeResponse(context, plan, undefined, logger),
+      response: await synthesizeResponse(context, plan, composerDeps, undefined, logger),
       stepResults: context.stepResults,
       plan,
     };

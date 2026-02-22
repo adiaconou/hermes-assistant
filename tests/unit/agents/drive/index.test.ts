@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { capability } from '../../../../src/agents/drive/index.js';
+import { capability } from '../../../../src/domains/drive/runtime/agent.js';
 
 describe('drive agent', () => {
   describe('capability definition', () => {

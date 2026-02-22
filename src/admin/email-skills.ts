@@ -8,7 +8,7 @@
 import type { Request, Response } from 'express';
 import Database from 'better-sqlite3';
 import config from '../config.js';
-import { getEmailSkillStore } from '../services/email-watcher/sqlite.js';
+import { getEmailSkillStore } from '../domains/email-watcher/repo/sqlite.js';
 import { getUserConfigStore } from '../services/user-config/index.js';
 
 function getStore() {

@@ -11,7 +11,7 @@ import {
   writeSpreadsheet,
   appendToSpreadsheet,
   findSpreadsheetTool,
-} from '../../../src/tools/sheets.js';
+} from '../../../src/domains/drive/runtime/tools.js';
 
 describe('sheets tools', () => {
   describe('create_spreadsheet tool definition', () => {

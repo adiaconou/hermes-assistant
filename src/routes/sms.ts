@@ -12,19 +12,20 @@
  */
 import { Router, Request, Response } from 'express';
 import { classifyMessage } from '../services/anthropic/index.js';
+import { TOOLS } from '../tools/index.js';
 import { getHistory, addMessage } from '../conversation.js';
 import { sendSms, sendWhatsApp, validateTwilioSignature } from '../twilio.js';
 import { getUserConfigStore, type UserConfig } from '../services/user-config/index.js';
-import { getMemoryStore } from '../services/memory/index.js';
+import { getMemoryStore } from '../domains/memory/runtime/index.js';
 import { handleWithOrchestrator } from '../orchestrator/index.js';
-import type { MediaAttachment } from '../tools/types.js';
+import type { MediaAttachment } from '../types/media.js';
 import type { StoredMediaAttachment, CurrentMediaSummary } from '../services/conversation/types.js';
 import { processMediaAttachments } from '../services/media/index.js';
 import config from '../config.js';
 import { detectChannel, normalize, sanitize, type MessageChannel } from '../utils/phone.js';
 
 // Re-export for backwards compatibility
-export type { MediaAttachment } from '../tools/types.js';
+export type { MediaAttachment } from '../types/media.js';
 
 /**
  * Send a response via the appropriate channel (SMS or WhatsApp).
@@ -405,7 +406,7 @@ export async function handleSmsWebhook(req: Request, res: Response): Promise<voi
     ]);
 
     // Classify message synchronously - this should be fast
-    const classification = await classifyMessage(message, history, userConfig, userFacts);
+    const classification = await classifyMessage(TOOLS, message, history, userConfig, userFacts);
 
     console.log(JSON.stringify({
       level: 'info',

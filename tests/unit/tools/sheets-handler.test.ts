@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-vi.mock('../../../src/services/google/sheets.js', () => ({
+vi.mock('../../../src/domains/drive/providers/google-sheets.js', () => ({
   createSpreadsheet: vi.fn(),
   readRange: vi.fn(),
   writeRange: vi.fn(),
@@ -8,9 +8,9 @@ vi.mock('../../../src/services/google/sheets.js', () => ({
   findSpreadsheet: vi.fn(),
 }));
 
-import { createSpreadsheetTool, readSpreadsheet } from '../../../src/tools/sheets.js';
-import { AuthRequiredError } from '../../../src/services/google/calendar.js';
-import { createSpreadsheet, readRange } from '../../../src/services/google/sheets.js';
+import { createSpreadsheetTool, readSpreadsheet } from '../../../src/domains/drive/runtime/tools.js';
+import { AuthRequiredError } from '../../../src/providers/auth.js';
+import { createSpreadsheet, readRange } from '../../../src/domains/drive/providers/google-sheets.js';
 import type { ToolContext } from '../../../src/tools/types.js';
 
 describe('sheets tool handlers', () => {

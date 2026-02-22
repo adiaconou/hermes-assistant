@@ -1,0 +1,475 @@
+=== Architecture Edge Report ===
+
+src -> src (2 edges)
+  index.ts -> config
+  twilio.ts -> config
+src -> src/admin (1 edges)
+  index.ts -> index
+src -> src/domains/calendar/providers (1 edges)
+  index.ts -> executor
+src -> src/domains/drive/providers (1 edges)
+  index.ts -> executor
+src -> src/domains/email-watcher/providers (1 edges)
+  index.ts -> executor
+src -> src/domains/email-watcher/runtime (1 edges)
+  index.ts -> index
+src -> src/domains/email/providers (1 edges)
+  index.ts -> executor
+src -> src/domains/memory/providers (1 edges)
+  index.ts -> executor
+src -> src/domains/memory/runtime (1 edges)
+  index.ts -> index
+src -> src/domains/memory/service (1 edges)
+  index.ts -> processor
+src -> src/domains/scheduler/providers (1 edges)
+  index.ts -> executor
+src -> src/domains/scheduler/runtime (1 edges)
+  index.ts -> index
+src -> src/domains/ui/providers (1 edges)
+  index.ts -> executor
+src -> src/executor (1 edges)
+  index.ts -> tool-executor
+src -> src/routes (4 edges)
+  index.ts -> sms
+  index.ts -> pages
+  index.ts -> auth
+  index.ts -> health
+src -> src/services/conversation (2 edges)
+  conversation.ts -> index
+  index.ts -> index
+src -> src/tools (1 edges)
+  index.ts -> index
+src/admin -> src (1 edges)
+  email-skills.ts -> config
+src/admin -> src/admin (2 edges)
+  index.ts -> memory
+  index.ts -> email-skills
+src/admin -> src/domains/email-watcher/repo (1 edges)
+  email-skills.ts -> sqlite
+src/admin -> src/domains/memory/runtime (1 edges)
+  memory.ts -> index
+src/admin -> src/services/user-config (1 edges)
+  email-skills.ts -> index
+src/agents -> src/services/anthropic/prompts (1 edges)
+  context.ts -> context
+src/agents/general -> src/agents/general (1 edges)
+  index.ts -> prompt
+src/agents/general -> src/executor (1 edges)
+  index.ts -> tool-executor
+src/domains/calendar/providers -> src/domains/calendar (3 edges)
+  google-calendar.ts -> types
+  google-calendar.ts -> types
+  google-calendar.ts -> types
+src/domains/calendar/providers -> src/domains/calendar/providers (1 edges)
+  google-calendar.ts -> google-core
+src/domains/calendar/providers -> src/domains/google-core/providers (1 edges)
+  google-core.ts -> auth
+src/domains/calendar/providers -> src/providers (1 edges)
+  google-calendar.ts -> auth
+src/domains/calendar/runtime -> src/agents (1 edges)
+  agent.ts -> context
+src/domains/calendar/runtime -> src/domains/calendar/providers (2 edges)
+  agent.ts -> executor
+  tools.ts -> google-calendar
+src/domains/calendar/runtime -> src/domains/calendar/runtime (1 edges)
+  agent.ts -> prompt
+src/domains/calendar/runtime -> src/tools (1 edges)
+  tools.ts -> utils
+src/domains/drive -> src/providers (1 edges)
+  types.ts -> auth
+src/domains/drive/providers -> src (2 edges)
+  gemini-vision.ts -> config
+  google-drive.ts -> config
+src/domains/drive/providers -> src/domains/drive (1 edges)
+  gemini-vision.ts -> types
+src/domains/drive/providers -> src/domains/drive/providers (3 edges)
+  google-docs.ts -> google-core
+  google-drive.ts -> google-core
+  google-sheets.ts -> google-core
+src/domains/drive/providers -> src/domains/google-core/providers (1 edges)
+  google-core.ts -> auth
+src/domains/drive/providers -> src/domains/google-core/service (1 edges)
+  google-core.ts -> drive-folders
+src/domains/drive/runtime -> src/agents (1 edges)
+  agent.ts -> context
+src/domains/drive/runtime -> src/domains/drive (1 edges)
+  tools.ts -> types
+src/domains/drive/runtime -> src/domains/drive/providers (3 edges)
+  agent.ts -> executor
+  tools.ts -> google-core
+  tools.ts -> gemini-vision
+src/domains/drive/runtime -> src/domains/drive/runtime (1 edges)
+  agent.ts -> prompt
+src/domains/drive/runtime -> src/services/conversation (1 edges)
+  tools.ts -> index
+src/domains/drive/runtime -> src/services/twilio (1 edges)
+  tools.ts -> media
+src/domains/drive/runtime -> src/tools (1 edges)
+  tools.ts -> utils
+src/domains/email -> src/providers (1 edges)
+  types.ts -> auth
+src/domains/email-watcher/providers -> src (1 edges)
+  gmail-sync.ts -> config
+src/domains/email-watcher/providers -> src/domains/email-watcher/providers (1 edges)
+  gmail-sync.ts -> google-core
+src/domains/email-watcher/providers -> src/domains/email/providers (1 edges)
+  email.ts -> gmail
+src/domains/email-watcher/providers -> src/domains/google-core/providers (1 edges)
+  google-core.ts -> auth
+src/domains/email-watcher/providers -> src/domains/memory/runtime (1 edges)
+  memory.ts -> index
+src/domains/email-watcher/providers -> src/services/user-config (1 edges)
+  gmail-sync.ts -> index
+src/domains/email-watcher/runtime -> src (1 edges)
+  index.ts -> config
+src/domains/email-watcher/runtime -> src/domains/email-watcher/providers (6 edges)
+  index.ts -> gmail-sync
+  index.ts -> gmail-sync
+  index.ts -> executor
+  tools.ts -> gmail-sync
+  tools.ts -> email
+  tools.ts -> google-core
+src/domains/email-watcher/runtime -> src/domains/email-watcher/repo (2 edges)
+  index.ts -> sqlite
+  tools.ts -> sqlite
+src/domains/email-watcher/runtime -> src/domains/email-watcher/service (8 edges)
+  index.ts -> classifier
+  index.ts -> actions
+  index.ts -> classifier
+  index.ts -> actions
+  index.ts -> skills
+  index.ts -> prompt
+  tools.ts -> skills
+  tools.ts -> classifier
+src/domains/email-watcher/runtime -> src/services/user-config (2 edges)
+  index.ts -> index
+  tools.ts -> index
+src/domains/email-watcher/runtime -> src/tools (1 edges)
+  tools.ts -> utils
+src/domains/email-watcher/runtime -> src/utils (1 edges)
+  index.ts -> poller
+src/domains/email-watcher/service -> src (4 edges)
+  actions.ts -> twilio
+  actions.ts -> config
+  classifier.ts -> config
+  prompt.ts -> config
+src/domains/email-watcher/service -> src/domains/email-watcher/providers (3 edges)
+  actions.ts -> executor
+  actions.ts -> memory
+  classifier.ts -> memory
+src/domains/email-watcher/service -> src/domains/email-watcher/repo (3 edges)
+  actions.ts -> sqlite
+  classifier.ts -> sqlite
+  skills.ts -> sqlite
+src/domains/email-watcher/service -> src/domains/email-watcher/service (1 edges)
+  classifier.ts -> prompt
+src/domains/email-watcher/service -> src/services/anthropic (1 edges)
+  classifier.ts -> client
+src/domains/email-watcher/service -> src/services/user-config (2 edges)
+  actions.ts -> index
+  skills.ts -> index
+src/domains/email/providers -> src/domains/email/providers (1 edges)
+  gmail.ts -> google-core
+src/domains/email/providers -> src/domains/google-core/providers (1 edges)
+  google-core.ts -> auth
+src/domains/email/runtime -> src/agents (1 edges)
+  agent.ts -> context
+src/domains/email/runtime -> src/domains/email/providers (2 edges)
+  agent.ts -> executor
+  tools.ts -> gmail
+src/domains/email/runtime -> src/domains/email/runtime (1 edges)
+  agent.ts -> prompt
+src/domains/email/runtime -> src/tools (1 edges)
+  tools.ts -> utils
+src/domains/google-core -> src/providers (1 edges)
+  types.ts -> auth
+src/domains/google-core/providers -> src (1 edges)
+  auth.ts -> config
+src/domains/google-core/providers -> src/providers (1 edges)
+  auth.ts -> auth
+src/domains/google-core/providers -> src/services/credentials (1 edges)
+  auth.ts -> index
+src/domains/google-core/service -> src (1 edges)
+  drive-folders.ts -> config
+src/domains/google-core/service -> src/domains/google-core/providers (1 edges)
+  drive-folders.ts -> auth
+src/domains/memory/runtime -> src/agents (1 edges)
+  agent.ts -> context
+src/domains/memory/runtime -> src/domains/memory/providers (1 edges)
+  agent.ts -> executor
+src/domains/memory/runtime -> src/domains/memory/runtime (2 edges)
+  agent.ts -> prompt
+  tools.ts -> index
+src/domains/memory/runtime -> src/domains/memory/service (1 edges)
+  index.ts -> store
+src/domains/memory/runtime -> src/tools (1 edges)
+  tools.ts -> utils
+src/domains/memory/service -> src (2 edges)
+  processor.ts -> config
+  store.ts -> config
+src/domains/memory/service -> src/domains/memory/repo (1 edges)
+  store.ts -> sqlite
+src/domains/memory/service -> src/domains/memory/service (3 edges)
+  processor.ts -> store
+  processor.ts -> prompts
+  processor.ts -> ranking
+src/domains/memory/service -> src/services/conversation (1 edges)
+  processor.ts -> index
+src/domains/memory/service -> src/utils (2 edges)
+  processor.ts -> poller
+  processor.ts -> trace-logger
+src/domains/scheduler/providers -> src (1 edges)
+  sms.ts -> twilio
+src/domains/scheduler/providers -> src/domains/memory/runtime (1 edges)
+  memory.ts -> index
+src/domains/scheduler/runtime -> src/agents (1 edges)
+  agent.ts -> context
+src/domains/scheduler/runtime -> src/domains/scheduler (1 edges)
+  index.ts -> types
+src/domains/scheduler/runtime -> src/domains/scheduler/providers (1 edges)
+  agent.ts -> executor
+src/domains/scheduler/runtime -> src/domains/scheduler/repo (2 edges)
+  index.ts -> sqlite
+  index.ts -> sqlite
+src/domains/scheduler/runtime -> src/domains/scheduler/runtime (2 edges)
+  agent.ts -> prompt
+  tools.ts -> index
+src/domains/scheduler/runtime -> src/domains/scheduler/service (3 edges)
+  index.ts -> parser
+  index.ts -> executor
+  index.ts -> executor
+src/domains/scheduler/runtime -> src/services/user-config (1 edges)
+  tools.ts -> index
+src/domains/scheduler/runtime -> src/tools (1 edges)
+  tools.ts -> utils
+src/domains/scheduler/runtime -> src/utils (2 edges)
+  index.ts -> poller
+  index.ts -> poller
+src/domains/scheduler/service -> src/domains/scheduler/providers (3 edges)
+  executor.ts -> executor
+  executor.ts -> sms
+  executor.ts -> memory
+src/domains/scheduler/service -> src/domains/scheduler/repo (1 edges)
+  executor.ts -> sqlite
+src/domains/scheduler/service -> src/services/date (1 edges)
+  parser.ts -> resolver
+src/domains/scheduler/service -> src/services/user-config (1 edges)
+  executor.ts -> index
+src/domains/ui/runtime -> src/agents (1 edges)
+  agent.ts -> context
+src/domains/ui/runtime -> src/domains/ui/providers (1 edges)
+  agent.ts -> executor
+src/domains/ui/runtime -> src/domains/ui/runtime (1 edges)
+  agent.ts -> prompt
+src/domains/ui/runtime -> src/services/ui (2 edges)
+  prompt.ts -> index
+  tools.ts -> index
+src/executor -> src (1 edges)
+  tool-executor.ts -> config
+src/executor -> src/executor (1 edges)
+  registry.ts -> router
+src/executor -> src/registry (2 edges)
+  registry.ts -> agents
+  router.ts -> agents
+src/executor -> src/services/anthropic (1 edges)
+  tool-executor.ts -> client
+src/executor -> src/services/anthropic/prompts (1 edges)
+  tool-executor.ts -> context
+src/executor -> src/tools (1 edges)
+  tool-executor.ts -> index
+src/orchestrator -> src (3 edges)
+  planner.ts -> config
+  replanner.ts -> config
+  response-composer.ts -> config
+src/orchestrator -> src/domains/memory/runtime (1 edges)
+  handler.ts -> index
+src/orchestrator -> src/executor (4 edges)
+  executor.ts -> router
+  orchestrate.ts -> registry
+  planner.ts -> registry
+  replanner.ts -> registry
+src/orchestrator -> src/orchestrator (18 edges)
+  conversation-window.ts -> types
+  executor.ts -> types
+  handler.ts -> orchestrate
+  handler.ts -> media-context
+  handler.ts -> conversation-window
+  index.ts -> types
+  index.ts -> orchestrate
+  index.ts -> response-composer
+  index.ts -> handler
+  orchestrate.ts -> types
+  orchestrate.ts -> planner
+  orchestrate.ts -> executor
+  orchestrate.ts -> replanner
+  orchestrate.ts -> response-composer
+  planner.ts -> types
+  planner.ts -> conversation-window
+  planner.ts -> media-context
+  replanner.ts -> types
+src/orchestrator -> src/services/anthropic (3 edges)
+  planner.ts -> client
+  replanner.ts -> client
+  response-composer.ts -> client
+src/orchestrator -> src/services/anthropic/prompts (2 edges)
+  planner.ts -> context
+  response-composer.ts -> context
+src/orchestrator -> src/services/conversation (1 edges)
+  handler.ts -> index
+src/orchestrator -> src/services/date (1 edges)
+  planner.ts -> resolver
+src/orchestrator -> src/tools (1 edges)
+  orchestrate.ts -> index
+src/orchestrator -> src/utils (1 edges)
+  handler.ts -> trace-logger
+src/providers -> src (1 edges)
+  auth.ts -> config
+src/registry -> src/agents/general (1 edges)
+  agents.ts -> index
+src/registry -> src/domains/calendar/runtime (1 edges)
+  agents.ts -> agent
+src/registry -> src/domains/drive/runtime (1 edges)
+  agents.ts -> agent
+src/registry -> src/domains/email/runtime (1 edges)
+  agents.ts -> agent
+src/registry -> src/domains/memory/runtime (1 edges)
+  agents.ts -> agent
+src/registry -> src/domains/scheduler/runtime (1 edges)
+  agents.ts -> agent
+src/registry -> src/domains/ui/runtime (1 edges)
+  agents.ts -> agent
+src/routes -> src (6 edges)
+  auth.ts -> config
+  auth.ts -> twilio
+  auth.ts -> conversation
+  sms.ts -> conversation
+  sms.ts -> twilio
+  sms.ts -> config
+src/routes -> src/domains/email-watcher/service (1 edges)
+  auth.ts -> skills
+src/routes -> src/domains/memory/runtime (1 edges)
+  sms.ts -> index
+src/routes -> src/orchestrator (1 edges)
+  sms.ts -> index
+src/routes -> src/providers (2 edges)
+  auth.ts -> auth
+  auth.ts -> auth
+src/routes -> src/services/anthropic (1 edges)
+  sms.ts -> index
+src/routes -> src/services/credentials (1 edges)
+  auth.ts -> index
+src/routes -> src/services/media (1 edges)
+  sms.ts -> index
+src/routes -> src/services/ui (1 edges)
+  pages.ts -> index
+src/routes -> src/services/user-config (1 edges)
+  sms.ts -> index
+src/routes -> src/tools (1 edges)
+  sms.ts -> index
+src/routes -> src/utils (2 edges)
+  auth.ts -> phone
+  sms.ts -> phone
+src/services/anthropic -> src (2 edges)
+  classification.ts -> config
+  client.ts -> config
+src/services/anthropic -> src/services/anthropic (3 edges)
+  classification.ts -> client
+  index.ts -> client
+  index.ts -> classification
+src/services/anthropic -> src/services/anthropic/prompts (1 edges)
+  classification.ts -> index
+src/services/anthropic/prompts -> src (1 edges)
+  context.ts -> config
+src/services/anthropic/prompts -> src/domains/memory/runtime (1 edges)
+  context.ts -> index
+src/services/anthropic/prompts -> src/services/anthropic/prompts (4 edges)
+  classification.ts -> context
+  index.ts -> system
+  index.ts -> context
+  index.ts -> classification
+src/services/anthropic/prompts -> src/services/ui (1 edges)
+  system.ts -> index
+src/services/conversation -> src (1 edges)
+  index.ts -> config
+src/services/conversation -> src/services/conversation (1 edges)
+  index.ts -> sqlite
+src/services/credentials -> src (1 edges)
+  index.ts -> config
+src/services/credentials -> src/services/credentials (2 edges)
+  index.ts -> sqlite
+  index.ts -> memory
+src/services/media -> src (2 edges)
+  pre-analyze.ts -> config
+  upload.ts -> config
+src/services/media -> src/domains/drive (1 edges)
+  pre-analyze.ts -> types
+src/services/media -> src/domains/drive/providers (2 edges)
+  pre-analyze.ts -> gemini-vision
+  upload.ts -> google-drive
+src/services/media -> src/providers (1 edges)
+  upload.ts -> auth
+src/services/media -> src/services/media (5 edges)
+  index.ts -> upload
+  index.ts -> pre-analyze
+  index.ts -> process
+  process.ts -> upload
+  process.ts -> pre-analyze
+src/services/media -> src/services/twilio (1 edges)
+  upload.ts -> fetch-with-retry
+src/services/twilio -> src (1 edges)
+  media.ts -> config
+src/services/twilio -> src/services/twilio (1 edges)
+  media.ts -> fetch-with-retry
+src/services/ui -> src (2 edges)
+  index.ts -> config
+  provider-factory.ts -> config
+src/services/ui -> src/services/ui (6 edges)
+  index.ts -> generator
+  index.ts -> validator
+  index.ts -> provider-factory
+  index.ts -> generator
+  index.ts -> validator
+  index.ts -> provider-factory
+src/services/ui -> src/services/ui/providers (2 edges)
+  provider-factory.ts -> local-storage
+  provider-factory.ts -> memory-shortener
+src/services/user-config -> src (1 edges)
+  index.ts -> config
+src/services/user-config -> src/services/user-config (1 edges)
+  index.ts -> sqlite
+src/tools -> src/domains/calendar/runtime (1 edges)
+  index.ts -> tools
+src/tools -> src/domains/drive/runtime (4 edges)
+  index.ts -> tools
+  index.ts -> tools
+  index.ts -> tools
+  index.ts -> tools
+src/tools -> src/domains/email/runtime (1 edges)
+  index.ts -> tools
+src/tools -> src/domains/memory/runtime (2 edges)
+  index.ts -> tools
+  user-config.ts -> index
+src/tools -> src/domains/scheduler/runtime (1 edges)
+  index.ts -> tools
+src/tools -> src/domains/ui/runtime (1 edges)
+  index.ts -> tools
+src/tools -> src/providers (1 edges)
+  utils.ts -> auth
+src/tools -> src/services/conversation (1 edges)
+  user-config.ts -> index
+src/tools -> src/services/date (2 edges)
+  user-config.ts -> resolver
+  utils.ts -> resolver
+src/tools -> src/services/user-config (1 edges)
+  user-config.ts -> index
+src/tools -> src/tools (4 edges)
+  index.ts -> user-config
+  index.ts -> maps
+  index.ts -> maps
+  user-config.ts -> utils
+src/utils -> src (1 edges)
+  trace-logger.ts -> config
+
+Total: 290 edges
+
+0 violations

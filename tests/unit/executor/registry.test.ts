@@ -7,7 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock the agents module before importing registry
-vi.mock('../../../src/agents/index.js', () => ({
+vi.mock('../../../src/registry/agents.js', () => ({
   AGENTS: [
     {
       capability: {

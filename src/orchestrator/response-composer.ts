@@ -12,12 +12,23 @@ import type {
   MessageParam,
 } from '@anthropic-ai/sdk/resources/messages';
 
+import type { Tool } from '@anthropic-ai/sdk/resources/messages';
+import type { ToolContext } from '../tools/types.js';
+
 import config from '../config.js';
 import { getClient } from '../services/anthropic/client.js';
 import { buildUserMemoryXml } from '../services/anthropic/prompts/context.js';
-import { formatMapsLink, executeTool } from '../tools/index.js';
 import type { ExecutionPlan, PlanContext, StepResult } from './types.js';
 import type { TraceLogger } from '../utils/trace-logger.js';
+
+/**
+ * Injected dependencies for response composition.
+ * Avoids a direct runtime import from the tools layer.
+ */
+export interface ComposerDeps {
+  compositionTools: Tool[];
+  executeTool: (name: string, input: Record<string, unknown>, context: ToolContext) => Promise<string>;
+}
 
 /**
  * Composition prompt template.
@@ -98,6 +109,7 @@ function formatStepResults(stepResults: Record<string, StepResult>): string {
  *
  * @param context Plan context with all information
  * @param plan The executed plan
+ * @param deps Injected tool dependencies
  * @param failureReason Optional reason for failure
  * @param logger Trace logger for debugging
  * @returns User-friendly response string
@@ -105,6 +117,7 @@ function formatStepResults(stepResults: Record<string, StepResult>): string {
 export async function synthesizeResponse(
   context: PlanContext,
   plan: ExecutionPlan,
+  deps: ComposerDeps,
   failureReason?: 'timeout' | 'step_failed',
   logger?: TraceLogger
 ): Promise<string> {
@@ -152,8 +165,8 @@ Explain what succeeded and what didn't.
   }
 
   try {
-    // Tools available for composition (just maps for now)
-    const tools = [formatMapsLink.tool];
+    // Tools available for composition (injected by caller)
+    const tools = deps.compositionTools;
 
     // Build tool context for execution
     const toolContext = {
@@ -214,7 +227,7 @@ Explain what succeeded and what didn't.
           });
 
           try {
-            const result = await executeTool(
+            const result = await deps.executeTool(
               toolUse.name,
               toolUse.input as Record<string, unknown>,
               toolContext

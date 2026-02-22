@@ -5,11 +5,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Mock all external dependencies
-vi.mock('../../../../src/executor/tool-executor.js', () => ({
-  executeWithTools: vi.fn(),
+const mockExecuteWithTools = vi.fn();
+vi.mock('../../../../src/domains/email-watcher/providers/executor.js', () => ({
+  getEmailWatcherExecuteWithTools: vi.fn(() => mockExecuteWithTools),
 }));
 
-vi.mock('../../../../src/services/email-watcher/sqlite.js', () => ({
+vi.mock('../../../../src/domains/email-watcher/repo/sqlite.js', () => ({
   getEmailSkillStore: vi.fn(),
 }));
 
@@ -19,7 +20,7 @@ vi.mock('../../../../src/services/user-config/index.js', () => ({
   })),
 }));
 
-vi.mock('../../../../src/services/memory/index.js', () => ({
+vi.mock('../../../../src/domains/email-watcher/providers/memory.js', () => ({
   getMemoryStore: vi.fn(() => ({
     getFacts: vi.fn().mockResolvedValue([]),
   })),
@@ -39,11 +40,10 @@ vi.mock('../../../../src/config.js', () => ({
   },
 }));
 
-import { executeSkillActions } from '../../../../src/services/email-watcher/actions.js';
-import { executeWithTools } from '../../../../src/executor/tool-executor.js';
-import { getEmailSkillStore } from '../../../../src/services/email-watcher/sqlite.js';
+import { executeSkillActions } from '../../../../src/domains/email-watcher/service/actions.js';
+import { getEmailSkillStore } from '../../../../src/domains/email-watcher/repo/sqlite.js';
 import { sendSms } from '../../../../src/twilio.js';
-import type { ClassificationResult, EmailSkill } from '../../../../src/services/email-watcher/types.js';
+import type { ClassificationResult, EmailSkill } from '../../../../src/domains/email-watcher/types.js';
 
 function makeSkill(overrides: Partial<EmailSkill> = {}): EmailSkill {
   return {
@@ -102,7 +102,7 @@ describe('executeSkillActions', () => {
     (getEmailSkillStore as ReturnType<typeof vi.fn>).mockReturnValue({
       getSkillsForUser: vi.fn().mockReturnValue([skill]),
     });
-    (executeWithTools as ReturnType<typeof vi.fn>).mockResolvedValue({
+    mockExecuteWithTools.mockResolvedValue({
       success: true,
       output: 'Appended row to spreadsheet',
     });
@@ -118,12 +118,12 @@ describe('executeSkillActions', () => {
 
     // Re-import to get fresh module with clean throttle
     const { executeSkillActions: freshExecute } = await import(
-      '../../../../src/services/email-watcher/actions.js'
+      '../../../../src/domains/email-watcher/service/actions.js'
     );
     await freshExecute('+1234567890', [classification]);
 
-    expect(executeWithTools).toHaveBeenCalledTimes(1);
-    const callArgs = (executeWithTools as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(mockExecuteWithTools).toHaveBeenCalledTimes(1);
+    const callArgs = mockExecuteWithTools.mock.calls[0];
     // First arg is system prompt
     expect(callArgs[0]).toContain('invoice-tracker');
     // Second arg is the task string
@@ -150,11 +150,11 @@ describe('executeSkillActions', () => {
     });
 
     const { executeSkillActions: freshExecute } = await import(
-      '../../../../src/services/email-watcher/actions.js'
+      '../../../../src/domains/email-watcher/service/actions.js'
     );
     await freshExecute('+1234567890', [classification]);
 
-    expect(executeWithTools).not.toHaveBeenCalled();
+    expect(mockExecuteWithTools).not.toHaveBeenCalled();
     expect(sendSms).toHaveBeenCalledTimes(1);
     const smsBody = (sendSms as ReturnType<typeof vi.fn>).mock.calls[0][1] as string;
     expect(smsBody).toContain('Invoice from Acme Corp for $100');
@@ -177,7 +177,7 @@ describe('executeSkillActions', () => {
     });
 
     const { executeSkillActions: freshExecute } = await import(
-      '../../../../src/services/email-watcher/actions.js'
+      '../../../../src/domains/email-watcher/service/actions.js'
     );
     await freshExecute('+1234567890', [classification]);
 
@@ -195,7 +195,7 @@ describe('executeSkillActions', () => {
     });
 
     const { executeSkillActions: freshExecute } = await import(
-      '../../../../src/services/email-watcher/actions.js'
+      '../../../../src/domains/email-watcher/service/actions.js'
     );
 
     // Send max notifications (3 per config mock)
@@ -230,7 +230,7 @@ describe('executeSkillActions', () => {
     });
 
     // First tool action fails
-    (executeWithTools as ReturnType<typeof vi.fn>).mockResolvedValue({
+    mockExecuteWithTools.mockResolvedValue({
       success: false,
       error: 'Tool execution failed',
     });
@@ -243,7 +243,7 @@ describe('executeSkillActions', () => {
     });
 
     const { executeSkillActions: freshExecute } = await import(
-      '../../../../src/services/email-watcher/actions.js'
+      '../../../../src/domains/email-watcher/service/actions.js'
     );
     await freshExecute('+1234567890', [classification]);
 
@@ -262,12 +262,12 @@ describe('executeSkillActions', () => {
     const classification = makeClassification({ matches: [] });
 
     const { executeSkillActions: freshExecute } = await import(
-      '../../../../src/services/email-watcher/actions.js'
+      '../../../../src/domains/email-watcher/service/actions.js'
     );
     await freshExecute('+1234567890', [classification]);
 
     expect(sendSms).not.toHaveBeenCalled();
-    expect(executeWithTools).not.toHaveBeenCalled();
+    expect(mockExecuteWithTools).not.toHaveBeenCalled();
   });
 
   it('includes email subject and from in notification SMS', async () => {
@@ -294,7 +294,7 @@ describe('executeSkillActions', () => {
     });
 
     const { executeSkillActions: freshExecute } = await import(
-      '../../../../src/services/email-watcher/actions.js'
+      '../../../../src/domains/email-watcher/service/actions.js'
     );
     await freshExecute('+1234567890', [classification]);
 

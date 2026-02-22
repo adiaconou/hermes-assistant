@@ -6,7 +6,7 @@
  */
 
 import type { Request, Response } from 'express';
-import { getMemoryStore } from '../services/memory/index.js';
+import { getMemoryStore } from '../domains/memory/runtime/index.js';
 
 /**
  * GET /admin/api/memories

@@ -5,7 +5,7 @@
  * Gemini pre-analysis in parallel. Returns both results.
  */
 
-import type { MediaAttachment } from '../../tools/types.js';
+import type { MediaAttachment } from '../../types/media.js';
 import type { StoredMediaAttachment, CurrentMediaSummary } from '../conversation/types.js';
 import { downloadAllMedia, uploadBuffersToDrive } from './upload.js';
 import { preAnalyzeMedia } from './pre-analyze.js';

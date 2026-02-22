@@ -4,7 +4,7 @@
 
 import type { Tool } from '@anthropic-ai/sdk/resources/messages';
 import type { UserConfig } from '../../user-config/index.js';
-import type { UserFact } from '../../memory/types.js';
+import type { UserFact } from '../../../domains/memory/types.js';
 import { buildTimeContext, buildUserMemoryXml } from './context.js';
 
 /**

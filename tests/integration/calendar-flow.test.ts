@@ -19,7 +19,7 @@ import {
   getCredentialStore,
   resetCredentialStore
 } from '../../src/services/credentials/index.js';
-import { getEmailSkillStore, resetEmailSkillStore } from '../../src/services/email-watcher/sqlite.js';
+import { getEmailSkillStore, resetEmailSkillStore } from '../../src/domains/email-watcher/repo/sqlite.js';
 
 import { generateAuthUrl, handleGoogleAuth, handleGoogleCallback } from '../../src/routes/auth.js';
 
@@ -225,7 +225,7 @@ describe('Calendar Integration', () => {
       setMockEvents(mockEvents);
 
       // Import and call listEvents directly for this integration test
-      const { listEvents } = await import('../../src/services/google/calendar.js');
+      const { listEvents } = await import('../../src/domains/calendar/providers/google-calendar.js');
 
       const events = await listEvents(
         testPhone,
@@ -247,7 +247,7 @@ describe('Calendar Integration', () => {
       });
 
       // Import and call createEvent directly
-      const { createEvent } = await import('../../src/services/google/calendar.js');
+      const { createEvent } = await import('../../src/domains/calendar/providers/google-calendar.js');
 
       const event = await createEvent(
         testPhone,

@@ -13,7 +13,7 @@
 import type { ConversationMessage, StoredMediaAttachment, ImageAnalysisMetadata, CurrentMediaSummary } from '../services/conversation/types.js';
 import type { UserConfig } from '../services/user-config/types.js';
 import type { MediaAttachment } from './types.js';
-import { getMemoryStore } from '../services/memory/index.js';
+import { getMemoryStore } from '../domains/memory/runtime/index.js';
 import { getConversationStore } from '../services/conversation/index.js';
 import { orchestrate } from './orchestrate.js';
 import { createTraceLogger } from '../utils/trace-logger.js';

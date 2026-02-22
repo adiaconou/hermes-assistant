@@ -2,7 +2,7 @@
 
 Per-domain quality grades for the Hermes Assistant codebase. Every domain should be above 90. Grades are updated when domains change significantly.
 
-Last graded: 2026-02-19
+Last graded: 2026-02-21
 
 ---
 
@@ -67,7 +67,7 @@ _Drags score down: Over-abstracted, speculative features, exotic dependencies, c
 
 ### Structural compliance
 
-Files respect the forward-layer rule (`types → config → repo → service → runtime → ui`), cross-domain imports go through declared `providers/` re-exports only, and no domain imports from forbidden top-level paths (`src/routes/`, `src/orchestrator/`, `src/executor/`, `src/registry/`). Once the boundary checker exists ([exec plan, Milestone 1](exec-plans/active/forward-layered-architecture-refactor.md)), this dimension is mechanically verifiable — the score is the pass rate of `npm run lint:architecture`.
+Files respect the forward-layer rule (`types → config → repo → service → runtime → ui`), cross-domain imports go through declared `providers/` re-exports only, and no domain imports from forbidden top-level paths (`src/routes/`, `src/orchestrator/`, `src/executor/`, `src/registry/`). This dimension is mechanically verified — the score is the pass rate of `npm run lint:architecture --strict`.
 
 _90+: Zero boundary violations. All cross-domain imports go through provider re-exports. Layer ordering is clean. No imports from forbidden paths._
 _Drags score down: Direct imports from sibling domain internals, upward layer imports (repo importing runtime), imports from forbidden top-level paths, bypassing provider re-export pattern for cross-domain dependencies, `AuthRequiredError` or similar shared types defined in the wrong module._
@@ -79,19 +79,19 @@ _Drags score down: Direct imports from sibling domain internals, upward layer im
 | Domain | Tests | Errors | Docs | Boundaries | Observability | Architecture | Core Beliefs | Structure | Overall |
 |--------|-------|--------|------|------------|---------------|-------------|-------------|-----------|---------|
 | Orchestrator | 55 | 65 | 80 | 45 | 60 | 75 | 65 | 60 | 63 |
-| Calendar agent | 60 | 75 | 85 | 70 | 70 | 85 | 80 | 50 | 72 |
-| Scheduler agent | 55 | 70 | 80 | 65 | 65 | 80 | 75 | 65 | 69 |
-| Email agent | 55 | 75 | 85 | 65 | 70 | 80 | 80 | 55 | 71 |
-| Memory agent | 65 | 75 | 85 | 70 | 70 | 85 | 85 | 70 | 76 |
-| Drive agent | 65 | 75 | 80 | 65 | 70 | 80 | 80 | 45 | 70 |
-| UI agent | 75 | 80 | 85 | 75 | 75 | 85 | 85 | 75 | 79 |
+| Calendar agent | 60 | 75 | 85 | 70 | 70 | 85 | 80 | 90 | 77 |
+| Scheduler agent | 55 | 70 | 80 | 65 | 65 | 80 | 75 | 90 | 73 |
+| Email agent | 55 | 75 | 85 | 65 | 70 | 80 | 80 | 90 | 75 |
+| Memory agent | 65 | 75 | 85 | 70 | 70 | 85 | 85 | 90 | 78 |
+| Drive agent | 65 | 75 | 80 | 65 | 70 | 80 | 80 | 90 | 76 |
+| UI agent | 75 | 80 | 85 | 75 | 75 | 85 | 85 | 90 | 81 |
 | General agent | 35 | 65 | 60 | 55 | 65 | 75 | 70 | 50 | 59 |
-| Memory system | 80 | 85 | 90 | 80 | 80 | 90 | 90 | 75 | 84 |
-| Scheduler system | 65 | 75 | 80 | 70 | 75 | 85 | 80 | 70 | 75 |
+| Memory system | 80 | 85 | 90 | 80 | 80 | 90 | 90 | 90 | 86 |
+| Scheduler system | 65 | 75 | 80 | 70 | 75 | 85 | 80 | 90 | 78 |
 | Date resolver | 70 | 65 | 80 | 60 | 55 | 75 | 80 | 80 | 71 |
-| Email watcher | 80 | 80 | 85 | 80 | 80 | 85 | 85 | 45 | 78 |
+| Email watcher | 80 | 80 | 85 | 80 | 80 | 85 | 85 | 90 | 83 |
 | SMS routing | 60 | 75 | 70 | 75 | 75 | 80 | 80 | 60 | 72 |
-| Tools layer | 70 | 70 | 65 | 70 | 70 | 80 | 80 | 40 | 68 |
+| Tools layer | 70 | 70 | 65 | 70 | 70 | 80 | 80 | 85 | 74 |
 | Database layer | 75 | 80 | 75 | 80 | 75 | 85 | 85 | 75 | 79 |
-| Google integrations | 60 | 75 | 80 | 70 | 70 | 80 | 80 | 35 | 69 |
+| Google integrations | 60 | 75 | 80 | 70 | 70 | 80 | 80 | 90 | 76 |
 

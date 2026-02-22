@@ -15,10 +15,11 @@ import {
   getCredentialStore,
   resetCredentialStore
 } from '../../src/services/credentials/index.js';
-import { clearClientCache } from '../../src/services/google/auth.js';
+import { clearClientCache } from '../../src/domains/google-core/providers/auth.js';
 
 // Import after mocks are set up
-import { listEvents, createEvent, updateEvent, deleteEvent, AuthRequiredError } from '../../src/services/google/calendar.js';
+import { listEvents, createEvent, updateEvent, deleteEvent } from '../../src/domains/calendar/providers/google-calendar.js';
+import { AuthRequiredError } from '../../src/providers/auth.js';
 
 describe('Calendar Service', () => {
   const testPhone = '+1234567890';

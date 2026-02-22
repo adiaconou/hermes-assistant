@@ -8,7 +8,7 @@
  */
 
 import type { AgentCapability, AgentRegistry, AgentExecutor } from './types.js';
-import { AGENTS } from '../agents/index.js';
+import { AGENTS } from '../registry/agents.js';
 import { registerAgentExecutor } from './router.js';
 
 /**

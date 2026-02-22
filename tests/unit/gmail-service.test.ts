@@ -15,11 +15,11 @@ import {
   getCredentialStore,
   resetCredentialStore,
 } from '../../src/services/credentials/index.js';
-import { clearClientCache } from '../../src/services/google/auth.js';
+import { clearClientCache } from '../../src/domains/google-core/providers/auth.js';
 
 // Import after mocks are set up
-import { listEmails, getEmail, getThread } from '../../src/services/google/gmail.js';
-import { AuthRequiredError } from '../../src/services/google/calendar.js';
+import { listEmails, getEmail, getThread } from '../../src/domains/email/providers/gmail.js';
+import { AuthRequiredError } from '../../src/providers/auth.js';
 
 describe('Gmail Service', () => {
   const testPhone = '+1234567890';

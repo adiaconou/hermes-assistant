@@ -102,7 +102,7 @@ vi.mock('../../src/services/conversation/index.js', () => {
   };
 });
 
-vi.mock('../../src/services/memory/index.js', () => {
+vi.mock('../../src/domains/memory/service/store.js', () => {
   const facts: Array<{
     id: string;
     phoneNumber: string;
@@ -215,9 +215,10 @@ vi.mock('../../src/config.js', () => ({
 }));
 
 // Now import the processor (after mocks are set up)
-import { processUnprocessedMessages } from '../../src/services/memory/processor.js';
+import { processUnprocessedMessages } from '../../src/domains/memory/service/processor.js';
 import { getConversationStore, _testHelpers as convHelpers } from '../../src/services/conversation/index.js';
-import { _testHelpers as memHelpers } from '../../src/services/memory/index.js';
+// TODO: _testHelpers is not exported from src/domains/memory/service/store.ts — the mock defined above in vi.mock provides it inline
+import { _testHelpers as memHelpers } from '../../src/domains/memory/service/store.js';
 import config from '../../src/config.js';
 
 describe('Memory Processor', () => {

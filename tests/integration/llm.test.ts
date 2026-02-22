@@ -34,7 +34,7 @@ describe('classifyMessage', () => {
       createTextResponse('{"needsAsyncWork": false, "immediateResponse": "Hello! How can I help?"}'),
     ]);
 
-    const result = await classifyMessage('Hi', []);
+    const result = await classifyMessage([], 'Hi', []);
 
     expect(result.needsAsyncWork).toBe(false);
     expect(result.immediateResponse).toBe('Hello! How can I help?');
@@ -45,7 +45,7 @@ describe('classifyMessage', () => {
       createTextResponse('{"needsAsyncWork": true, "immediateResponse": "Let me create that list for you!"}'),
     ]);
 
-    const result = await classifyMessage('Create a grocery list for making pasta', []);
+    const result = await classifyMessage([], 'Create a grocery list for making pasta', []);
 
     expect(result.needsAsyncWork).toBe(true);
     expect(result.immediateResponse).toContain('list');
@@ -61,7 +61,7 @@ describe('classifyMessage', () => {
       { role: 'assistant', content: 'Hi there!' },
     ];
 
-    await classifyMessage('Thanks', history);
+    await classifyMessage([], 'Thanks', history);
 
     const calls = getCreateCalls();
     expect(calls.length).toBe(1);
@@ -85,7 +85,7 @@ describe('classifyMessage', () => {
       },
     ];
 
-    await classifyMessage('Hi', [], null, userFacts);
+    await classifyMessage([], 'Hi', [], null, userFacts);
 
     const calls = getCreateCalls();
     expect(calls.length).toBe(1);
@@ -98,7 +98,7 @@ describe('classifyMessage', () => {
       createTextResponse('{"needsAsyncWork": true, "immediateResponse": "Working on that memory request."}'),
     ]);
 
-    await classifyMessage('Remember that I like tea', []);
+    await classifyMessage([], 'Remember that I like tea', []);
 
     const calls = getCreateCalls();
     expect(calls.length).toBe(1);
@@ -110,7 +110,7 @@ describe('classifyMessage', () => {
       createTextResponse('This is not valid JSON'),
     ]);
 
-    const result = await classifyMessage('Test', []);
+    const result = await classifyMessage([], 'Test', []);
 
     expect(result.needsAsyncWork).toBe(true);
     expect(result.immediateResponse).toBe("✨ Let me work on that for you!");
@@ -121,7 +121,7 @@ describe('classifyMessage', () => {
       createTextResponse('{"needsAsyncWork": false, "immediateResponse": "Test"}'),
     ]);
 
-    await classifyMessage('Test', []);
+    await classifyMessage([], 'Test', []);
 
     const calls = getCreateCalls();
     expect(calls.length).toBe(1);

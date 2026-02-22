@@ -3,18 +3,18 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { SqliteMemoryStore } from '../../../src/services/memory/sqlite.js';
+import { SqliteMemoryStore } from '../../../src/domains/memory/repo/sqlite.js';
 import { listMemories, deleteMemory } from '../../../src/admin/memory.js';
 import { createMockReqRes } from '../../helpers/mock-http.js';
 import fs from 'fs';
 import path from 'path';
 
 // Mock the memory store module
-vi.mock('../../../src/services/memory/index.js', () => ({
+vi.mock('../../../src/domains/memory/runtime/index.js', () => ({
   getMemoryStore: vi.fn(),
 }));
 
-import { getMemoryStore } from '../../../src/services/memory/index.js';
+import { getMemoryStore } from '../../../src/domains/memory/runtime/index.js';
 
 const TEST_DB_PATH = './data/test-admin-memory.db';
 

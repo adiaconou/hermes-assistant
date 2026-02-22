@@ -73,6 +73,41 @@ When in doubt, add a tool to an existing agent. New agents increase planner comp
 | Concern | Pattern | Key file |
 |---------|---------|----------|
 | Date handling | `resolveDate()` / `resolveDateRange()` via chrono-node + Luxon | `src/services/date/resolver.ts` |
-| Memory injection | Facts ranked by confidence, injected into agent prompts | `src/services/memory/ranking.ts` |
+| Memory injection | Facts ranked by confidence, injected into agent prompts | `src/domains/memory/service/ranking.ts` |
 | Conversation windowing | 24h / 20 messages / 4000 tokens sliding window | `src/orchestrator/conversation-window.ts` |
 | User config | Timezone and name resolved per-phone-number | `src/services/user-config/sqlite.ts` |
+
+---
+
+## How to Add a New Domain Module
+
+### File Structure
+
+```
+src/domains/<domain>/
+├── types.ts          # Domain types, DTOs, error classes
+├── capability.ts     # DomainCapability metadata (agent|tool-only|internal)
+├── repo/             # Persistence (optional)
+├── providers/        # Cross-cutting bridges (executor injection, cross-domain re-exports)
+├── service/          # Business logic
+└── runtime/          # Agent adapter, tool definitions, prompts
+```
+
+### Steps
+
+1. Create `src/domains/<name>/types.ts` with domain types.
+2. Create `capability.ts` with exposure level (`agent`, `tool-only`, or `internal`).
+3. Add layers as needed (`repo` -> `providers` -> `service` -> `runtime`).
+4. If the domain has an agent: create `runtime/agent.ts` with capability + executor, add to `src/registry/agents.ts`.
+5. If the domain has tools: create `runtime/tools.ts`, import in `src/tools/index.ts`.
+6. If the domain needs `executeWithTools`: create `providers/executor.ts` with injection pattern, wire in `src/index.ts`.
+7. If the domain imports from another domain: create a `providers/<other-domain>.ts` bridge and add a `crossDomainRules` entry in `config/architecture-boundaries.json`.
+8. Run `npm run lint:architecture` to verify 0 violations.
+9. Run `npm run lint:agents` if the domain exposes an agent.
+
+### Layer Rules
+
+- **Forward-only**: `types` -> `config` -> `repo` -> `providers` -> `service` -> `runtime` -> `ui`
+- Same-layer imports are allowed.
+- Cross-domain imports MUST go through `providers/` bridges.
+- External imports from domains are governed by `config/architecture-boundaries.json`.

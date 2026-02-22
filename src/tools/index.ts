@@ -5,23 +5,23 @@
 import type { Tool } from '@anthropic-ai/sdk/resources/messages';
 import type { ToolDefinition, ToolHandler, ToolContext } from './types.js';
 
-import { generateUi } from './ui.js';
-import { getCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, resolveDateTool } from './calendar.js';
-import { getEmails, readEmail, getEmailThread } from './email.js';
-import { extractMemory, listMemories, updateMemory, removeMemory } from './memory.js';
+import { generateUi } from '../domains/ui/runtime/tools.js';
+import { getCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, resolveDateTool } from '../domains/calendar/runtime/tools.js';
+import { getEmails, readEmail, getEmailThread } from '../domains/email/runtime/tools.js';
+import { extractMemory, listMemories, updateMemory, removeMemory } from '../domains/memory/runtime/tools.js';
 import { setUserConfig, deleteUserData } from './user-config.js';
-import { createScheduledJob, listScheduledJobs, updateScheduledJob, deleteScheduledJob } from './scheduler.js';
+import { createScheduledJob, listScheduledJobs, updateScheduledJob, deleteScheduledJob } from '../domains/scheduler/runtime/tools.js';
 import { formatMapsLink } from './maps.js';
 // Google Workspace tools
-import { uploadToDrive, listDriveFiles, createDriveFolder, readDriveFile, searchDrive, getHermesFolder } from './drive.js';
-import { createSpreadsheetTool, readSpreadsheet, writeSpreadsheet, appendToSpreadsheet, findSpreadsheetTool } from './sheets.js';
-import { createDocumentTool, readDocument, appendToDocument, findDocumentTool } from './docs.js';
-import { analyzeImageTool } from './vision.js';
+import { uploadToDrive, listDriveFiles, createDriveFolder, readDriveFile, searchDrive, getHermesFolder } from '../domains/drive/runtime/tools.js';
+import { createSpreadsheetTool, readSpreadsheet, writeSpreadsheet, appendToSpreadsheet, findSpreadsheetTool } from '../domains/drive/runtime/tools.js';
+import { createDocumentTool, readDocument, appendToDocument, findDocumentTool } from '../domains/drive/runtime/tools.js';
+import { analyzeImageTool } from '../domains/drive/runtime/tools.js';
 // Email skill management
 import {
   createEmailSkill, listEmailSkills, updateEmailSkill,
   deleteEmailSkill, toggleEmailWatcher, testEmailSkill,
-} from './email-skills.js';
+} from '../domains/email-watcher/runtime/tools.js';
 
 /**
  * All tool definitions.

@@ -12,7 +12,7 @@ import {
   readDriveFile,
   searchDrive,
   getHermesFolder,
-} from '../../../src/tools/drive.js';
+} from '../../../src/domains/drive/runtime/tools.js';
 
 describe('drive tools', () => {
   describe('upload_to_drive tool definition', () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-vi.mock('../../../src/services/google/drive.js', () => ({
+vi.mock('../../../src/domains/drive/providers/google-drive.js', () => ({
   uploadFile: vi.fn(),
   listFiles: vi.fn(),
   createFolder: vi.fn(),
@@ -9,9 +9,9 @@ vi.mock('../../../src/services/google/drive.js', () => ({
   getOrCreateHermesFolder: vi.fn(),
 }));
 
-import { uploadToDrive, listDriveFiles } from '../../../src/tools/drive.js';
-import { AuthRequiredError } from '../../../src/services/google/calendar.js';
-import { uploadFile, listFiles } from '../../../src/services/google/drive.js';
+import { uploadToDrive, listDriveFiles } from '../../../src/domains/drive/runtime/tools.js';
+import { AuthRequiredError } from '../../../src/providers/auth.js';
+import { uploadFile, listFiles } from '../../../src/domains/drive/providers/google-drive.js';
 import type { ToolContext } from '../../../src/tools/types.js';
 
 describe('drive tool handlers', () => {

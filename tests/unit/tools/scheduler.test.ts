@@ -13,19 +13,22 @@ vi.mock('../../../src/services/user-config/index.js', () => ({
   })),
 }));
 
-vi.mock('../../../src/services/scheduler/index.js', () => ({
+vi.mock('../../../src/domains/scheduler/repo/sqlite.js', () => ({
   createJob: vi.fn(() => ({ id: 'job_123' })),
   getJobById: vi.fn(),
   getJobsByPhone: vi.fn(() => []),
-  updateJob: vi.fn((db, id, updates) => ({ ...updates, id })),
+  updateJob: vi.fn((_db: unknown, id: string, updates: Record<string, unknown>) => ({ ...updates, id })),
   deleteJob: vi.fn(),
-  parseScheduleToCron: vi.fn((schedule) => {
+}));
+
+vi.mock('../../../src/domains/scheduler/service/parser.js', () => ({
+  parseScheduleToCron: vi.fn((schedule: string) => {
     if (schedule.includes('daily')) return '0 9 * * *';
     if (schedule.includes('hourly')) return '0 * * * *';
     return null;
   }),
   parseReminderTime: vi.fn(() => Math.floor(Date.now() / 1000) + 3600),
-  parseSchedule: vi.fn((schedule) => {
+  parseSchedule: vi.fn((schedule: string) => {
     if (schedule.includes('daily') || schedule.includes('every')) {
       return { type: 'recurring', cronExpression: '0 9 * * *' };
     }
@@ -35,6 +38,9 @@ vi.mock('../../../src/services/scheduler/index.js', () => ({
     return null;
   }),
   cronToHuman: vi.fn(() => 'daily at 9 AM'),
+}));
+
+vi.mock('../../../src/domains/scheduler/runtime/index.js', () => ({
   getSchedulerDb: vi.fn(() => ({})),
 }));
 
@@ -43,7 +49,7 @@ import {
   listScheduledJobs,
   updateScheduledJob,
   deleteScheduledJob,
-} from '../../../src/tools/scheduler.js';
+} from '../../../src/domains/scheduler/runtime/tools.js';
 import type { ToolContext } from '../../../src/tools/types.js';
 import {
   createJob,
@@ -51,7 +57,7 @@ import {
   getJobsByPhone,
   updateJob,
   deleteJob,
-} from '../../../src/services/scheduler/index.js';
+} from '../../../src/domains/scheduler/repo/sqlite.js';
 import { getUserConfigStore } from '../../../src/services/user-config/index.js';
 
 describe('createScheduledJob', () => {
@@ -155,7 +161,7 @@ describe('createScheduledJob', () => {
     });
 
     it('should fail if schedule cannot be parsed', async () => {
-      const { parseSchedule } = await import('../../../src/services/scheduler/index.js');
+      const { parseSchedule } = await import('../../../src/domains/scheduler/service/parser.js');
       (parseSchedule as ReturnType<typeof vi.fn>).mockReturnValueOnce(null);
 
       const result = await createScheduledJob.handler(

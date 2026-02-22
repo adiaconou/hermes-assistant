@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { analyzeImageTool } from '../../../src/tools/vision.js';
+import { analyzeImageTool } from '../../../src/domains/drive/runtime/tools.js';
 
 describe('vision tools', () => {
   describe('analyze_image tool definition', () => {

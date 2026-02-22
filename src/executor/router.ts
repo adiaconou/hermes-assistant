@@ -7,7 +7,7 @@
  */
 
 import type { StepResult, AgentExecutionContext, AgentExecutor } from './types.js';
-import { AGENTS } from '../agents/index.js';
+import { AGENTS } from '../registry/agents.js';
 
 /**
  * Map of agent names to their executor functions.

@@ -1,0 +1,120 @@
+{
+  "forbidden": [
+    {
+      "from": "src/services/",
+      "to": "src/tools/",
+      "message": "Services cannot import from tools layer. Pass dependencies via function parameters or move shared types to src/types/."
+    },
+    {
+      "from": "src/services/",
+      "to": "src/routes/",
+      "message": "Services cannot import from routes layer. Move shared logic to src/providers/."
+    },
+    {
+      "from": "src/services/",
+      "to": "src/orchestrator/",
+      "message": "Services cannot import from orchestrator layer."
+    },
+    {
+      "from": "src/tools/",
+      "to": "src/routes/",
+      "message": "Tools cannot import from routes layer. Move shared logic (e.g., generateAuthUrl) to src/providers/."
+    }
+  ],
+  "domainLayerRules": {
+    "layers": ["types", "config", "repo", "providers", "service", "runtime", "ui"],
+    "allowedImports": {
+      "types": [],
+      "config": ["types"],
+      "repo": ["types", "config", "providers"],
+      "providers": ["types", "config"],
+      "service": ["types", "config", "repo", "providers"],
+      "runtime": ["types", "config", "repo", "service", "providers"],
+      "ui": ["types", "service"]
+    }
+  },
+  "crossDomainRules": {
+    "default": "deny",
+    "allowed": [
+      {
+        "from": "src/domains/calendar/",
+        "to": "src/domains/google-core/",
+        "via": "providers/google-core.ts",
+        "reason": "Shared Google OAuth2 and retry infrastructure"
+      },
+      {
+        "from": "src/domains/email/",
+        "to": "src/domains/google-core/",
+        "via": "providers/google-core.ts",
+        "reason": "Shared Google OAuth2"
+      },
+      {
+        "from": "src/domains/drive/",
+        "to": "src/domains/google-core/",
+        "via": "providers/google-core.ts",
+        "reason": "Shared Google OAuth2 and folder hierarchy"
+      },
+      {
+        "from": "src/domains/email-watcher/",
+        "to": "src/domains/google-core/",
+        "via": "providers/google-core.ts",
+        "reason": "Shared Google OAuth2 for Gmail history sync"
+      },
+      {
+        "from": "src/domains/scheduler/",
+        "to": "src/domains/memory/",
+        "via": "providers/memory.ts",
+        "reason": "Scheduler executor needs memory store for user fact retrieval"
+      },
+      {
+        "from": "src/domains/email-watcher/",
+        "to": "src/domains/memory/",
+        "via": "providers/memory.ts",
+        "reason": "Email-watcher classifier and actions need memory store for user facts"
+      },
+      {
+        "from": "src/domains/email-watcher/",
+        "to": "src/domains/email/",
+        "via": "providers/email.ts",
+        "reason": "Email-watcher test tool uses listEmails from email domain"
+      }
+    ]
+  },
+  "domainExternalRules": {
+    "allowed": [
+      "src/config",
+      "src/providers/",
+      "src/types/",
+      "src/utils/",
+      "src/twilio",
+      "src/services/date/",
+      "src/services/credentials/",
+      "src/services/conversation/",
+      "src/services/anthropic/",
+      "src/services/user-config/",
+      "src/services/twilio/",
+      "src/services/ui/",
+      "src/tools/",
+      "src/agents/"
+    ],
+    "forbidden": [
+      {
+        "to": "src/routes/",
+        "message": "Domains cannot import routes. Routes import domains, not the reverse."
+      },
+      {
+        "to": "src/orchestrator/",
+        "message": "Domains cannot import orchestrator. Use providers for cross-cutting concerns."
+      },
+      {
+        "to": "src/executor/",
+        "message": "Domains cannot import executor directly. Inject executeWithTools via providers."
+      },
+      {
+        "to": "src/registry/",
+        "message": "Domains cannot import registry. Registry imports domains, not the reverse."
+      }
+    ]
+  },
+  "exceptions": []
+}

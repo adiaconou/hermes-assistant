@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Database from 'better-sqlite3';
-import { EmailSkillStore, resetEmailSkillStore } from '../../../src/services/email-watcher/sqlite.js';
+import { EmailSkillStore, resetEmailSkillStore } from '../../../src/domains/email-watcher/repo/sqlite.js';
 import {
   listSkills,
   createSkill,
@@ -17,7 +17,7 @@ import {
 import { createMockReqRes } from '../../helpers/mock-http.js';
 
 // Mock the store singleton to use our in-memory store
-vi.mock('../../../src/services/email-watcher/sqlite.js', async (importOriginal) => {
+vi.mock('../../../src/domains/email-watcher/repo/sqlite.js', async (importOriginal) => {
   const original = await importOriginal() as Record<string, unknown>;
   return {
     ...original,
@@ -35,7 +35,7 @@ vi.mock('../../../src/config.js', () => ({
   },
 }));
 
-import { getEmailSkillStore } from '../../../src/services/email-watcher/sqlite.js';
+import { getEmailSkillStore } from '../../../src/domains/email-watcher/repo/sqlite.js';
 import { getUserConfigStore } from '../../../src/services/user-config/index.js';
 
 describe('Admin Email Skills API', () => {

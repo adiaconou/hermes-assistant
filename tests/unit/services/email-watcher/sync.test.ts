@@ -5,11 +5,11 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { prepareEmailForClassification } from '../../../../src/services/email-watcher/sync.js';
+import { prepareEmailForClassification } from '../../../../src/domains/email-watcher/providers/gmail-sync.js';
 import type { gmail_v1 } from 'googleapis';
 
 // Mock dependencies for syncNewEmails
-vi.mock('../../../../src/services/google/auth.js', () => ({
+vi.mock('../../../../src/domains/google-core/providers/auth.js', () => ({
   getAuthenticatedClient: vi.fn(),
 }));
 
@@ -289,7 +289,7 @@ describe('syncNewEmails', () => {
 
   it('seeds historyId on first run and returns empty array', async () => {
     const { getAuthenticatedClient } = await import(
-      '../../../../src/services/google/auth.js'
+      '../../../../src/domains/google-core/providers/auth.js'
     );
     const { getUserConfigStore } = await import(
       '../../../../src/services/user-config/index.js'
@@ -309,7 +309,7 @@ describe('syncNewEmails', () => {
     (getAuthenticatedClient as ReturnType<typeof vi.fn>).mockResolvedValue({});
 
     const { syncNewEmails } = await import(
-      '../../../../src/services/email-watcher/sync.js'
+      '../../../../src/domains/email-watcher/providers/gmail-sync.js'
     );
     const result = await syncNewEmails('+1234567890');
 
@@ -319,7 +319,7 @@ describe('syncNewEmails', () => {
 
   it('fetches new messages on subsequent runs', async () => {
     const { getAuthenticatedClient } = await import(
-      '../../../../src/services/google/auth.js'
+      '../../../../src/domains/google-core/providers/auth.js'
     );
     const { getUserConfigStore } = await import(
       '../../../../src/services/user-config/index.js'
@@ -371,7 +371,7 @@ describe('syncNewEmails', () => {
     (getAuthenticatedClient as ReturnType<typeof vi.fn>).mockResolvedValue({});
 
     const { syncNewEmails } = await import(
-      '../../../../src/services/email-watcher/sync.js'
+      '../../../../src/domains/email-watcher/providers/gmail-sync.js'
     );
     const result = await syncNewEmails('+1234567890');
 
@@ -384,7 +384,7 @@ describe('syncNewEmails', () => {
 
   it('handles pagination in history list', async () => {
     const { getAuthenticatedClient } = await import(
-      '../../../../src/services/google/auth.js'
+      '../../../../src/domains/google-core/providers/auth.js'
     );
     const { getUserConfigStore } = await import(
       '../../../../src/services/user-config/index.js'
@@ -451,7 +451,7 @@ describe('syncNewEmails', () => {
     (getAuthenticatedClient as ReturnType<typeof vi.fn>).mockResolvedValue({});
 
     const { syncNewEmails } = await import(
-      '../../../../src/services/email-watcher/sync.js'
+      '../../../../src/domains/email-watcher/providers/gmail-sync.js'
     );
     const result = await syncNewEmails('+1234567890');
 
@@ -461,7 +461,7 @@ describe('syncNewEmails', () => {
 
   it('filters to INBOX-only messages', async () => {
     const { getAuthenticatedClient } = await import(
-      '../../../../src/services/google/auth.js'
+      '../../../../src/domains/google-core/providers/auth.js'
     );
     const { getUserConfigStore } = await import(
       '../../../../src/services/user-config/index.js'
@@ -513,7 +513,7 @@ describe('syncNewEmails', () => {
     (getAuthenticatedClient as ReturnType<typeof vi.fn>).mockResolvedValue({});
 
     const { syncNewEmails } = await import(
-      '../../../../src/services/email-watcher/sync.js'
+      '../../../../src/domains/email-watcher/providers/gmail-sync.js'
     );
     const result = await syncNewEmails('+1234567890');
 
@@ -524,7 +524,7 @@ describe('syncNewEmails', () => {
 
   it('recovers from invalid historyId (404) by resetting cursor', async () => {
     const { getAuthenticatedClient } = await import(
-      '../../../../src/services/google/auth.js'
+      '../../../../src/domains/google-core/providers/auth.js'
     );
     const { getUserConfigStore } = await import(
       '../../../../src/services/user-config/index.js'
@@ -551,7 +551,7 @@ describe('syncNewEmails', () => {
     (getAuthenticatedClient as ReturnType<typeof vi.fn>).mockResolvedValue({});
 
     const { syncNewEmails } = await import(
-      '../../../../src/services/email-watcher/sync.js'
+      '../../../../src/domains/email-watcher/providers/gmail-sync.js'
     );
     const result = await syncNewEmails('+1234567890');
 

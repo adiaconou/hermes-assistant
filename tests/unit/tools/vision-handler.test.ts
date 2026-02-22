@@ -1,13 +1,21 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-vi.mock('../../../src/services/google/vision.js', () => {
-  class GeminiNotConfiguredError extends Error {}
-  return {
-    analyzeImage: vi.fn(),
-    isAnalyzableImage: vi.fn(() => true),
-    GeminiNotConfiguredError,
-  };
+const { MockGeminiNotConfiguredError } = vi.hoisted(() => {
+  class MockGeminiNotConfiguredError extends Error {
+    constructor(msg?: string) { super(msg); this.name = 'GeminiNotConfiguredError'; }
+  }
+  return { MockGeminiNotConfiguredError };
 });
+
+vi.mock('../../../src/domains/drive/types.js', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return { ...orig, GeminiNotConfiguredError: MockGeminiNotConfiguredError };
+});
+
+vi.mock('../../../src/domains/drive/providers/gemini-vision.js', () => ({
+  analyzeImage: vi.fn(),
+  isAnalyzableImage: vi.fn(() => true),
+}));
 
 vi.mock('../../../src/services/twilio/media.js', () => ({
   downloadTwilioMedia: vi.fn(),
@@ -15,7 +23,7 @@ vi.mock('../../../src/services/twilio/media.js', () => ({
   isImageType: vi.fn(() => true),
 }));
 
-vi.mock('../../../src/services/google/drive.js', () => ({
+vi.mock('../../../src/domains/drive/providers/google-drive.js', () => ({
   downloadFile: vi.fn(),
 }));
 
@@ -27,8 +35,8 @@ vi.mock('../../../src/services/conversation/index.js', () => ({
   getConversationStore: vi.fn(() => mockConversationStore),
 }));
 
-import { analyzeImageTool } from '../../../src/tools/vision.js';
-import { analyzeImage, GeminiNotConfiguredError } from '../../../src/services/google/vision.js';
+import { analyzeImageTool } from '../../../src/domains/drive/runtime/tools.js';
+import { analyzeImage } from '../../../src/domains/drive/providers/gemini-vision.js';
 import { getConversationStore } from '../../../src/services/conversation/index.js';
 import type { ToolContext } from '../../../src/tools/types.js';
 
@@ -69,7 +77,7 @@ describe('vision tool handler', () => {
 
   it('analyze_image returns configuration message when Gemini is not configured', async () => {
     const analyzeImageMock = vi.mocked(analyzeImage);
-    analyzeImageMock.mockRejectedValueOnce(new GeminiNotConfiguredError('Missing key'));
+    analyzeImageMock.mockRejectedValueOnce(new MockGeminiNotConfiguredError('Missing key'));
 
     const result = await analyzeImageTool.handler({
       prompt: 'Describe this image',

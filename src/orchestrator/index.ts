@@ -27,22 +27,6 @@ export {
   formatPreviousResults,
 } from '../executor/tool-executor.js';
 
-// Export agent capabilities and executors (backwards compatibility)
-export {
-  generalAgentCapability,
-  executeGeneralAgent,
-  calendarAgentCapability,
-  executeCalendarAgent,
-  schedulerAgentCapability,
-  executeSchedulerAgent,
-  emailAgentCapability,
-  executeEmailAgent,
-  memoryAgentCapability,
-  executeMemoryAgent,
-  uiAgentCapability,
-  executeUiAgent,
-} from '../agents/index.js';
-
 // Export conversation window
 export {
   getRelevantHistory,

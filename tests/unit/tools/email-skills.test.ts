@@ -4,10 +4,10 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import Database from 'better-sqlite3';
-import { EmailSkillStore, resetEmailSkillStore } from '../../../src/services/email-watcher/sqlite.js';
+import { EmailSkillStore, resetEmailSkillStore } from '../../../src/domains/email-watcher/repo/sqlite.js';
 
 // Mock the singleton getter
-vi.mock('../../../src/services/email-watcher/sqlite.js', async (importOriginal) => {
+vi.mock('../../../src/domains/email-watcher/repo/sqlite.js', async (importOriginal) => {
   const original = await importOriginal() as Record<string, unknown>;
   return {
     ...original,
@@ -15,7 +15,7 @@ vi.mock('../../../src/services/email-watcher/sqlite.js', async (importOriginal) 
   };
 });
 
-vi.mock('../../../src/services/email-watcher/skills.js', async (importOriginal) => {
+vi.mock('../../../src/domains/email-watcher/service/skills.js', async (importOriginal) => {
   const original = await importOriginal() as Record<string, unknown>;
   return {
     ...original,
@@ -29,21 +29,21 @@ vi.mock('../../../src/services/user-config/index.js', () => ({
   })),
 }));
 
-vi.mock('../../../src/services/email-watcher/sync.js', () => ({
+vi.mock('../../../src/domains/email-watcher/providers/gmail-sync.js', () => ({
   syncNewEmails: vi.fn().mockResolvedValue([]),
   prepareEmailForClassification: vi.fn(),
 }));
 
-vi.mock('../../../src/services/email-watcher/classifier.js', () => ({
+vi.mock('../../../src/domains/email-watcher/service/classifier.js', () => ({
   classifyEmails: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock('../../../src/services/google/gmail.js', () => ({
+vi.mock('../../../src/domains/email/providers/gmail.js', () => ({
   listEmails: vi.fn().mockResolvedValue([]),
   getEmail: vi.fn(),
 }));
 
-vi.mock('../../../src/services/google/auth.js', () => ({
+vi.mock('../../../src/domains/google-core/providers/auth.js', () => ({
   getAuthenticatedClient: vi.fn(),
 }));
 
@@ -64,8 +64,8 @@ import {
   deleteEmailSkill,
   toggleEmailWatcher,
   testEmailSkill,
-} from '../../../src/tools/email-skills.js';
-import { getEmailSkillStore } from '../../../src/services/email-watcher/sqlite.js';
+} from '../../../src/domains/email-watcher/runtime/tools.js';
+import { getEmailSkillStore } from '../../../src/domains/email-watcher/repo/sqlite.js';
 import { getUserConfigStore } from '../../../src/services/user-config/index.js';
 import type { ToolContext } from '../../../src/tools/types.js';
 

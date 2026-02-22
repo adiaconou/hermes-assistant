@@ -14,7 +14,7 @@ vi.mock('../../../src/services/ui/index.js', () => ({
   generatePage: vi.fn(),
 }));
 
-import { generateUi } from '../../../src/tools/ui.js';
+import { generateUi } from '../../../src/domains/ui/runtime/tools.js';
 import { generatePage } from '../../../src/services/ui/index.js';
 
 const mockGeneratePage = vi.mocked(generatePage);
