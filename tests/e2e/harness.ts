@@ -355,6 +355,14 @@ export class E2EHarness {
   }
 
   /**
+   * Get all generated pages fetched via fetchPageHtml().
+   * Map keys are short URLs (e.g. /u/abc), values are the full HTML content.
+   */
+  getGeneratedPages(): Map<string, string> {
+    return new Map(this.generatedPages);
+  }
+
+  /**
    * Get conversation history from the store for the test phone number.
    */
   async getConversationHistory(): Promise<ConversationMessage[]> {

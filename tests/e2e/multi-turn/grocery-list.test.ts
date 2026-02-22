@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { E2EHarness } from '../harness.js';
+import { writeTestReport } from '../reporter.js';
 
 const hasApiKey = process.env.ANTHROPIC_API_KEY
   && process.env.ANTHROPIC_API_KEY !== 'test-api-key';
@@ -51,6 +52,12 @@ describeE2E('Multi-turn: Grocery List', () => {
       expect(secondHtml).toContain(item);
     }
 
+    // Capture turns for report before judge + assertions (written even on failure)
+    const turns = [
+      { userMessage: 'Create a grocery list with eggs, milk, bread and butter', response: turn1 },
+      { userMessage: 'Add hummus and regenerate the page. Return the new link.', response: turn2 },
+    ];
+
     // -- LLM Judge: analyzes conversation transcript + full trace logs --
     const verdict = await harness.judgeConversation([
       'The assistant correctly created a grocery list with all four requested items (eggs, milk, bread, butter) on turn 1.',
@@ -60,6 +67,15 @@ describeE2E('Multi-turn: Grocery List', () => {
       'The conversation flow is natural and coherent — the assistant understood the user intent without confusion or unnecessary clarification.',
       'No errors in the trace logs indicate data loss, silent failures, or corrupted state.',
     ]);
+
+    // Write report with verdict + generated page HTML files
+    const reportPath = writeTestReport({
+      testName: 'multi-turn-grocery-list',
+      turns,
+      generatedPages: harness.getGeneratedPages(),
+      verdict,
+    });
+    console.log(`\n📄 Report: ${reportPath}\n`);
 
     // Log the full verdict as a readable diagnostic (not a hard gate)
     console.log('\n── LLM Judge Verdict ──');

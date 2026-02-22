@@ -27,6 +27,9 @@ logs/
 # Test coverage
 coverage/
 
+# E2E test output reports
+tests/e2e/output/
+
 # Temporary files
 tmp/
 temp/

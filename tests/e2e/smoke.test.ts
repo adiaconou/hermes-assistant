@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { E2EHarness } from './harness.js';
+import { writeTestReport } from './reporter.js';
 
 const hasApiKey = process.env.ANTHROPIC_API_KEY
   && process.env.ANTHROPIC_API_KEY !== 'test-api-key';
@@ -20,6 +21,13 @@ describeE2E('Smoke test', () => {
 
   it('responds to a simple greeting without errors', async () => {
     const result = await harness.sendMessage('Hello!');
+
+    // Write report before assertions so it's captured even on failure
+    const reportPath = writeTestReport({
+      testName: 'smoke-greeting',
+      turns: [{ userMessage: 'Hello!', response: result }],
+    });
+    console.log(`\n📄 Report: ${reportPath}\n`);
 
     // Any non-empty response is acceptable
     expect(result.finalResponse).toBeTruthy();
