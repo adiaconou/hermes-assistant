@@ -2,8 +2,8 @@
 
 Design patterns, coding guidelines, and TypeScript practices for Hermes Assistant.
 
-For the high-level system architecture, see [ARCHITECTURE.md](../../ARCHITECTURE.md).
-For non-negotiable constraints, see [design-docs/core-beliefs.md](design-docs/core-beliefs.md).
+For the high-level system architecture, see [ARCHITECTURE.md](ARCHITECTURE.md).
+For non-negotiable constraints, see [docs/archive/design-docs/core-beliefs.md](docs/archive/design-docs/core-beliefs.md).
 
 ---
 

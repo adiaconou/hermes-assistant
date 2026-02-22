@@ -60,7 +60,7 @@ _Drags score down: Bypasses agent isolation, tools not registered centrally, bac
 
 ### Core beliefs
 
-Adheres to [core-beliefs.md](design-docs/core-beliefs.md). The code is simple and focused — no speculative features, no premature abstractions, no clever indirection. Dependencies are boring and well-understood. Changes are additive and incremental. The domain doesn't contain code that exists "just in case."
+Adheres to [core-beliefs.md](docs/archive/design-docs/core-beliefs.md). The code is simple and focused — no speculative features, no premature abstractions, no clever indirection. Dependencies are boring and well-understood. Changes are additive and incremental. The domain doesn't contain code that exists "just in case."
 
 _90+: Code does what it needs to and nothing more. Dependencies are stable and well-known. No dead code or unused abstractions._
 _Drags score down: Over-abstracted, speculative features, exotic dependencies, code that exists for hypothetical future requirements._
@@ -94,4 +94,3 @@ _Drags score down: Direct imports from sibling domain internals, upward layer im
 | Tools layer | 70 | 70 | 65 | 70 | 70 | 80 | 80 | 85 | 74 |
 | Database layer | 75 | 80 | 75 | 80 | 75 | 85 | 85 | 75 | 79 |
 | Google integrations | 60 | 75 | 80 | 70 | 70 | 80 | 80 | 90 | 76 |
-

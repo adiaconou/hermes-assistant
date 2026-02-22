@@ -21,6 +21,7 @@ NON-NEGOTIABLE REQUIREMENTS:
 * Every ExecPlan must enable a complete novice to implement the feature end-to-end without prior knowledge of this repo.
 * Every ExecPlan must produce a demonstrably working behavior, not merely code changes to "meet a definition".
 * Every ExecPlan must define every term of art in plain language or do not use it.
+* Every ExecPlan must include a `Layer Compliance Strategy` section that states where new code and runtime content live, which architectural boundaries are affected, and how compliance will be verified (for example with `npm run lint:architecture --strict` when applicable).
 
 Purpose and intent come first. Begin by explaining, in a few sentences, why the work matters from a user's perspective: what someone can do after this change that they could not do before, and how to see it working. Then guide the reader through the exact steps to achieve that outcome, including what to edit, what to run, and what they should observe.
 
@@ -114,6 +115,10 @@ Prefer additive code changes followed by subtractions that keep tests passing. P
     ## Context and Orientation
 
     Describe the current state relevant to this task as if the reader knows nothing. Name the key files and modules by full path. Define any non-obvious term you will use. Do not refer to prior plans.
+
+    ## Layer Compliance Strategy
+
+    Describe how the proposed change complies with the repository's architectural constraints. Name the exact storage locations for code vs runtime content, the layer boundaries that apply, any allowed cross-domain edges and their provider bridge files, and the commands that mechanically verify compliance.
 
     ## Plan of Work
 

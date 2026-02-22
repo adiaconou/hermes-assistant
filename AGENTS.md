@@ -52,16 +52,16 @@ npm run sms              # Send test SMS via script
 | Core beliefs & constraints | [docs/archive/design-docs/core-beliefs.md](docs/archive/design-docs/core-beliefs.md) |
 | Design docs catalog | [docs/archive/design-docs/index.md](docs/archive/design-docs/index.md) |
 | Product specs | [docs/archive/product-specs/index.md](docs/archive/product-specs/index.md) |
-| Design patterns & coding standards | [docs/archive/DESIGN.md](docs/archive/DESIGN.md) |
-| Testing & quality | [docs/archive/QUALITY_SCORE.md](docs/archive/QUALITY_SCORE.md) |
-| Security | [docs/archive/SECURITY.md](docs/archive/SECURITY.md) |
-| Reliability | [docs/archive/RELIABILITY.md](docs/archive/RELIABILITY.md) |
-| Frontend & UI | [docs/archive/FRONTEND.md](docs/archive/FRONTEND.md) |
-| Product sense | [docs/archive/PRODUCT_SENSE.md](docs/archive/PRODUCT_SENSE.md) |
-| ExecPlan methodology | [docs/archive/PLANS.md](docs/archive/PLANS.md) |
+| Design patterns & coding standards | [DESIGN.md](DESIGN.md) |
+| Testing & quality | [QUALITY_SCORE.md](QUALITY_SCORE.md) |
+| Security | [SECURITY.md](SECURITY.md) |
+| Reliability | [RELIABILITY.md](RELIABILITY.md) |
+| Frontend & UI | [FRONTEND.md](FRONTEND.md) |
+| Product sense | [PRODUCT_SENSE.md](PRODUCT_SENSE.md) |
+| ExecPlan methodology | [PLANS.md](PLANS.md) |
 | Active exec plans | [docs/exec-plans/active/](docs/exec-plans/active/) |
 | Completed exec plans | [docs/exec-plans/completed/](docs/exec-plans/completed/) |
-| Tech debt | [docs/archive/tech-debt-tracker.md](docs/archive/tech-debt-tracker.md) |
+| Tech debt | [tech-debt-tracker.md](tech-debt-tracker.md) |
 | Database schemas | [docs/archive/generated/db-schema.md](docs/archive/generated/db-schema.md) |
 
 ### When to Read What
@@ -75,21 +75,21 @@ Not every doc needs to be in context for every task. Use this guide:
 
 **Read based on what you're changing:**
 - [ARCHITECTURE.md](ARCHITECTURE.md) — When adding or modifying a system component, or when you need to understand how parts connect.
-- [DESIGN.md](docs/archive/DESIGN.md) — When writing new code. Contains patterns, coding standards, and TypeScript practices.
-- [QUALITY_SCORE.md](docs/archive/QUALITY_SCORE.md) — When writing tests or before committing. Defines testing requirements and verification criteria.
-- [SECURITY.md](docs/archive/SECURITY.md) — When touching auth, credentials, OAuth, input validation, or admin routes.
-- [RELIABILITY.md](docs/archive/RELIABILITY.md) — When touching timeouts, retries, error handling, or graceful degradation paths.
-- [FRONTEND.md](docs/archive/FRONTEND.md) — When touching the ui-agent, generated HTML pages, or anything served to the browser.
-- [PRODUCT_SENSE.md](docs/archive/PRODUCT_SENSE.md) — When designing user-facing behavior, composing SMS responses, or making UX decisions.
+- [DESIGN.md](DESIGN.md) — When writing new code. Contains patterns, coding standards, and TypeScript practices.
+- [QUALITY_SCORE.md](QUALITY_SCORE.md) — When writing tests or before committing. Defines testing requirements and verification criteria.
+- [SECURITY.md](SECURITY.md) — When touching auth, credentials, OAuth, input validation, or admin routes.
+- [RELIABILITY.md](RELIABILITY.md) — When touching timeouts, retries, error handling, or graceful degradation paths.
+- [FRONTEND.md](FRONTEND.md) — When touching the ui-agent, generated HTML pages, or anything served to the browser.
+- [PRODUCT_SENSE.md](PRODUCT_SENSE.md) — When designing user-facing behavior, composing SMS responses, or making UX decisions.
 - [db-schema.md](docs/archive/generated/db-schema.md) — When touching database tables or writing migrations.
 
 **Read when starting a complex feature:**
-- [PLANS.md](docs/archive/PLANS.md) — ExecPlan methodology. Read before creating a new plan.
+- [PLANS.md](PLANS.md) — ExecPlan methodology. Read before creating a new plan.
 - [exec-plans/completed/](docs/exec-plans/completed/) — Check for prior art when modifying a subsystem that was built via an ExecPlan.
 - [design-docs/index.md](docs/archive/design-docs/index.md) — Find the relevant design doc for the subsystem you're modifying.
 
 **Read when investigating issues:**
-- [tech-debt-tracker.md](docs/archive/tech-debt-tracker.md) — Check for known gaps before introducing workarounds.
+- [tech-debt-tracker.md](tech-debt-tracker.md) — Check for known gaps before introducing workarounds.
 
 ---
 
@@ -97,7 +97,7 @@ Not every doc needs to be in context for every task. Use this guide:
 
 ### ExecPlans
 
-When writing complex features or significant refactors, use an ExecPlan (as described in [docs/archive/PLANS.md](docs/archive/PLANS.md)) from design to implementation. Create the plan in `docs/exec-plans/active/` before writing code. Update it as you go.
+When writing complex features or significant refactors, use an ExecPlan (as described in [PLANS.md](PLANS.md)) from design to implementation. Create the plan in `docs/exec-plans/active/` before writing code. Update it as you go.
 
 ### Design Docs
 

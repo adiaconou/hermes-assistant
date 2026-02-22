@@ -49,11 +49,11 @@ All three background processes (scheduler, memory, email watcher) are designed t
 
 - Outbound SMS uses Twilio REST API — delivery is best-effort (no delivery receipts tracked)
 - Notification throttling: max 10 SMS per user per hour (email watcher)
-- Multi-segment messages (>160 chars) cost more — see [tech-debt-tracker](exec-plans/tech-debt-tracker.md) T-29
+- Multi-segment messages (>160 chars) cost more — see [tech-debt-tracker](tech-debt-tracker.md) T-29
 
 ## Known Reliability Gaps
 
-See [tech-debt-tracker](exec-plans/tech-debt-tracker.md) for the full list. Key items:
+See [tech-debt-tracker](tech-debt-tracker.md) for the full list. Key items:
 - T-04: Silent orchestration failures (no user notification)
 - T-06: Step timeout not fully enforced
 - T-08: No retry logic for Google API transient failures

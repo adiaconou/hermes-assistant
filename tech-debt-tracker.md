@@ -1,6 +1,6 @@
 # Tech Debt Tracker
 
-Synthesized from [25-project-review](completed/25-project-review.md) and [30-architectural-review](completed/30-architectural-review.md). Cross-referenced with [architectural-fixes](completed/architectural-fixes.md) (implementation plan, not yet executed).
+Synthesized from [project-review](docs/archive/completed-exec-plans/project-review.md) and [architectural-review](docs/archive/completed-exec-plans/architectural-review.md). Cross-referenced with [architectural-fixes](docs/archive/completed-exec-plans/architectural-fixes.md) (implementation plan, not yet executed).
 
 ---
 
@@ -77,7 +77,7 @@ Synthesized from [25-project-review](completed/25-project-review.md) and [30-arc
 
 ## Implementation Plan Reference
 
-The [architectural-fixes](completed/architectural-fixes.md) execution plan covers these items in phases:
+The [architectural-fixes](docs/archive/completed-exec-plans/architectural-fixes.md) execution plan covers these items in phases:
 
 | Phase | Focus | Items |
 |-------|-------|-------|

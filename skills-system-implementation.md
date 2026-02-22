@@ -1,6 +1,6 @@
 # Skills System Implementation Plan
 
-Design: [design-docs/skills-system-design.md](../../design-docs/skills-system-design.md)
+Design: [docs/archive/design-docs/skills-system-design.md](docs/archive/design-docs/skills-system-design.md)
 
 ---
 

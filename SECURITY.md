@@ -21,7 +21,7 @@ Security practices, credential management, and input validation for Hermes Assis
 
 ### Known Gaps
 
-- No key rotation mechanism (see [tech-debt-tracker](exec-plans/tech-debt-tracker.md), T-30)
+- No key rotation mechanism (see [tech-debt-tracker](tech-debt-tracker.md), T-30)
 - Admin routes lack authentication (T-D1) — local/trusted use only
 
 ---
