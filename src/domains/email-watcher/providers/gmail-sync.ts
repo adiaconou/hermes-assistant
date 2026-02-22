@@ -5,7 +5,7 @@
  * them into IncomingEmail format for classification.
  */
 
-import { google, gmail_v1 } from 'googleapis';
+import { gmail as gmailApi, gmail_v1 } from '@googleapis/gmail';
 import { getAuthenticatedClient } from './google-core.js';
 import { getUserConfigStore } from '../../../services/user-config/index.js';
 import config from '../../../config.js';
@@ -20,7 +20,7 @@ import type { IncomingEmail, EmailAttachment } from '../types.js';
  */
 export async function syncNewEmails(phoneNumber: string): Promise<IncomingEmail[]> {
   const oauth2Client = await getAuthenticatedClient(phoneNumber, 'EmailWatcher');
-  const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+  const gmail = gmailApi({ version: 'v1', auth: oauth2Client });
   const userConfigStore = getUserConfigStore();
   const userConfig = await userConfigStore.get(phoneNumber);
 

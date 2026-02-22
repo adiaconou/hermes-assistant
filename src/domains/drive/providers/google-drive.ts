@@ -2,14 +2,14 @@
  * @fileoverview Google Drive service.
  */
 
-import { google, drive_v3 } from 'googleapis';
+import { drive as driveApi, drive_v3 } from '@googleapis/drive';
 import config from '../../../config.js';
 import { getAuthenticatedClient, withRetry, getOrCreateHermesFolder } from './google-core.js';
 import type { DriveFile, DriveFolder, UploadOptions } from '../types.js';
 
 async function getDriveClient(phoneNumber: string): Promise<drive_v3.Drive> {
   const oauth2Client = await getAuthenticatedClient(phoneNumber, 'Drive');
-  return google.drive({ version: 'v3', auth: oauth2Client });
+  return driveApi({ version: 'v3', auth: oauth2Client });
 }
 
 function getSharedDriveParams(): Record<string, unknown> {

@@ -2,13 +2,13 @@
  * @fileoverview Google Sheets service.
  */
 
-import { google, sheets_v4 } from 'googleapis';
+import { sheets as sheetsApi, sheets_v4 } from '@googleapis/sheets';
 import { getAuthenticatedClient, withRetry, getOrCreateHermesFolder, moveToHermesFolder, searchFiles } from './google-core.js';
 import type { Spreadsheet, CellRange, UpdateResult, AppendResult } from '../types.js';
 
 async function getSheetsClient(phoneNumber: string): Promise<sheets_v4.Sheets> {
   const oauth2Client = await getAuthenticatedClient(phoneNumber, 'Sheets');
-  return google.sheets({ version: 'v4', auth: oauth2Client });
+  return sheetsApi({ version: 'v4', auth: oauth2Client });
 }
 
 export async function createSpreadsheet(

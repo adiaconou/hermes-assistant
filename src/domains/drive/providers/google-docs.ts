@@ -2,13 +2,13 @@
  * @fileoverview Google Docs service.
  */
 
-import { google, docs_v1 } from 'googleapis';
+import { docs as docsApi, docs_v1 } from '@googleapis/docs';
 import { getAuthenticatedClient, withRetry, getOrCreateHermesFolder, moveToHermesFolder, searchFiles } from './google-core.js';
 import type { Document, DocumentContent } from '../types.js';
 
 async function getDocsClient(phoneNumber: string): Promise<docs_v1.Docs> {
   const oauth2Client = await getAuthenticatedClient(phoneNumber, 'Docs');
-  return google.docs({ version: 'v1', auth: oauth2Client });
+  return docsApi({ version: 'v1', auth: oauth2Client });
 }
 
 function extractTextFromBody(body: docs_v1.Schema$Body | undefined): string {

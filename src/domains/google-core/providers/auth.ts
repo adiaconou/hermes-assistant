@@ -5,8 +5,7 @@
  * scope-error handling used by all Google service domains.
  */
 
-import { google } from 'googleapis';
-import type { OAuth2Client } from 'google-auth-library';
+import { OAuth2Client } from 'google-auth-library';
 import config from '../../../config.js';
 import { getCredentialStore } from '../../../services/credentials/index.js';
 import { AuthRequiredError } from '../../../providers/auth.js';
@@ -36,7 +35,7 @@ export function clearClientCache(): void {
  * Create a bare OAuth2 client (no credentials set).
  */
 export function createOAuth2Client(): OAuth2Client {
-  return new google.auth.OAuth2(
+  return new OAuth2Client(
     config.google.clientId,
     config.google.clientSecret,
     config.google.redirectUri

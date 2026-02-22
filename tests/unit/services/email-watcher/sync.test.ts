@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { prepareEmailForClassification } from '../../../../src/domains/email-watcher/providers/gmail-sync.js';
-import type { gmail_v1 } from 'googleapis';
+import type { gmail_v1 } from '@googleapis/gmail';
 
 // Mock dependencies for syncNewEmails
 vi.mock('../../../../src/domains/google-core/providers/auth.js', () => ({
@@ -17,7 +17,7 @@ vi.mock('../../../../src/services/user-config/index.js', () => ({
   getUserConfigStore: vi.fn(),
 }));
 
-vi.mock('googleapis', () => {
+vi.mock('@googleapis/gmail', () => {
   const mockGmail = {
     users: {
       getProfile: vi.fn(),
@@ -26,9 +26,7 @@ vi.mock('googleapis', () => {
     },
   };
   return {
-    google: {
-      gmail: vi.fn(() => mockGmail),
-    },
+    gmail: vi.fn(() => mockGmail),
     gmail_v1: {},
   };
 });
@@ -294,9 +292,9 @@ describe('syncNewEmails', () => {
     const { getUserConfigStore } = await import(
       '../../../../src/services/user-config/index.js'
     );
-    const { google } = await import('googleapis');
+    const { gmail } = await import('@googleapis/gmail');
 
-    const mockGmail = google.gmail({ version: 'v1', auth: {} as never });
+    const mockGmail = (gmail as unknown as ReturnType<typeof vi.fn>)({ version: 'v1', auth: {} as never });
     (mockGmail.users.getProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
       data: { historyId: '12345' },
     });
@@ -324,9 +322,9 @@ describe('syncNewEmails', () => {
     const { getUserConfigStore } = await import(
       '../../../../src/services/user-config/index.js'
     );
-    const { google } = await import('googleapis');
+    const { gmail } = await import('@googleapis/gmail');
 
-    const mockGmail = google.gmail({ version: 'v1', auth: {} as never });
+    const mockGmail = (gmail as unknown as ReturnType<typeof vi.fn>)({ version: 'v1', auth: {} as never });
 
     // History list returns one new message
     (mockGmail.users.history.list as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -389,9 +387,9 @@ describe('syncNewEmails', () => {
     const { getUserConfigStore } = await import(
       '../../../../src/services/user-config/index.js'
     );
-    const { google } = await import('googleapis');
+    const { gmail } = await import('@googleapis/gmail');
 
-    const mockGmail = google.gmail({ version: 'v1', auth: {} as never });
+    const mockGmail = (gmail as unknown as ReturnType<typeof vi.fn>)({ version: 'v1', auth: {} as never });
 
     // Page 1 of history
     (mockGmail.users.history.list as ReturnType<typeof vi.fn>)
@@ -466,9 +464,9 @@ describe('syncNewEmails', () => {
     const { getUserConfigStore } = await import(
       '../../../../src/services/user-config/index.js'
     );
-    const { google } = await import('googleapis');
+    const { gmail } = await import('@googleapis/gmail');
 
-    const mockGmail = google.gmail({ version: 'v1', auth: {} as never });
+    const mockGmail = (gmail as unknown as ReturnType<typeof vi.fn>)({ version: 'v1', auth: {} as never });
 
     (mockGmail.users.history.list as ReturnType<typeof vi.fn>).mockResolvedValue({
       data: {
@@ -529,9 +527,9 @@ describe('syncNewEmails', () => {
     const { getUserConfigStore } = await import(
       '../../../../src/services/user-config/index.js'
     );
-    const { google } = await import('googleapis');
+    const { gmail } = await import('@googleapis/gmail');
 
-    const mockGmail = google.gmail({ version: 'v1', auth: {} as never });
+    const mockGmail = (gmail as unknown as ReturnType<typeof vi.fn>)({ version: 'v1', auth: {} as never });
 
     // History list throws 404
     (mockGmail.users.history.list as ReturnType<typeof vi.fn>).mockRejectedValue(

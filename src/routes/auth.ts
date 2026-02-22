@@ -10,7 +10,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { google } from 'googleapis';
+import { OAuth2Client } from 'google-auth-library';
 import config from '../config.js';
 import { formatForWhatsAppLink } from '../utils/phone.js';
 import { getCredentialStore } from '../services/credentials/index.js';
@@ -40,7 +40,7 @@ const SCOPES = [
  * Create an OAuth2 client configured with our credentials.
  */
 function getOAuth2Client() {
-  return new google.auth.OAuth2(
+  return new OAuth2Client(
     config.google.clientId,
     config.google.clientSecret,
     config.google.redirectUri

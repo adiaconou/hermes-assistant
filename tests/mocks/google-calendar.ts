@@ -1,5 +1,5 @@
 /**
- * Mock for googleapis module (Google Calendar and Gmail).
+ * Mock for Google API scoped packages and google-auth-library.
  *
  * Provides configurable mock responses for testing calendar and email operations
  * without making real API calls.
@@ -331,7 +331,7 @@ class MockOAuth2 {
   getToken = mockGetToken;
 }
 
-// Mock google object
+// Mock google object (kept for backward compat in tests)
 const mockGoogle = {
   auth: {
     OAuth2: MockOAuth2,
@@ -340,9 +340,34 @@ const mockGoogle = {
   gmail: vi.fn(() => mockGmail),
 };
 
-// Set up the module mock
-vi.mock('googleapis', () => ({
-  google: mockGoogle,
+// Set up module mocks for scoped packages
+vi.mock('google-auth-library', () => ({
+  OAuth2Client: MockOAuth2,
+}));
+
+vi.mock('@googleapis/calendar', () => ({
+  calendar: vi.fn(() => mockCalendar),
+  calendar_v3: {},
+}));
+
+vi.mock('@googleapis/gmail', () => ({
+  gmail: vi.fn(() => mockGmail),
+  gmail_v1: {},
+}));
+
+vi.mock('@googleapis/drive', () => ({
+  drive: vi.fn(() => ({})),
+  drive_v3: {},
+}));
+
+vi.mock('@googleapis/sheets', () => ({
+  sheets: vi.fn(() => ({})),
+  sheets_v4: {},
+}));
+
+vi.mock('@googleapis/docs', () => ({
+  docs: vi.fn(() => ({})),
+  docs_v1: {},
 }));
 
 export {

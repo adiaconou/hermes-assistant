@@ -5,7 +5,7 @@
  * Throws AuthRequiredError when user hasn't connected their Google account.
  */
 
-import { google, calendar_v3 } from 'googleapis';
+import { calendar as calendarApi, calendar_v3 } from '@googleapis/calendar';
 import { getAuthenticatedClient, withRetry } from './google-core.js';
 
 // Re-export AuthRequiredError from canonical location for backward compat
@@ -23,7 +23,7 @@ async function getCalendarClient(
   phoneNumber: string
 ): Promise<calendar_v3.Calendar> {
   const oauth2Client = await getAuthenticatedClient(phoneNumber, 'Calendar');
-  return google.calendar({ version: 'v3', auth: oauth2Client });
+  return calendarApi({ version: 'v3', auth: oauth2Client });
 }
 
 /**

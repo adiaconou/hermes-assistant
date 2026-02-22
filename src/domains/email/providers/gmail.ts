@@ -5,7 +5,7 @@
  * Throws AuthRequiredError when user hasn't connected their Google account.
  */
 
-import { google, gmail_v1 } from 'googleapis';
+import { gmail as gmailApi, gmail_v1 } from '@googleapis/gmail';
 import { getAuthenticatedClient, withRetry, isInsufficientScopesError, handleScopeError } from './google-core.js';
 import type { Email, EmailDetail, EmailThread } from '../types.js';
 
@@ -27,7 +27,7 @@ async function handleGmailApiError(
  */
 async function getGmailClient(phoneNumber: string): Promise<gmail_v1.Gmail> {
   const oauth2Client = await getAuthenticatedClient(phoneNumber, 'Gmail');
-  return google.gmail({ version: 'v1', auth: oauth2Client });
+  return gmailApi({ version: 'v1', auth: oauth2Client });
 }
 
 /**

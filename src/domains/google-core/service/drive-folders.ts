@@ -5,7 +5,7 @@
  * and sheets domains: getOrCreateHermesFolder, moveToHermesFolder, searchFiles.
  */
 
-import { google, drive_v3 } from 'googleapis';
+import { drive as driveApi, drive_v3 } from '@googleapis/drive';
 import config from '../../../config.js';
 import { getAuthenticatedClient, withRetry } from '../providers/auth.js';
 import type { DriveFile, SearchQuery } from '../types.js';
@@ -17,7 +17,7 @@ async function getDriveClient(
   phoneNumber: string
 ): Promise<drive_v3.Drive> {
   const oauth2Client = await getAuthenticatedClient(phoneNumber, 'Drive');
-  return google.drive({ version: 'v3', auth: oauth2Client });
+  return driveApi({ version: 'v3', auth: oauth2Client });
 }
 
 /**
