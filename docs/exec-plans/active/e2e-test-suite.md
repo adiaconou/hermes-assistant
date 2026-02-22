@@ -14,14 +14,28 @@ To observe the change working: set the `ANTHROPIC_API_KEY` environment variable 
 
 ## Progress
 
-- [ ] (2026-02-22 00:00Z) Milestone 1: E2E test infrastructure (vitest config, setup, harness, judge module)
-- [ ] (2026-02-22 00:00Z) Milestone 2: Mock layer for external services
-- [ ] (2026-02-22 00:00Z) Milestone 3: Smoke test and grocery list multi-turn test
+- [x] (2026-02-22 21:26Z) Milestone 1: E2E test infrastructure (vitest config, setup, harness, judge module)
+- [x] (2026-02-22 21:28Z) Milestone 2: Mock layer for external services
+- [x] (2026-02-22 21:40Z) Milestone 3: Smoke test and grocery list multi-turn test
+- [x] (2026-02-22 21:40Z) All validation passing: 688 unit tests, 29 integration tests, 2 e2e tests, build clean
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- Observation: ESM static imports in setup.ts are hoisted above process.env assignments, causing config.ts to load from .env/real env before test values are set. This caused Invalid URL errors in Twilio signature validation.
+  Evidence: `TypeError: Invalid URL` in `Twilio.validateRequest` — config.baseUrl was read from .env before setup.ts could override it.
+  Fix: Changed all `src/` imports in setup.ts and google mock to dynamic `await import()` so they execute after env vars are set.
+
+- Observation: enforceSmsLength() truncates SMS responses > 160 chars to a canned ack ("Working on your request..."), destroying URLs in async responses. The Twilio mock captures the truncated message, not the full response.
+  Evidence: `No /u/:id short URL found in response. Full response text: Working on your request. I'll send the full response shortly.`
+  Fix: Changed harness to read finalResponse from conversation history (un-truncated) instead of the Twilio sent message.
+
+- Observation: Sync-only messages ("Hello!") produce no trace log file and no Twilio API message. The original waitForAsyncResponse would poll for 90s and timeout.
+  Evidence: Smoke test timed out at 60s waiting for an async response that never came.
+  Fix: Replaced waitForAsyncResponse with waitForAsyncCompletion that detects sync-only messages (no trace log within 5s) and returns early.
+
+- Observation: "Hello!" is classified as needsAsyncWork: false, so no trace log is produced (TraceLogger is only created inside handleWithOrchestrator). The smoke test's assertion on getTurnLogs().length === 1 was incorrect.
+  Fix: Removed the trace log assertion from the smoke test.
 
 
 ## Decision Log
@@ -66,6 +80,10 @@ To observe the change working: set the `ANTHROPIC_API_KEY` environment variable 
   Rationale: The same evaluation logic (transcript + criteria → structured verdict) is useful for diagnosing production errors spotted in logs. By accepting a `ConversationTranscript` input (buildable from either the test harness or a DB query), the judge is reusable without duplication. The production adapter is a thin layer over `getConversationStore().getHistory()`.
   Date/Author: 2026-02-22 / review
 
+- Decision: Use WhatsApp payloads instead of SMS payloads in the e2e harness.
+  Rationale: `enforceSmsLength()` truncates SMS messages >160 chars to a canned ack, destroying URLs in async responses. WhatsApp messages bypass this truncation entirely. Since the webhook handler (`/webhook/sms`) is the same for both channels (it detects channel from the `whatsapp:` prefix on the From field), using WhatsApp payloads tests the same code path without SMS-specific length constraints interfering with assertions.
+  Date/Author: 2026-02-22 / implementation
+
 - Decision: Include a minimal smoke test alongside the grocery-list scenario test.
   Rationale: A trivial "hello" test that expects any non-error response validates harness setup, mocking, provider wiring, and the basic classify → orchestrate → respond flow without depending on specific agent routing or UI generation. If this test fails, the problem is infrastructure, not LLM behavior.
   Date/Author: 2026-02-22 / review
@@ -77,7 +95,17 @@ To observe the change working: set the `ANTHROPIC_API_KEY` environment variable 
 
 ## Outcomes & Retrospective
 
-(To be filled after implementation.)
+Implementation complete. All 8 files created, all 3 milestones delivered.
+
+Validation results:
+- `npm run test:e2e` (with API key): 2 tests pass (smoke + grocery list multi-turn) in ~55s
+- `npm run test:unit`: 688 tests pass
+- `npm run test:integration`: 29 tests pass
+- `npm run build`: clean
+
+The grocery list multi-turn test successfully verifies: (1) UI generation produces real pages with correct items, (2) multi-turn context is preserved across turns, (3) the LLM judge provides structured diagnostic evaluations. The LLM judge passed all 6 criteria on both test runs.
+
+Key implementation differences from original plan: (a) setup.ts uses dynamic `await import()` instead of static imports to avoid ESM hoisting issues with config.ts; (b) harness reads finalResponse from conversation history instead of Twilio messages to avoid SMS truncation; (c) waitForAsyncCompletion detects sync-only messages via trace log absence and returns early instead of polling to timeout; (d) smoke test does not assert trace log presence since sync-only messages skip the orchestrator.
 
 
 ## Context and Orientation

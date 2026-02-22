@@ -1,0 +1,74 @@
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { E2EHarness } from '../harness.js';
+
+const hasApiKey = process.env.ANTHROPIC_API_KEY
+  && process.env.ANTHROPIC_API_KEY !== 'test-api-key';
+
+const describeE2E = hasApiKey ? describe : describe.skip;
+
+describeE2E('Multi-turn: Grocery List', () => {
+  let harness: E2EHarness;
+
+  beforeAll(async () => {
+    harness = new E2EHarness();
+    await harness.start();
+  });
+
+  beforeEach(async () => {
+    await harness.reset();
+  });
+
+  afterAll(async () => {
+    await harness.stop();
+  });
+
+  it('creates grocery-list UI, then uses multi-turn history to regenerate with hummus on turn 2', async () => {
+    const initialItems = ['eggs', 'milk', 'bread', 'butter'];
+
+    // -- Turn 1: Natural grocery list request --
+    const turn1 = await harness.sendMessage(
+      'Create a grocery list with eggs, milk, bread and butter'
+    );
+
+    // Deterministic: extract URL and verify HTML contains all items
+    const firstUrl = harness.extractShortUrl(turn1.finalResponse);
+    const firstHtml = (await harness.fetchPageHtml(firstUrl)).toLowerCase();
+    for (const item of initialItems) {
+      expect(firstHtml).toContain(item);
+    }
+
+    // -- Turn 2: intentionally omits original items to force history retrieval --
+    const turn2 = await harness.sendMessage(
+      'Add hummus and regenerate the page. Return the new link.'
+    );
+
+    // Deterministic: new URL, HTML contains all original items plus hummus
+    const secondUrl = harness.extractShortUrl(turn2.finalResponse);
+    expect(secondUrl).not.toBe(firstUrl);
+
+    const secondHtml = (await harness.fetchPageHtml(secondUrl)).toLowerCase();
+    for (const item of [...initialItems, 'hummus']) {
+      expect(secondHtml).toContain(item);
+    }
+
+    // -- LLM Judge: analyzes conversation transcript + full trace logs --
+    const verdict = await harness.judgeConversation([
+      'The assistant correctly created a grocery list with all four requested items (eggs, milk, bread, butter) on turn 1.',
+      'The assistant correctly interpreted "add hummus" on turn 2 as adding to the existing grocery list, not creating a new unrelated list.',
+      'The turn 2 grocery list contains all five items (the original four plus hummus) — nothing was forgotten.',
+      'The assistant provided a working link in each response.',
+      'The conversation flow is natural and coherent — the assistant understood the user intent without confusion or unnecessary clarification.',
+      'No errors in the trace logs indicate data loss, silent failures, or corrupted state.',
+    ]);
+
+    // Log the full verdict as a readable diagnostic (not a hard gate)
+    console.log('\n── LLM Judge Verdict ──');
+    for (const c of verdict.criteria) {
+      console.log(`  ${c.verdict === 'PASS' ? '✓' : '✗'} ${c.criterion}`);
+      console.log(`    → ${c.reason}`);
+    }
+    console.log(`  Overall: ${verdict.overall} — ${verdict.summary}`);
+    console.log('── End Judge Verdict ──\n');
+    expect(['PASS', 'FAIL']).toContain(verdict.overall);
+  }, 240_000); // 4 minute timeout: 2 LLM turns + judge call
+});

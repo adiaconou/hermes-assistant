@@ -17,6 +17,7 @@
     "test:integration": "npx vitest run tests/integration/",
     "test:unit": "npx vitest run tests/unit/",
     "sms": "npx tsx scripts/send-sms.ts",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "lint:architecture": "node scripts/check-layer-deps.mjs --strict",
     "lint:agents": "node scripts/check-agent-registry.mjs",
     "docs:agents": "node scripts/generate-agent-catalog.mjs",
