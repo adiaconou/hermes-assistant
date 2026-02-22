@@ -6,22 +6,21 @@ System design for Hermes Assistant — an SMS/WhatsApp personal assistant powere
 
 1. [System Overview](#system-overview)
 2. [High-Level Architecture](#high-level-architecture)
-3. [Layered Domain Contract (Enforced)](#layered-domain-contract-enforced)
-4. [Forward-Layer Compliance Review (2026-02-21)](#forward-layer-compliance-review-2026-02-21)
-5. [Migration Status](#migration-status)
-6. [Request Processing Flow](#request-processing-flow)
-7. [Orchestrator](#orchestrator)
-8. [Agent System](#agent-system)
-9. [Tool Registry](#tool-registry)
-10. [Memory System](#memory-system)
-11. [Scheduler System](#scheduler-system)
-12. [Email Watcher System](#email-watcher-system)
-13. [Date Resolution](#date-resolution)
-14. [Data Storage](#data-storage)
-15. [External Integrations](#external-integrations)
-16. [UI Generation](#ui-generation)
-17. [Media Handling](#media-handling)
-18. [File Structure](#file-structure)
+3. [Forward-Only Layered Architecture (Enforced)](#forward-only-layered-architecture-enforced)
+4. [Enforcement Scripts](#enforcement-scripts)
+5. [Request Processing Flow](#request-processing-flow)
+6. [Orchestrator](#orchestrator)
+7. [Agent System](#agent-system)
+8. [Tool Registry](#tool-registry)
+9. [Memory System](#memory-system)
+10. [Scheduler System](#scheduler-system)
+11. [Email Watcher System](#email-watcher-system)
+12. [Date Resolution](#date-resolution)
+13. [Data Storage](#data-storage)
+14. [External Integrations](#external-integrations)
+15. [UI Generation](#ui-generation)
+16. [Media Handling](#media-handling)
+17. [File Structure](#file-structure)
 
 ---
 
@@ -82,71 +81,329 @@ Hermes is a multi-agent assistant that receives messages via Twilio (SMS/WhatsAp
 
 ---
 
-## Layered Domain Contract (Enforced)
+## Forward-Only Layered Architecture (Enforced)
 
-This repository enforces a forward-only layered model. Each business domain is packaged under `src/domains/<domain>/` and dependencies within each domain must follow the canonical layer order. These rules are mechanically enforced by `npm run lint:architecture` (strict mode).
+This repository enforces **forward-only import direction** at two levels: between top-level slices and within each business domain. These rules are **mechanically enforced** — a custom boundary checker runs in CI and locally via `npm run lint:architecture`, and the build fails on any violation.
 
-### Canonical Layer Order
+### Why Forward-Only?
 
-Within each business domain, dependencies must move in one direction only:
+Forward-only means imports flow in one direction: from pure data shapes at the bottom toward executable entry points at the top. This prevents circular dependencies, keeps layers independently testable, and makes the impact of any change predictable — a change in `types` can ripple forward, but a change in `runtime` cannot break `service` or `repo`.
+
+### Two Levels of Enforcement
+
+The forward-only principle applies at both the **top-level slice** level and the **within-domain layer** level:
 
 ```
-Types -> Config -> Repo -> Service -> Runtime -> UI
-                 ^ 
-             Providers (explicit cross-cutting ingress)
+┌─────────────────────────────────────────────────────────────────────┐
+│                         src/                                        │
+│                                                                     │
+│  Top-level slices (enforced by "forbidden" rules):                  │
+│                                                                     │
+│    routes/  admin/           ← HTTP handlers (top)                  │
+│         │                                                           │
+│         ▼                                                           │
+│    orchestrator/  executor/  registry/   ← App wiring               │
+│         │                                                           │
+│         ▼                                                           │
+│    tools/                    ← Tool definitions                     │
+│         │                                                           │
+│         ▼                                                           │
+│    services/                 ← Shared business services             │
+│         │                                                           │
+│         ▼                                                           │
+│    providers/  types/  utils/  config.ts  ← Shared infrastructure   │
+│                                                                     │
+│  ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─  │
+│                                                                     │
+│    domains/                  ← Domain packages (internal 7-layer    │
+│      ├── calendar/             model enforced per domain)           │
+│      ├── scheduler/                                                 │
+│      ├── memory/               Each domain: types → config → repo   │
+│      └── ...                   → providers → service → runtime → ui │
+│                                                                     │
+│  Domains import shared infrastructure (↑) but never app wiring.     │
+│  App wiring imports domains, not the reverse.                       │
+└─────────────────────────────────────────────────────────────────────┘
+
+  Arrows = allowed import direction. Everything else is a violation.
 ```
+
+### Top-Level Slice Rules
+
+The top-level directories under `src/` follow their own forward-only constraints. These are enforced as **forbidden edges** — specific cross-slice imports that are always violations:
+
+| From | To | Why |
+|------|----|-----|
+| `src/services/` | `src/tools/` | Services are lower-level; pass tool dependencies via function params |
+| `src/services/` | `src/routes/` | Services cannot reach up to HTTP handlers |
+| `src/services/` | `src/orchestrator/` | Services cannot reach into orchestrator wiring |
+| `src/tools/` | `src/routes/` | Tools cannot reach up to HTTP handlers |
+
+The top-level slices and their responsibilities:
+
+| Slice | Layer role | What goes here |
+|-------|-----------|----------------|
+| `types/`, `providers/`, `utils/`, `config.ts` | Shared infrastructure (bottom) | Pure types (`MediaAttachment`, `DomainCapability`), cross-cutting adapters (`AuthRequiredError`, `generateAuthUrl`), utilities (`Poller`, phone formatting) |
+| `services/` | Shared business services | Date resolution, credential storage, conversation history, Anthropic client, user config, media pipeline, UI page storage |
+| `tools/` | Tool registry | Aggregates tool definitions from all domains, shared tools (maps, user-config) |
+| `executor/` | Agent execution engine | Tool executor, agent router, agent registry lookup |
+| `orchestrator/` | Request orchestration | Planner, replanner, response composer, conversation window |
+| `registry/` | Agent/tool wiring | Centralized agent registry (imports from domains) |
+| `routes/`, `admin/` | HTTP handlers (top) | SMS webhook, OAuth callback, health check, admin APIs |
+
+### Within-Domain Layer Rules
+
+Each business domain under `src/domains/<domain>/` follows the canonical 7-layer model. Dependencies within a domain must move in one direction only:
+
+```
+                              ┌──────────┐
+                              │    UI    │  Leaf layer: HTML rendering
+                              └────┬─────┘
+                                   │ imports
+                              ┌────▼─────┐
+                              │ Runtime  │  Tool adapters, agents, pollers, HTTP handlers
+                              └────┬─────┘
+                                   │ imports
+                              ┌────▼─────┐
+                              │ Service  │  Business logic, orchestration
+                              └────┬─────┘
+                                   │ imports
+                    ┌──────────────┼──────────────┐
+                    │              │              │
+               ┌────▼─────┐  ┌────▼─────┐  ┌────▼──────┐
+               │   Repo   │  │Providers │  │  (skip)   │
+               │  (data)  │  │ (bridges)│  │           │
+               └────┬─────┘  └────┬─────┘  └───────────┘
+                    │              │
+                    └──────┬───────┘
+                           │ imports
+                      ┌────▼─────┐
+                      │  Config  │  Constants, validated settings
+                      └────┬─────┘
+                           │ imports
+                      ┌────▼─────┐
+                      │  Types   │  Pure data shapes, DTOs, value objects
+                      └──────────┘
+
+  Arrow direction = "imports from". Flow is always downward (forward-only).
+  Same-layer imports are allowed (e.g., runtime/agent.ts → runtime/prompt.ts).
+```
+
+### Allowed Imports Matrix
+
+Each layer can only import from layers below it (or same-layer peers):
+
+| Layer | Can import from | Cannot import from |
+|-------|----------------|--------------------|
+| `types` | *(nothing)* | everything else |
+| `config` | `types` | `repo`, `providers`, `service`, `runtime`, `ui` |
+| `repo` | `types`, `config`, `providers` | `service`, `runtime`, `ui` |
+| `providers` | `types`, `config` | `repo`, `service`, `runtime`, `ui` |
+| `service` | `types`, `config`, `repo`, `providers` | `runtime`, `ui` |
+| `runtime` | `types`, `config`, `repo`, `service`, `providers` | `ui` |
+| `ui` | `types`, `service` | `config`, `repo`, `providers`, `runtime` |
 
 ### Domain Package Template
 
+Not every domain uses every layer. A domain includes only the layers it needs.
+
 ```
 src/domains/<domain>/
-├── types/
-├── config/
-├── repo/
-├── providers/
-├── service/
-├── runtime/
-└── ui/
+├── types.ts            # Pure data shapes (required)
+├── capability.ts       # Domain metadata: exposure, agentId, tools (required)
+├── config/             # Constants, feature flags (optional)
+├── repo/               # Persistence / data access (optional)
+├── providers/          # Bridges to cross-cutting systems and other domains (optional)
+├── service/            # Business rules and workflow logic (optional)
+├── runtime/            # Agents, tool definitions, pollers, handlers (optional)
+└── ui/                 # HTML/UI rendering (optional)
 ```
 
-### Layer Responsibilities and Allowed Imports
+### Layer Responsibilities
 
-| Layer | Responsibility | Allowed internal imports |
-|-------|----------------|--------------------------|
-| `types` | Domain DTOs, schema types, value objects | none |
-| `config` | Domain constants/config parsing | `types` |
-| `repo` | Persistence/data access for the domain | `types`, `config` |
-| `providers` | Interfaces for cross-cutting systems (auth, Google/Twilio clients, telemetry, feature flags) | `types`, `config` |
-| `service` | Domain business logic and orchestration | `types`, `config`, `repo`, `providers` |
-| `runtime` | HTTP handlers, job runners, tool adapters, agent adapters | `types`, `config`, `repo`, `service`, `providers` |
-| `ui` | HTML/UI rendering and presentation | `types`, `service` |
+| Layer | What goes here | Domain examples | Top-level equivalent |
+|-------|---------------|-----------------|---------------------|
+| `types` | Pure data shapes, DTOs, value objects, enums | `ScheduledJob`, `EmailSkill`, `UserFact` | `src/types/` (`MediaAttachment`, `DomainCapability`) |
+| `config` | Domain-specific constants and validated settings | Polling intervals, confidence thresholds | `src/config.ts` |
+| `repo` | Persistence — data read/write | `SqliteJobStore`, `SqliteMemoryStore` | `src/services/credentials/`, `src/services/conversation/` |
+| `providers` | Adapters/bridges for cross-cutting systems and other domains | `providers/google-core.ts`, `providers/executor.ts` | `src/providers/` (`AuthRequiredError`, `generateAuthUrl`) |
+| `service` | Business logic and orchestration | Schedule parser, memory processor, email classifier | `src/services/` (date resolver, Anthropic client) |
+| `runtime` | Executable entry points: tool definitions, agent configs, pollers, HTTP handlers | `runtime/tools.ts`, `runtime/agent.ts`, `runtime/index.ts` | `src/tools/`, `src/routes/`, `src/orchestrator/`, `src/executor/` |
+| `ui` | HTML/UI rendering and presentation | (used only by the ui domain) | `src/admin/views/` |
 
-Rules:
-- No backward imports (for example, `repo` cannot import `runtime`).
-- Cross-cutting concerns must be accessed through `providers`, not by importing external clients directly.
-- Shared primitives (`AuthRequiredError`, shared request/context types, etc.) must live in `types` or `providers`, not in runtime files.
+### Domain Capability Metadata
+
+Every domain declares a `capability.ts` file that exports metadata about how the domain is exposed:
+
+```typescript
+// src/types/domain.ts
+type DomainExposure = 'agent' | 'tool-only' | 'internal';
+
+interface DomainCapability {
+  domain: string;
+  exposure: DomainExposure;
+  agentId?: string;      // Only for exposure: 'agent'
+  tools?: string[];
+}
+```
+
+| Exposure | Meaning | Example domains |
+|----------|---------|-----------------|
+| `agent` | Has its own agent + tools, registered in the agent registry | calendar, scheduler, email, memory, drive, ui |
+| `tool-only` | Exposes tools but no agent (tools attached to other agents) | email-watcher |
+| `internal` | Shared infrastructure consumed by other domains, no tools or agent | google-core |
+
+### Current Domains
+
+```
+src/domains/
+├── google-core/     (internal)   Shared Google OAuth2, drive folders
+├── calendar/        (agent)      Google Calendar CRUD
+├── scheduler/       (agent)      Scheduled jobs and reminders
+├── email/           (agent)      Gmail search and read
+├── email-watcher/   (tool-only)  Background email monitoring + skill management
+├── memory/          (agent)      User fact extraction and management
+├── drive/           (agent)      Drive, Sheets, Docs, Vision
+└── ui/              (agent)      HTML page generation
+```
+
+### Cross-Domain Import Rules
+
+Cross-domain imports are **denied by default**. Every allowed cross-domain edge must be declared in `config/architecture-boundaries.json` with a `via` constraint that restricts the import to a single provider re-export file in the consuming domain.
+
+```
+┌──────────────┐         ┌──────────────┐         ┌──────────────┐
+│   calendar   │         │    email     │         │    drive     │
+│              │         │              │         │              │
+│  providers/  │────────▶│              │         │  providers/  │
+│  google-core │         │  providers/  │────────▶│  google-core │
+│              │         │  google-core │         │              │
+└──────────────┘         └──────────────┘         └──────────────┘
+                                                        ▲
+                                                        │
+                              ┌──────────────┐          │
+                              │ email-watcher │──────────┘
+                              │              │   (via providers/google-core)
+                              │  providers/  │
+                              │  memory.ts ──│──▶ memory domain
+                              │  email.ts  ──│──▶ email domain
+                              └──────────────┘
+
+                              ┌──────────────┐
+                              │  scheduler   │
+                              │              │
+                              │  providers/  │
+                              │  memory.ts ──│──▶ memory domain
+                              └──────────────┘
+
+All arrows go through a providers/*.ts file in the consuming domain.
+No domain ever directly imports another domain's repo, service, or runtime.
+```
+
+### Domain ↔ Top-Level Import Rules
+
+Domains can import from shared top-level infrastructure but are **forbidden from importing runtime wiring modules**:
+
+| Allowed (shared infrastructure) | Forbidden (runtime wiring) |
+|--------------------------------|---------------------------|
+| `src/config.ts` | `src/routes/` |
+| `src/providers/` | `src/orchestrator/` |
+| `src/types/` | `src/executor/` |
+| `src/utils/` | `src/registry/` |
+| `src/twilio.ts` | |
+| `src/services/date/` | |
+| `src/services/credentials/` | |
+| `src/services/conversation/` | |
+| `src/services/anthropic/` | |
+| `src/services/user-config/` | |
+
+The boundary: **registry and orchestrator import domains, not the reverse.** This ensures domains are self-contained and testable without the full app wiring.
 
 ---
 
-## Forward-Layer Compliance Review (2026-02-21)
+## Enforcement Scripts
 
-All 8 domains (google-core, scheduler, email-watcher, calendar, memory, email, drive, ui) have been migrated to `src/domains/`. The boundary checker (`npm run lint:architecture`) runs in strict mode with 0 violations. All compatibility shims have been removed.
+The architecture is enforced by three scripts that run locally and in CI. All are zero-dependency Node scripts (no third-party linters required).
 
-| Constraint | Status | Notes |
-|------------|--------|-------|
-| Domain-oriented layer packaging | Met | All business domains packaged under `src/domains/<domain>/` with canonical layer structure. |
-| Forward-only dependencies | Met | 0 reverse or cross-layer edges. Verified by `npm run lint:architecture --strict`. |
-| Explicit providers boundary for cross-cutting concerns | Met | All cross-domain imports go through `providers/` bridges with entries in `config/architecture-boundaries.json`. |
-| Mechanical enforcement (lints + structural tests) | Met | `npm run lint:architecture` enforces layer ordering and cross-domain rules. `npm run lint:agents` verifies agent registry consistency. |
-| Strict domain boundary behavior | Met | Each domain exposes only its declared capability. `general-agent` retains all-tool access as an explicit fallback. |
+### `npm run lint:architecture` — Boundary Checker
 
-For the full migration history, see `docs/exec-plans/active/forward-layered-architecture-refactor.md`.
+**Script**: [check-layer-deps.mjs](scripts/check-layer-deps.mjs)
+**Config**: [architecture-boundaries.json](config/architecture-boundaries.json)
+**Exit code**: 0 = pass, 1 = violations found
 
----
+Walks every `.ts` file under `src/`, extracts all import edges (static + dynamic, skipping type-only imports), resolves them to absolute paths, and checks four rule categories:
 
-## Migration Status
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   check-layer-deps.mjs                      │
+│                                                             │
+│  1. Top-level forbidden rules                               │
+│     services→tools, services→routes, tools→routes, etc.     │
+│                                                             │
+│  2. Same-domain layer rules                                 │
+│     Is repo importing runtime? → VIOLATION                  │
+│     Is service importing types? → OK                        │
+│                                                             │
+│  3. Cross-domain rules                                      │
+│     Is calendar importing scheduler? → VIOLATION            │
+│     Is calendar importing google-core via providers? → OK   │
+│                                                             │
+│  4. Domain → external rules                                 │
+│     Is a domain importing src/config? → OK (allowed)        │
+│     Is a domain importing src/routes? → VIOLATION           │
+│     Is a domain importing src/executor? → VIOLATION         │
+│                                                             │
+│  Modes:                                                     │
+│  --strict   Warnings become violations (default in CI)      │
+│  --report   Print full edge report before violations        │
+│                                                             │
+│  Exceptions:                                                │
+│  Listed in config/architecture-boundaries.json "exceptions" │
+│  (currently empty — 0 exceptions, 0 violations)             │
+└─────────────────────────────────────────────────────────────┘
+```
 
-All domain migrations are complete as of 2026-02-21. The forward-layered architecture refactor has been fully executed. For the detailed migration history (milestones, file-level specs, and execution log), see `docs/exec-plans/active/forward-layered-architecture-refactor.md`.
+The config file (`config/architecture-boundaries.json`) contains all rules:
+- `forbidden` — top-level slice-to-slice import bans
+- `domainLayerRules` — the canonical layer ordering and allowed-imports matrix
+- `crossDomainRules` — deny-by-default with an explicit allowlist (each entry has `from`, `to`, `via`)
+- `domainExternalRules` — which top-level modules domains may/may not import
+- `exceptions` — temporary allowlist for known violations with expiry dates
+
+### `npm run lint:agents` — Agent Registry Checker
+
+**Script**: [check-agent-registry.mjs](scripts/check-agent-registry.mjs)
+**Exit code**: 0 = consistent, 1 = issues found
+
+Validates structural consistency between domain capabilities and the agent registry:
+
+| Check | What it verifies |
+|-------|-----------------|
+| Agent domains have required files | Every domain with `exposure: 'agent'` must have `runtime/agent.ts` and `runtime/prompt.ts` |
+| Agent domains are registered | Every `exposure: 'agent'` domain must appear in `src/registry/agents.ts` |
+| Non-agent domains are not registered | `tool-only` and `internal` domains must NOT appear in the agent registry |
+| Capability files exist | Every domain under `src/domains/` must have a `capability.ts` |
+
+This prevents drift between what a domain declares about itself and how it's wired into the system.
+
+### `npm run docs:agents` — Agent Catalog Generator
+
+**Script**: [generate-agent-catalog.mjs](scripts/generate-agent-catalog.mjs)
+**Output**: [docs/generated/agent-catalog.md](docs/generated/agent-catalog.md)
+
+Reads domain capabilities, agent metadata (descriptions, examples), tool definitions (names, descriptions), layer structure, and cross-domain dependencies to produce an enriched domain catalog. Each domain section includes its agent info, example prompts, active layers, cross-domain dependencies, and a tool table with descriptions.
+
+### Summary of All Enforcement Commands
+
+| Command | What it enforces | Fails on |
+|---------|-----------------|----------|
+| `npm run lint:architecture` | Forward-only layer deps, cross-domain boundaries, domain↔external rules | Any import that violates the layer matrix, crosses domains without a declared `via`, or reaches forbidden top-level modules |
+| `npm run lint:agents` | Agent registry ↔ domain capability consistency | Missing `capability.ts`, missing `runtime/agent.ts` or `runtime/prompt.ts` for agent domains, registry mismatches |
+| `npm run lint` | TypeScript/ESLint code quality | Standard lint errors |
+| `npm run build` | TypeScript compilation | Type errors, unresolved imports |
+| `npm run test:unit` | Unit test suite | Test failures |
+
+For the full migration history, see [forward-layered-architecture-refactor.md](docs/exec-plans/active/forward-layered-architecture-refactor.md).
 
 ---
 
