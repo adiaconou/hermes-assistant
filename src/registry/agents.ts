@@ -12,8 +12,6 @@ import { capability as emailCapability, executor as emailExecutor } from '../dom
 import { capability as memoryCapability, executor as memoryExecutor } from '../domains/memory/runtime/agent.js';
 import { capability as uiCapability, executor as uiExecutor } from '../domains/ui/runtime/agent.js';
 import { capability as driveCapability, executor as driveExecutor } from '../domains/drive/runtime/agent.js';
-import { capability as generalCapability, executor as generalExecutor } from '../agents/general/index.js';
-
 export const AGENTS: Array<{ capability: AgentCapability; executor: AgentExecutor }> = [
   { capability: calendarCapability, executor: calendarExecutor },
   { capability: schedulerCapability, executor: schedulerExecutor },
@@ -21,5 +19,4 @@ export const AGENTS: Array<{ capability: AgentCapability; executor: AgentExecuto
   { capability: memoryCapability, executor: memoryExecutor },
   { capability: uiCapability, executor: uiExecutor },
   { capability: driveCapability, executor: driveExecutor },
-  { capability: generalCapability, executor: generalExecutor },
 ];

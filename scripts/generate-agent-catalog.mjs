@@ -175,19 +175,6 @@ if (fs.existsSync(DOMAINS_DIR)) {
   }
 }
 
-// ---------- parse general-agent (not in domains/) ----------
-
-const generalAgentPath = path.join(SRC, 'agents', 'general', 'index.ts');
-let generalAgent = null;
-if (fs.existsSync(generalAgentPath)) {
-  const src = fs.readFileSync(generalAgentPath, 'utf-8');
-  generalAgent = {
-    agentId: extractString(src, 'name'),
-    description: extractDescription(src, 'description'),
-    examples: extractExamples(src),
-  };
-}
-
 // ---------- parse shared tools (not in any domain) ----------
 
 const sharedToolFiles = [
@@ -327,26 +314,6 @@ for (const d of domains) {
     lines.push('');
   }
 
-  lines.push('---');
-  lines.push('');
-}
-
-// General agent (not in domains/)
-if (generalAgent) {
-  lines.push('## general *(top-level fallback)*');
-  lines.push('');
-  lines.push(`**Agent:** \`${generalAgent.agentId}\``);
-  lines.push(`**Description:** ${generalAgent.description}`);
-  lines.push(`**Source:** \`src/agents/general/index.ts\``);
-  lines.push(`**Tools:** all (\`*\`)`);
-  lines.push('');
-  if (generalAgent.examples.length > 0) {
-    lines.push('**Example prompts:**');
-    for (const ex of generalAgent.examples) {
-      lines.push(`- "${ex}"`);
-    }
-    lines.push('');
-  }
   lines.push('---');
   lines.push('');
 }

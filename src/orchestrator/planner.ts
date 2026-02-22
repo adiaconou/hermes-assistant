@@ -62,22 +62,22 @@ Analyze the user's request and create a plan with sequential steps.
 
 <rules>
 1. Use the MINIMUM number of steps needed - prefer fewer steps
-2. For greetings, small talk, gratitude, or ambiguous conversational requests, use 1 step with general-agent
-3. For single-domain actionable requests, prefer the matching specialized agent (calendar/email/drive/scheduler/memory/ui) instead of general-agent
+2. For any request that reaches this planner, pick the best-fit specialized agent. Greetings and small talk are already handled before this planner runs.
+3. For single-domain actionable requests, use the matching specialized agent (calendar/email/drive/scheduler/memory/ui)
 4. Only use multiple steps when truly necessary (e.g., "check calendar AND create reminder")
 5. Each step should be a discrete, completable task
 6. Steps execute sequentially - later steps can reference earlier results
 7. Maximum 10 steps per plan
 8. If dates/times are relative (tomorrow, friday, next week), resolve them to specific dates in the task description
 9. Today is {today}
-10. Memory tasks (store/recall/update/delete user facts) should use memory-agent; use general-agent only if no specialized agent fits
+10. Memory tasks (store/recall/update/delete user facts) should use memory-agent
 11. Data flow: Some agents can fetch data but not display it richly; others can display but not fetch. When a user wants data displayed interactively:
-   - First step: Use an agent that can fetch the data (e.g., calendar-agent, email-agent, general-agent)
+   - First step: Use an agent that can fetch the data (e.g., calendar-agent, email-agent)
    - Second step: Pass the data to ui-agent to render it interactively
    - Example: "Show my calendar in a visual dashboard" → step 1: calendar-agent fetches events, step 2: ui-agent renders them
 12. The ui-agent has NO network access - it can only render data provided to it from previous steps or create standalone tools (calculators, forms, timers)
 13. If <current_media> exists, resolve "this/that/it" to current-turn media before conversation history.
-14. Intent priority: explicit user text first, then <current_media>, then history. If the request is media-only or still ambiguous, create one general-agent step that asks a concise clarification question.
+14. Intent priority: explicit user text first, then <current_media>, then history. If the request is media-only or still ambiguous, create one memory-agent step that asks a concise clarification question.
 15. Skills vs agents: Prefer a SKILL when the task matches a structured workflow (extraction, checklists, transforms, reports). Prefer an AGENT when the task needs open-ended domain reasoning or complex tool orchestration. If a skill matches the request well, use "targetType": "skill".
 </rules>
 
@@ -120,28 +120,28 @@ type ParsedPlanResponse = {
   steps: Array<{ id: string; targetType?: PlanStepTargetType; agent: string; task: string }>;
 };
 
-function createGeneralFallbackPlan(userMessage: string, reason: string, timezone?: string): ParsedPlanResponse {
+function createFallbackPlan(userMessage: string, reason: string, timezone?: string): ParsedPlanResponse {
   console.warn(JSON.stringify({
     level: 'warn',
-    message: 'Falling back to general-agent plan',
+    message: 'Falling back to memory-agent plan',
     fallbackReason: reason,
     timestamp: new Date().toISOString(),
   }));
 
-  // Resolve relative dates even in fallback plans so the general-agent
+  // Resolve relative dates even in fallback plans so the agent
   // doesn't have to interpret "tomorrow", "next week", etc.
   const resolvedMessage = timezone
     ? resolveTaskDates(userMessage, timezone)
     : userMessage;
 
   return {
-    analysis: 'Could not parse planner output, defaulting to general agent',
+    analysis: 'Could not parse planner output, falling back to memory-agent',
     goal: 'Handle user request',
     steps: [{
       id: 'step_1',
       targetType: 'agent',
-      agent: 'general-agent',
-      task: `Handle the user request directly: "${resolvedMessage}"`,
+      agent: 'memory-agent',
+      task: `Check for relevant stored context and handle the user request: "${resolvedMessage}"`,
     }],
   };
 }
@@ -292,10 +292,10 @@ export async function createPlan(
   );
   const responseText = textBlock?.text || '';
 
-  // Parse the plan, falling back to general-agent on parse failure
+  // Parse the plan, falling back to memory-agent on parse failure
   let parsed = parsePlanResponse(responseText);
   if (!parsed) {
-    parsed = createGeneralFallbackPlan(context.userMessage, 'planning_parse_failed', context.userConfig?.timezone);
+    parsed = createFallbackPlan(context.userMessage, 'planning_parse_failed', context.userConfig?.timezone);
   }
 
   // Convert to PlanSteps

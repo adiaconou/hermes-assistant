@@ -32,7 +32,7 @@ Hermes is a multi-agent assistant that receives messages via Twilio (SMS/WhatsAp
 
 - **Two-phase response**: Fast synchronous classification (<5s) + asynchronous deep processing
 - **Agent orchestration**: An LLM planner decomposes requests into steps and delegates to specialized agents
-- **Tool isolation**: Each agent has access to only the tools it needs (except general-agent which has all)
+- **Tool isolation**: Each agent has access to only the tools it needs
 - **Background memory**: Facts are extracted from conversations asynchronously, not during real-time interactions
 - **Background email watching**: Incoming emails are polled, classified against user-defined skills, and actioned automatically
 - **Timezone-first**: All date/time operations use IANA timezones with DST-safe handling
@@ -524,7 +524,6 @@ Agents are registered in `src/registry/agents.ts` and looked up via `src/executo
 | **memory-agent** | `extract_memory`, `list_memories`, `update_memory`, `remove_memory` | Explicit user fact management |
 | **drive-agent** | `upload_to_drive`, `list_drive_files`, `create_drive_folder`, `read_drive_file`, `search_drive`, `get_hermes_folder`, `create_spreadsheet`, `read_spreadsheet`, `write_spreadsheet`, `append_to_spreadsheet`, `find_spreadsheet`, `create_document`, `read_document`, `append_to_document`, `find_document`, `analyze_image` | Google Drive, Sheets, Docs, and Vision |
 | **ui-agent** | `generate_ui` | Generate interactive HTML pages (no network access) |
-| **general-agent** | `*` (all tools) | Fallback for anything that doesn't fit a specialized agent |
 
 ### Agent Execution
 
@@ -539,8 +538,9 @@ All agents share the same execution engine (`src/executor/tool-executor.ts`):
 
 The planner LLM chooses agents based on:
 - Agent descriptions and examples (injected into the planning prompt)
-- Rules in the planning prompt (e.g., "use specialized agents over general-agent")
+- Rules in the planning prompt (e.g., "pick the best-fit specialized agent")
 - Data flow rules (e.g., "fetch data with one agent, then pass to ui-agent to render")
+- Replan loop recovery (if the first agent choice was wrong, replanning routes to a better one)
 
 ---
 
@@ -892,7 +892,7 @@ When the user sends media (images), the planner receives structured `<current_me
 |------|----------|
 | **Intent precedence** | (1) explicit user text → (2) current-turn media → (3) prior conversation history |
 | **Deictic resolution** | "this", "that", "it" bind to `<current_media>` attachments before conversation history |
-| **Image-only clarification** | If the user sends only an image with no text and the category is ambiguous, the planner emits a general-agent step that asks a clarification question |
+| **Image-only clarification** | If the user sends only an image with no text and the category is ambiguous, the planner emits a memory-agent step that asks a concise clarification question |
 
 ### Pre-Analysis Pipeline
 
@@ -991,10 +991,6 @@ src/
 │   ├── media.ts                # MediaAttachment
 │   └── domain.ts               # DomainCapability, DomainExposure
 │
-├── agents/
-│   ├── context.ts              # Shared agent context utilities
-│   └── general/                # General-agent (fallback, not migrated to domain)
-│
 ├── tools/
 │   ├── index.ts                # Tool registry (aggregates from domains)
 │   ├── types.ts                # ToolDefinition, ToolHandler, ToolContext
@@ -1003,6 +999,7 @@ src/
 │   └── utils.ts                # Shared tool utilities
 │
 ├── services/
+│   ├── agent-context.ts        # Shared agent prompt context builders
 │   ├── anthropic/              # Claude API client
 │   ├── conversation/           # Message history storage
 │   ├── credentials/            # OAuth token storage

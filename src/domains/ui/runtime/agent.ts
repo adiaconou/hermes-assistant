@@ -6,7 +6,7 @@
 
 import type { AgentCapability, StepResult, AgentExecutionContext } from '../../../executor/types.js';
 import { getUiExecuteWithTools } from '../providers/executor.js';
-import { applyAgentContext } from '../../../agents/context.js';
+import { applyAgentContext } from '../../../services/agent-context.js';
 import { UI_AGENT_PROMPT } from './prompt.js';
 
 const UI_TOOLS = [

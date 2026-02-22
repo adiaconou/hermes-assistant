@@ -7,7 +7,7 @@
 
 import type { AgentCapability, StepResult, AgentExecutionContext } from '../../../executor/types.js';
 import { getDriveExecuteWithTools } from '../providers/executor.js';
-import { applyAgentContext } from '../../../agents/context.js';
+import { applyAgentContext } from '../../../services/agent-context.js';
 import { DRIVE_AGENT_PROMPT } from './prompt.js';
 
 const DRIVE_TOOLS = [

@@ -127,7 +127,7 @@ To add a new specialized agent:
 2. Create `src/domains/<name>/runtime/agent.ts` and `src/domains/<name>/runtime/prompt.ts`
 3. Define tools in `src/domains/<name>/runtime/tools.ts` if needed
 4. Register tools in `src/tools/index.ts`
-5. Import and add the domain agent to `AGENTS` in `src/registry/agents.ts` (before `general-agent`)
+5. Import and add the domain agent to `AGENTS` in `src/registry/agents.ts`
 6. Write tests in `tests/unit/agents/<name>/` and/or `tests/unit/tools/` as appropriate
 
 The agent will automatically be available to the planner and router.

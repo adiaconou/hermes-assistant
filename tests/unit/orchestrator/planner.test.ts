@@ -15,7 +15,7 @@ import {
 // Mock the dependencies
 vi.mock('../../../src/executor/registry.js', () => ({
   formatAgentsForPrompt: vi.fn(() => `  - calendar-agent: Manages calendar
-  - general-agent: General tasks`),
+  - memory-agent: Memory tasks`),
 }));
 
 vi.mock('../../../src/orchestrator/conversation-window.js', () => ({
@@ -38,12 +38,12 @@ describe('createPlan', () => {
     getAgent: vi.fn((name: string) => ({
       name,
       description: `${name} description`,
-      tools: ['*'],
+      tools: [],
       examples: [],
     })),
     listAgents: vi.fn(() => [
       { name: 'calendar-agent', description: 'Calendar', tools: [], examples: [] },
-      { name: 'general-agent', description: 'General', tools: ['*'], examples: [] },
+      { name: 'memory-agent', description: 'Memory', tools: [], examples: [] },
     ]),
   };
 
@@ -108,7 +108,7 @@ describe('createPlan', () => {
           analysis: 'Test',
           goal: 'Test goal',
           steps: [
-            { id: 'step_1', agent: 'general-agent', task: 'Do something' },
+            { id: 'step_1', agent: 'calendar-agent', task: 'Do something' },
           ],
         })),
       ]);
@@ -125,7 +125,7 @@ describe('createPlan', () => {
         createTextResponse(JSON.stringify({
           analysis: 'Test',
           goal: 'Test goal',
-          steps: [{ id: 'step_1', agent: 'general-agent', task: 'Task' }],
+          steps: [{ id: 'step_1', agent: 'calendar-agent', task: 'Task' }],
         })),
       ]);
 
@@ -142,12 +142,12 @@ describe('createPlan', () => {
         createTextResponse(JSON.stringify({
           analysis: 'Test',
           goal: 'Goal',
-          steps: [{ id: 'step_1', agent: 'general-agent', task: 'Task' }],
+          steps: [{ id: 'step_1', agent: 'calendar-agent', task: 'Task' }],
         })),
         createTextResponse(JSON.stringify({
           analysis: 'Test',
           goal: 'Goal',
-          steps: [{ id: 'step_1', agent: 'general-agent', task: 'Task' }],
+          steps: [{ id: 'step_1', agent: 'calendar-agent', task: 'Task' }],
         })),
       ]);
 
@@ -163,7 +163,7 @@ describe('createPlan', () => {
         createTextResponse(JSON.stringify({
           analysis: 'Test',
           goal: 'Goal',
-          steps: [{ id: 'step_1', agent: 'general-agent', task: 'Task' }],
+          steps: [{ id: 'step_1', agent: 'calendar-agent', task: 'Task' }],
         })),
       ]);
 
@@ -180,7 +180,7 @@ describe('createPlan', () => {
         createTextResponse(JSON.stringify({
           analysis: 'Test',
           goal: 'Goal',
-          steps: [{ id: 'step_1', agent: 'general-agent', task: 'Task' }],
+          steps: [{ id: 'step_1', agent: 'calendar-agent', task: 'Task' }],
         })),
       ]);
 
@@ -200,7 +200,7 @@ describe('createPlan', () => {
         createTextResponse(JSON.stringify({
           analysis: 'Test',
           goal: 'Goal',
-          steps: [{ id: 'step_1', agent: 'general-agent', task: 'Task' }],
+          steps: [{ id: 'step_1', agent: 'calendar-agent', task: 'Task' }],
         })),
       ]);
 
@@ -217,7 +217,7 @@ describe('createPlan', () => {
         createTextResponse(JSON.stringify({
           analysis: 'Test',
           goal: 'Goal',
-          steps: [{ id: 'step_1', agent: 'general-agent', task: 'Task' }],
+          steps: [{ id: 'step_1', agent: 'calendar-agent', task: 'Task' }],
         })),
       ]);
 
@@ -238,7 +238,7 @@ describe('createPlan', () => {
         createTextResponse(JSON.stringify({
           analysis: 'Test',
           goal: 'Goal',
-          steps: [{ id: 'step_1', agent: 'general-agent', task: 'Task' }],
+          steps: [{ id: 'step_1', agent: 'calendar-agent', task: 'Task' }],
         })),
       ]);
 
@@ -282,13 +282,13 @@ describe('createPlan', () => {
       }, mockRegistry);
 
       const calls = getCreateCalls();
-      expect(calls[0].system).toContain('prefer the matching specialized agent');
-      expect(calls[0].system).toContain('greetings, small talk, gratitude');
+      expect(calls[0].system).toContain('use the matching specialized agent');
+      expect(calls[0].system).toContain('Greetings and small talk are already handled');
     });
   });
 
   describe('error handling', () => {
-    it('should fall back to general-agent on parse error', async () => {
+    it('should fall back to memory-agent on parse error', async () => {
       setMockResponses([
         createTextResponse('This is not valid JSON at all!'),
       ]);
@@ -298,7 +298,7 @@ describe('createPlan', () => {
 
       expect(calls).toHaveLength(1);
       expect(plan.steps).toHaveLength(1);
-      expect(plan.steps[0].agent).toBe('general-agent');
+      expect(plan.steps[0].agent).toBe('memory-agent');
       expect(plan.goal).toBe('Handle user request');
     });
 
@@ -318,8 +318,8 @@ describe('createPlan', () => {
           analysis: 'Test',
           goal: 'Goal',
           steps: [
-            { agent: 'general-agent', task: 'Task 1' },
-            { agent: 'general-agent', task: 'Task 2' },
+            { agent: 'calendar-agent', task: 'Task 1' },
+            { agent: 'calendar-agent', task: 'Task 2' },
           ],
         })),
       ]);
@@ -337,7 +337,7 @@ describe('createPlan', () => {
         createTextResponse(JSON.stringify({
           analysis: 'Test',
           goal: 'Goal',
-          steps: [{ id: 'step_1', agent: 'general-agent', task: 'Task' }],
+          steps: [{ id: 'step_1', agent: 'calendar-agent', task: 'Task' }],
         })),
       ]);
 
@@ -392,7 +392,7 @@ describe('createPlan', () => {
         createTextResponse(JSON.stringify({
           analysis: 'Test',
           goal: 'Goal',
-          steps: [{ id: 'step_1', agent: 'general-agent', task: 'Task' }],
+          steps: [{ id: 'step_1', agent: 'calendar-agent', task: 'Task' }],
         })),
       ]);
 
@@ -408,7 +408,7 @@ describe('createPlan', () => {
         createTextResponse(JSON.stringify({
           analysis: 'Test',
           goal: 'Goal',
-          steps: [{ id: 'step_1', agent: 'general-agent', task: 'Task' }],
+          steps: [{ id: 'step_1', agent: 'calendar-agent', task: 'Task' }],
         })),
       ]);
 
@@ -424,7 +424,7 @@ describe('createPlan', () => {
         createTextResponse(JSON.stringify({
           analysis: 'Test',
           goal: 'Goal',
-          steps: [{ id: 'step_1', agent: 'general-agent', task: 'Task' }],
+          steps: [{ id: 'step_1', agent: 'calendar-agent', task: 'Task' }],
         })),
       ]);
 
@@ -440,7 +440,7 @@ describe('createPlan', () => {
         createTextResponse(JSON.stringify({
           analysis: 'Test',
           goal: 'Goal',
-          steps: [{ id: 'step_1', agent: 'general-agent', task: 'Task' }],
+          steps: [{ id: 'step_1', agent: 'calendar-agent', task: 'Task' }],
         })),
       ]);
 
@@ -448,7 +448,7 @@ describe('createPlan', () => {
 
       const calls = getCreateCalls();
       expect(calls[0].system).toContain('media-only or still ambiguous');
-      expect(calls[0].system).toContain('general-agent step');
+      expect(calls[0].system).toContain('memory-agent step');
     });
   });
 });

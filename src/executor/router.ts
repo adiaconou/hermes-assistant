@@ -16,8 +16,6 @@ const agentExecutors: Map<string, AgentExecutor> = new Map(
   AGENTS.map(agent => [agent.capability.name, agent.executor])
 );
 
-const generalExecutor = agentExecutors.get('general-agent');
-
 /**
  * Route a task to the appropriate agent.
  *
@@ -36,14 +34,10 @@ export function routeToAgent(
   if (!executor) {
     console.warn(JSON.stringify({
       level: 'warn',
-      message: 'Unknown agent, falling back to general-agent',
+      message: 'Unknown agent requested',
       requestedAgent: agentName,
       timestamp: new Date().toISOString(),
     }));
-
-    if (generalExecutor) {
-      return generalExecutor(task, context);
-    }
 
     return Promise.resolve({
       success: false,

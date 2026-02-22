@@ -128,13 +128,13 @@ function parseReplanResponse(text: string): {
       timestamp: new Date().toISOString(),
     }));
 
-    // Return a general-agent fallback so the user gets some response
+    // Return a memory-agent fallback so the user gets some response
     return {
-      analysis: 'Could not parse replan response, falling back to general agent',
+      analysis: 'Could not parse replan response, falling back to memory-agent',
       steps: [{
         id: 'step_fallback',
         targetType: 'agent',
-        agent: 'general-agent',
+        agent: 'memory-agent',
         task: 'Summarize what was accomplished so far and let the user know if anything failed.',
         status: 'pending',
       }],

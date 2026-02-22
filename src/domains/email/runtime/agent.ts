@@ -6,7 +6,7 @@
 
 import type { AgentCapability, StepResult, AgentExecutionContext } from '../../../executor/types.js';
 import { getEmailExecuteWithTools } from '../providers/executor.js';
-import { applyAgentContext } from '../../../agents/context.js';
+import { applyAgentContext } from '../../../services/agent-context.js';
 import { EMAIL_AGENT_PROMPT } from './prompt.js';
 
 /**

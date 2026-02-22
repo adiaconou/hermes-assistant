@@ -14,7 +14,7 @@ import {
 // Mock dependencies
 vi.mock('../../../src/executor/registry.js', () => ({
   formatAgentsForPrompt: vi.fn(() => `  - calendar-agent: Manages calendar
-  - general-agent: General tasks`),
+  - memory-agent: Memory tasks`),
 }));
 
 // Import after mocks
@@ -72,7 +72,7 @@ describe('canReplan', () => {
       const plan = createBasePlan({
         steps: Array(5).fill({
           id: 'step_1',
-          agent: 'general-agent',
+          agent: 'memory-agent',
           task: 'Task',
           status: 'pending' as const,
           retryCount: 0,
@@ -87,7 +87,7 @@ describe('canReplan', () => {
       const plan = createBasePlan({
         steps: Array(ORCHESTRATOR_LIMITS.maxTotalSteps).fill({
           id: 'step_1',
-          agent: 'general-agent',
+          agent: 'memory-agent',
           task: 'Task',
           status: 'pending' as const,
           retryCount: 0,
@@ -141,7 +141,7 @@ describe('replan', () => {
     })),
     listAgents: vi.fn(() => [
       { name: 'calendar-agent', description: 'Calendar', tools: [], examples: [] },
-      { name: 'general-agent', description: 'General', tools: ['*'], examples: [] },
+      { name: 'memory-agent', description: 'Memory', tools: [], examples: [] },
     ]),
   };
 
@@ -210,7 +210,7 @@ describe('replan', () => {
         analysis: 'Email failed, will try SMS instead',
         steps: [
           { id: 'step_1', agent: 'calendar-agent', task: 'Get calendar events', status: 'completed' },
-          { id: 'step_3', agent: 'general-agent', task: 'Send SMS summary' },
+          { id: 'step_3', agent: 'memory-agent', task: 'Send SMS summary' },
         ],
       })),
     ]);
@@ -233,7 +233,7 @@ describe('replan', () => {
         analysis: 'Adding alternative approach',
         steps: [
           { id: 'step_1', agent: 'calendar-agent', task: 'Get calendar events', status: 'completed' },
-          { id: 'step_new', agent: 'general-agent', task: 'New alternative task' },
+          { id: 'step_new', agent: 'memory-agent', task: 'New alternative task' },
         ],
       })),
     ]);
@@ -303,7 +303,7 @@ describe('replan', () => {
 
   it('should handle JSON in markdown code blocks', async () => {
     setMockResponses([
-      createTextResponse('```json\n{"analysis": "Replanning", "steps": [{"id": "step_new", "agent": "general-agent", "task": "New task"}]}\n```'),
+      createTextResponse('```json\n{"analysis": "Replanning", "steps": [{"id": "step_new", "agent": "memory-agent", "task": "New task"}]}\n```'),
     ]);
 
     const priorPlan = createBasePlan();
@@ -320,7 +320,7 @@ describe('replan', () => {
     // Create a response with many steps
     const manySteps = Array.from({ length: 15 }, (_, i) => ({
       id: `step_${i + 1}`,
-      agent: 'general-agent',
+      agent: 'memory-agent',
       task: `Task ${i + 1}`,
     }));
 

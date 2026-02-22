@@ -25,14 +25,6 @@ vi.mock('../../../src/registry/agents.js', () => ({
         examples: ['Check my emails'],
       },
     },
-    {
-      capability: {
-        name: 'general-agent',
-        description: 'Handles general tasks',
-        tools: ['*'],
-        examples: ['Help me with something'],
-      },
-    },
   ],
 }));
 
@@ -54,10 +46,9 @@ describe('createAgentRegistry', () => {
     const registry = createAgentRegistry();
     const agents = registry.listAgents();
 
-    expect(agents).toHaveLength(3);
+    expect(agents).toHaveLength(2);
     expect(agents.map(a => a.name)).toContain('calendar-agent');
     expect(agents.map(a => a.name)).toContain('email-agent');
-    expect(agents.map(a => a.name)).toContain('general-agent');
   });
 
   it('should get agent by name', () => {
@@ -131,7 +122,6 @@ describe('getAgentNames', () => {
 
     expect(names).toContain('calendar-agent');
     expect(names).toContain('email-agent');
-    expect(names).toContain('general-agent');
   });
 });
 

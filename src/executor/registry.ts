@@ -13,7 +13,6 @@ import { registerAgentExecutor } from './router.js';
 
 /**
  * All registered agents.
- * Order matters: specialized agents should be listed before general-agent.
  */
 const agents: AgentCapability[] = AGENTS.map(a => a.capability);
 
@@ -32,16 +31,10 @@ export function createAgentRegistry(): AgentRegistry {
 
 /**
  * Register a new agent in the registry.
- * Used to add specialized agents in later phases.
+ * Used to add specialized agents dynamically.
  */
 export function registerAgent(agent: AgentCapability, executor?: AgentExecutor): void {
-  // Insert before general-agent (which should always be last)
-  const generalIndex = agents.findIndex(a => a.name === 'general-agent');
-  if (generalIndex >= 0) {
-    agents.splice(generalIndex, 0, agent);
-  } else {
-    agents.push(agent);
-  }
+  agents.push(agent);
 
   if (executor) {
     registerAgentExecutor(agent.name, executor);

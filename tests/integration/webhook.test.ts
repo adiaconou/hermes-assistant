@@ -4,7 +4,7 @@
  * Tests the full request/response cycle using supertest.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 import { createMockReqRes } from '../helpers/mock-http.js';
 import { handleSmsWebhook } from '../../src/routes/sms.js';
 import { healthHandler } from '../../src/routes/health.js';
@@ -17,6 +17,14 @@ import {
 } from '../mocks/anthropic.js';
 import { getSentMessages, clearSentMessages } from '../mocks/twilio.js';
 import { getExpectedTwilioSignature } from 'twilio/lib/webhooks/webhooks.js';
+import { executeWithTools } from '../../src/executor/tool-executor.js';
+import { setMemoryExecuteWithTools } from '../../src/domains/memory/providers/executor.js';
+
+// Wire the memory-agent provider so the orchestrator can route to it.
+// In production this happens in src/index.ts; tests must do it explicitly.
+beforeAll(() => {
+  setMemoryExecuteWithTools(executeWithTools);
+});
 
 describe('POST /webhook/sms', () => {
   const webhookUrl = 'http://localhost:3000/webhook/sms';
@@ -111,7 +119,7 @@ describe('POST /webhook/sms', () => {
         createTextResponse(JSON.stringify({
           analysis: 'User wants something complex',
           goal: 'Handle complex request',
-          steps: [{ id: 'step_1', agent: 'general-agent', task: 'Process request' }],
+          steps: [{ id: 'step_1', agent: 'memory-agent', task: 'Process request' }],
         })),
         // Executor
         createTextResponse('Processed the request.'),
@@ -157,9 +165,9 @@ describe('POST /webhook/sms', () => {
         createTextResponse(JSON.stringify({
           analysis: 'User wants to create a grocery list',
           goal: 'Create grocery list',
-          steps: [{ id: 'step_1', agent: 'general-agent', task: 'Create the list' }],
+          steps: [{ id: 'step_1', agent: 'memory-agent', task: 'Create the list' }],
         })),
-        // Executor response (general-agent execution)
+        // Executor response (memory-agent execution)
         createTextResponse('I created your grocery list with common items.'),
         // Response Composer (synthesizes final message)
         createTextResponse('Here is your detailed response with the grocery list!'),
@@ -200,7 +208,7 @@ describe('POST /webhook/sms', () => {
         createTextResponse(JSON.stringify({
           analysis: 'User sent media and wants help',
           goal: 'Handle media request',
-          steps: [{ id: 'step_1', agent: 'general-agent', task: 'Handle the media request' }],
+          steps: [{ id: 'step_1', agent: 'memory-agent', task: 'Handle the media request' }],
         })),
         createTextResponse('Processed media request.'),
         createTextResponse('Here is what I found from your attachment.'),
