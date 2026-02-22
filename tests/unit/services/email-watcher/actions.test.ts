@@ -1,17 +1,11 @@
 /**
- * Unit tests for email watcher action execution and notification throttle.
+ * Unit tests for email watcher filesystem-skill action execution and throttling.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-// Mock all external dependencies
-const mockExecuteWithTools = vi.fn();
-vi.mock('../../../../src/domains/email-watcher/providers/executor.js', () => ({
-  getEmailWatcherExecuteWithTools: vi.fn(() => mockExecuteWithTools),
-}));
-
-vi.mock('../../../../src/domains/email-watcher/repo/sqlite.js', () => ({
-  getEmailSkillStore: vi.fn(),
+vi.mock('../../../../src/domains/email-watcher/providers/skills.js', () => ({
+  executeFilesystemSkillByName: vi.fn(),
 }));
 
 vi.mock('../../../../src/services/user-config/index.js', () => ({
@@ -41,27 +35,9 @@ vi.mock('../../../../src/config.js', () => ({
 }));
 
 import { executeSkillActions } from '../../../../src/domains/email-watcher/service/actions.js';
-import { getEmailSkillStore } from '../../../../src/domains/email-watcher/repo/sqlite.js';
+import { executeFilesystemSkillByName } from '../../../../src/domains/email-watcher/providers/skills.js';
 import { sendSms } from '../../../../src/twilio.js';
-import type { ClassificationResult, EmailSkill } from '../../../../src/domains/email-watcher/types.js';
-
-function makeSkill(overrides: Partial<EmailSkill> = {}): EmailSkill {
-  return {
-    id: 'skill_1',
-    phoneNumber: '+1234567890',
-    name: 'invoice-tracker',
-    description: 'Track invoices',
-    matchCriteria: 'Emails containing invoices',
-    extractFields: ['amount', 'vendor'],
-    actionType: 'notify',
-    actionPrompt: 'Summarize the invoice',
-    tools: [],
-    enabled: true,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-    ...overrides,
-  };
-}
+import type { ClassificationResult } from '../../../../src/domains/email-watcher/types.js';
 
 function makeClassification(overrides: Partial<ClassificationResult> = {}): ClassificationResult {
   return {
@@ -78,8 +54,8 @@ function makeClassification(overrides: Partial<ClassificationResult> = {}): Clas
       {
         skill: 'invoice-tracker',
         confidence: 0.95,
-        extracted: { amount: '$100', vendor: 'Acme Corp' },
-        summary: 'Invoice from Acme Corp for $100',
+        extracted: {},
+        summary: 'Matched hints: invoice',
       },
     ],
     ...overrides,
@@ -89,118 +65,62 @@ function makeClassification(overrides: Partial<ClassificationResult> = {}): Clas
 describe('executeSkillActions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Reset module to clear throttle state
     vi.resetModules();
   });
 
-  it('assembles task string with actionPrompt and XML context for execute_with_tools', async () => {
-    const skill = makeSkill({
-      actionType: 'execute_with_tools',
-      actionPrompt: 'Append to spreadsheet',
-      tools: ['append_to_spreadsheet'],
-    });
-    (getEmailSkillStore as ReturnType<typeof vi.fn>).mockReturnValue({
-      getSkillsForUser: vi.fn().mockReturnValue([skill]),
-    });
-    mockExecuteWithTools.mockResolvedValue({
+  it('executes matched filesystem skill and sends merged notification', async () => {
+    vi.mocked(executeFilesystemSkillByName).mockResolvedValue({
       success: true,
-      output: 'Appended row to spreadsheet',
+      output: 'Logged invoice to tracking sheet.',
+      error: undefined,
     });
 
-    const classification = makeClassification({
-      matches: [{
-        skill: 'invoice-tracker',
-        confidence: 0.95,
-        extracted: { amount: '$100', vendor: 'Acme Corp' },
-        summary: 'Invoice from Acme Corp',
-      }],
-    });
-
-    // Re-import to get fresh module with clean throttle
     const { executeSkillActions: freshExecute } = await import(
       '../../../../src/domains/email-watcher/service/actions.js'
     );
-    await freshExecute('+1234567890', [classification]);
+    await freshExecute('+1234567890', [makeClassification()]);
 
-    expect(mockExecuteWithTools).toHaveBeenCalledTimes(1);
-    const callArgs = mockExecuteWithTools.mock.calls[0];
-    // First arg is system prompt
-    expect(callArgs[0]).toContain('invoice-tracker');
-    // Second arg is the task string
-    expect(callArgs[1]).toContain('Append to spreadsheet');
-    expect(callArgs[1]).toContain('<extracted_data>');
-    expect(callArgs[1]).toContain('<email_metadata>');
-    // Third arg is tools array
-    expect(callArgs[2]).toEqual(['append_to_spreadsheet']);
+    expect(executeFilesystemSkillByName).toHaveBeenCalledTimes(1);
+    const call = vi.mocked(executeFilesystemSkillByName).mock.calls[0];
+    expect(call[0]).toBe('invoice-tracker');
+    expect(call[3]).toBe('email');
+
+    expect(sendSms).toHaveBeenCalledTimes(1);
+    const smsBody = vi.mocked(sendSms).mock.calls[0][1] as string;
+    expect(smsBody).toContain('Invoice #123');
+    expect(smsBody).toContain('Logged invoice to tracking sheet.');
   });
 
-  it('uses match summary directly for notify actions', async () => {
-    const skill = makeSkill({ actionType: 'notify' });
-    (getEmailSkillStore as ReturnType<typeof vi.fn>).mockReturnValue({
-      getSkillsForUser: vi.fn().mockReturnValue([skill]),
-    });
-
-    const classification = makeClassification({
-      matches: [{
-        skill: 'invoice-tracker',
-        confidence: 0.95,
-        extracted: {},
-        summary: 'Invoice from Acme Corp for $100',
-      }],
+  it('falls back to match summary when skill execution fails', async () => {
+    vi.mocked(executeFilesystemSkillByName).mockResolvedValue({
+      success: false,
+      output: null,
+      error: 'Tool execution failed',
     });
 
     const { executeSkillActions: freshExecute } = await import(
       '../../../../src/domains/email-watcher/service/actions.js'
     );
-    await freshExecute('+1234567890', [classification]);
+    await freshExecute('+1234567890', [makeClassification()]);
 
-    expect(mockExecuteWithTools).not.toHaveBeenCalled();
     expect(sendSms).toHaveBeenCalledTimes(1);
-    const smsBody = (sendSms as ReturnType<typeof vi.fn>).mock.calls[0][1] as string;
-    expect(smsBody).toContain('Invoice from Acme Corp for $100');
-  });
-
-  it('sends merged notification for multi-match on single email', async () => {
-    const skills = [
-      makeSkill({ name: 'invoice-tracker', actionType: 'notify' }),
-      makeSkill({ id: 'skill_2', name: 'expense-tracker', actionType: 'notify' }),
-    ];
-    (getEmailSkillStore as ReturnType<typeof vi.fn>).mockReturnValue({
-      getSkillsForUser: vi.fn().mockReturnValue(skills),
-    });
-
-    const classification = makeClassification({
-      matches: [
-        { skill: 'invoice-tracker', confidence: 0.9, extracted: {}, summary: 'Invoice notification' },
-        { skill: 'expense-tracker', confidence: 0.85, extracted: {}, summary: 'Expense notification' },
-      ],
-    });
-
-    const { executeSkillActions: freshExecute } = await import(
-      '../../../../src/domains/email-watcher/service/actions.js'
-    );
-    await freshExecute('+1234567890', [classification]);
-
-    // Should send a single merged SMS, not two
-    expect(sendSms).toHaveBeenCalledTimes(1);
-    const smsBody = (sendSms as ReturnType<typeof vi.fn>).mock.calls[0][1] as string;
-    expect(smsBody).toContain('Invoice notification');
-    expect(smsBody).toContain('Expense notification');
+    const smsBody = vi.mocked(sendSms).mock.calls[0][1] as string;
+    expect(smsBody).toContain('Matched hints: invoice');
   });
 
   it('throttles notifications after max per hour', async () => {
-    const skill = makeSkill({ actionType: 'notify' });
-    (getEmailSkillStore as ReturnType<typeof vi.fn>).mockReturnValue({
-      getSkillsForUser: vi.fn().mockReturnValue([skill]),
+    vi.mocked(executeFilesystemSkillByName).mockResolvedValue({
+      success: true,
+      output: 'Processed.',
+      error: undefined,
     });
 
     const { executeSkillActions: freshExecute } = await import(
       '../../../../src/domains/email-watcher/service/actions.js'
     );
 
-    // Send max notifications (3 per config mock)
     for (let i = 0; i < 5; i++) {
-      const classification = makeClassification({
+      await freshExecute('+1234567890', [makeClassification({
         emailIndex: i + 1,
         matches: [{
           skill: 'invoice-tracker',
@@ -208,98 +128,9 @@ describe('executeSkillActions', () => {
           extracted: {},
           summary: `Notification ${i + 1}`,
         }],
-      });
-      await freshExecute('+1234567890', [classification]);
+      })]);
     }
 
-    // Only 3 should have been sent (the max)
     expect(sendSms).toHaveBeenCalledTimes(3);
-  });
-
-  it('does not block other actions when one fails', async () => {
-    const skills = [
-      makeSkill({
-        name: 'failing-skill',
-        actionType: 'execute_with_tools',
-        tools: ['append_to_spreadsheet'],
-      }),
-      makeSkill({ id: 'skill_2', name: 'notify-skill', actionType: 'notify' }),
-    ];
-    (getEmailSkillStore as ReturnType<typeof vi.fn>).mockReturnValue({
-      getSkillsForUser: vi.fn().mockReturnValue(skills),
-    });
-
-    // First tool action fails
-    mockExecuteWithTools.mockResolvedValue({
-      success: false,
-      error: 'Tool execution failed',
-    });
-
-    const classification = makeClassification({
-      matches: [
-        { skill: 'failing-skill', confidence: 0.9, extracted: {}, summary: 'Failed action' },
-        { skill: 'notify-skill', confidence: 0.85, extracted: {}, summary: 'Success notification' },
-      ],
-    });
-
-    const { executeSkillActions: freshExecute } = await import(
-      '../../../../src/domains/email-watcher/service/actions.js'
-    );
-    await freshExecute('+1234567890', [classification]);
-
-    // The notify action should still send SMS even though tool action failed
-    expect(sendSms).toHaveBeenCalledTimes(1);
-    const smsBody = (sendSms as ReturnType<typeof vi.fn>).mock.calls[0][1] as string;
-    expect(smsBody).toContain('Success notification');
-  });
-
-  it('skips classifications with no matches', async () => {
-    const skill = makeSkill();
-    (getEmailSkillStore as ReturnType<typeof vi.fn>).mockReturnValue({
-      getSkillsForUser: vi.fn().mockReturnValue([skill]),
-    });
-
-    const classification = makeClassification({ matches: [] });
-
-    const { executeSkillActions: freshExecute } = await import(
-      '../../../../src/domains/email-watcher/service/actions.js'
-    );
-    await freshExecute('+1234567890', [classification]);
-
-    expect(sendSms).not.toHaveBeenCalled();
-    expect(mockExecuteWithTools).not.toHaveBeenCalled();
-  });
-
-  it('includes email subject and from in notification SMS', async () => {
-    const skill = makeSkill({ actionType: 'notify' });
-    (getEmailSkillStore as ReturnType<typeof vi.fn>).mockReturnValue({
-      getSkillsForUser: vi.fn().mockReturnValue([skill]),
-    });
-
-    const classification = makeClassification({
-      email: {
-        messageId: 'msg_1',
-        from: 'billing@acme.com',
-        subject: 'Invoice #456',
-        date: 'Mon, 20 Jan 2025 10:00:00 -0800',
-        body: 'Invoice body',
-        attachments: [],
-      },
-      matches: [{
-        skill: 'invoice-tracker',
-        confidence: 0.9,
-        extracted: {},
-        summary: 'New invoice',
-      }],
-    });
-
-    const { executeSkillActions: freshExecute } = await import(
-      '../../../../src/domains/email-watcher/service/actions.js'
-    );
-    await freshExecute('+1234567890', [classification]);
-
-    const smsBody = (sendSms as ReturnType<typeof vi.fn>).mock.calls[0][1] as string;
-    expect(smsBody).toContain('billing@acme.com');
-    expect(smsBody).toContain('Invoice #456');
   });
 });

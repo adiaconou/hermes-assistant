@@ -8,7 +8,7 @@
 import { Cron } from 'croner';
 import type Database from 'better-sqlite3';
 import { getExecuteWithTools } from '../providers/executor.js';
-import { findFilesystemSkill, executeFilesystemSkillByName } from '../providers/skills.js';
+import { executeFilesystemSkillByName } from '../providers/skills.js';
 import { sendScheduledMessage } from '../providers/sms.js';
 import { getUserConfigStore } from '../../../services/user-config/index.js';
 import { getMemoryStore } from '../providers/memory.js';
@@ -56,17 +56,6 @@ export async function executeJob(
 
     // Skill-based execution path
     if (job.skillName) {
-      const skill = findFilesystemSkill(job.skillName);
-      if (!skill) {
-        console.warn(JSON.stringify({
-          event: 'scheduled_skill_not_found',
-          jobId: job.id,
-          skillName: job.skillName,
-          timestamp: new Date().toISOString(),
-        }));
-        return { success: false, error: new Error(`Skill not found: ${job.skillName}`) };
-      }
-
       const skillResult = await executeFilesystemSkillByName(
         job.skillName,
         job.prompt,
@@ -76,8 +65,18 @@ export async function executeJob(
           userConfig,
           userFacts,
           previousStepResults: {},
-        }
+        },
+        'scheduler'
       );
+
+      // Permanent resolution failures should follow the scheduler retry/update path,
+      // not re-run immediately in a tight due-job loop.
+      if (!skillResult.success && (
+        skillResult.error?.includes('Skill not found') ||
+        skillResult.error?.includes('not enabled for channel')
+      )) {
+        throw new Error(skillResult.error);
+      }
 
       const response = skillResult.success
         ? skillResult.output ?? 'Done.'

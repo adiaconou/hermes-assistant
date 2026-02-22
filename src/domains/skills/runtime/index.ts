@@ -5,7 +5,7 @@
 import { getSkillsConfig } from '../config.js';
 import { buildRegistry } from '../service/registry.js';
 import { executeFilesystemSkill } from '../service/executor.js';
-import type { LoadedSkill, SkillLoadError, SkillExecutionResult } from '../types.js';
+import type { LoadedSkill, SkillLoadError, SkillExecutionResult, SkillChannel } from '../types.js';
 import type { AgentExecutionContext } from '../../../executor/types.js';
 
 let _skills: LoadedSkill[] = [];
@@ -85,7 +85,8 @@ export function findFilesystemSkill(name: string): LoadedSkill | null {
 export async function executeFilesystemSkillByName(
   skillName: string,
   userMessage: string,
-  context: AgentExecutionContext
+  context: AgentExecutionContext,
+  channelOverride?: SkillChannel
 ): Promise<SkillExecutionResult> {
   const skill = findFilesystemSkill(skillName);
   if (!skill) {
@@ -101,6 +102,15 @@ export async function executeFilesystemSkillByName(
       success: false,
       output: null,
       error: `Skill is disabled: ${skillName}`,
+    };
+  }
+
+  const channel = channelOverride ?? context.channel;
+  if (!skill.channels.includes(channel)) {
+    return {
+      success: false,
+      output: null,
+      error: `Skill "${skillName}" is not enabled for channel "${channel}"`,
     };
   }
 

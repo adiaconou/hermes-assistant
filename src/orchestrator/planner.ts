@@ -173,18 +173,21 @@ function parsePlanResponse(text: string): ParsedPlanResponse | null {
  * Format the skill catalog for planner context.
  * Uses compact metadata only — no full SKILL.md bodies.
  */
-function formatSkillCatalogForPrompt(): string {
+function formatSkillCatalogForPrompt(channel: 'sms' | 'whatsapp'): string {
   const skillsRegistry = getSkillsRegistry();
-  const skills = skillsRegistry.list().filter(s => s.enabled);
+  const skills = skillsRegistry
+    .list()
+    .filter(s => s.enabled && s.channels.includes(channel));
 
   if (skills.length === 0) {
     return '';
   }
 
   const entries = skills.map(s => {
+    const channels = `\n    Channels: ${s.channels.join(', ')}`;
     const hints = s.matchHints.length > 0 ? `\n    Triggers: ${s.matchHints.join(', ')}` : '';
     const tools = s.tools.length > 0 ? `\n    Tools: ${s.tools.join(', ')}` : '';
-    return `  - ${s.name}: ${s.description}${hints}${tools}`;
+    return `  - ${s.name}: ${s.description}${channels}${hints}${tools}`;
   }).join('\n');
 
   return `<available_skills>\n${entries}\n</available_skills>`;
@@ -229,7 +232,7 @@ export async function createPlan(
     : '';
 
   // Build skill catalog for planner context
-  const skillCatalogBlock = formatSkillCatalogForPrompt();
+  const skillCatalogBlock = formatSkillCatalogForPrompt(context.channel);
 
   // Build the prompt
   const prompt = PLANNING_PROMPT

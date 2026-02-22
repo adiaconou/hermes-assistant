@@ -18,6 +18,7 @@ interface ScheduledJobRow {
   channel: string;
   user_request: string | null;
   prompt: string;
+  skill_name: string | null;
   cron_expression: string;
   timezone: string;
   next_run_at: number;
@@ -38,6 +39,7 @@ function rowToJob(row: ScheduledJobRow): ScheduledJob {
     channel: row.channel as 'sms' | 'whatsapp',
     userRequest: row.user_request ?? undefined,
     prompt: row.prompt,
+    skillName: row.skill_name ?? undefined,
     cronExpression: row.cron_expression,
     timezone: row.timezone,
     nextRunAt: row.next_run_at,
@@ -61,6 +63,7 @@ export function initSchedulerDb(db: Database.Database): void {
       channel TEXT NOT NULL DEFAULT 'sms',
       user_request TEXT,
       prompt TEXT NOT NULL,
+      skill_name TEXT,
       cron_expression TEXT NOT NULL,
       timezone TEXT NOT NULL,
       next_run_at INTEGER NOT NULL,
@@ -90,6 +93,13 @@ export function initSchedulerDb(db: Database.Database): void {
   } catch {
     // Column already exists, ignore
   }
+
+  // Migration: add skill_name column if it doesn't exist (for scheduled filesystem skills)
+  try {
+    db.exec(`ALTER TABLE scheduled_jobs ADD COLUMN skill_name TEXT`);
+  } catch {
+    // Column already exists, ignore
+  }
 }
 
 /**
@@ -101,14 +111,15 @@ export function createJob(db: Database.Database, input: CreateJobInput): Schedul
 
   db.prepare(`
     INSERT INTO scheduled_jobs
-      (id, phone_number, channel, user_request, prompt, cron_expression, timezone, next_run_at, is_recurring, enabled, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      (id, phone_number, channel, user_request, prompt, skill_name, cron_expression, timezone, next_run_at, is_recurring, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
   `).run(
     id,
     input.phoneNumber,
     input.channel,
     input.userRequest ?? null,
     input.prompt,
+    input.skillName ?? null,
     input.cronExpression,
     input.timezone,
     input.nextRunAt,
@@ -123,6 +134,7 @@ export function createJob(db: Database.Database, input: CreateJobInput): Schedul
     channel: input.channel,
     userRequest: input.userRequest,
     prompt: input.prompt,
+    skillName: input.skillName,
     cronExpression: input.cronExpression,
     timezone: input.timezone,
     nextRunAt: input.nextRunAt,
@@ -204,6 +216,10 @@ export function updateJob(
   if (updates.userRequest !== undefined) {
     setClauses.push('user_request = ?');
     values.push(updates.userRequest);
+  }
+  if (updates.skillName !== undefined) {
+    setClauses.push('skill_name = ?');
+    values.push(updates.skillName);
   }
   if (updates.cronExpression !== undefined) {
     setClauses.push('cron_expression = ?');

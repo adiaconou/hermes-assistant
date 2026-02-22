@@ -98,6 +98,14 @@ describe('validateSkillFrontmatter', () => {
     expect(errors[0].field).toBe('metadata.hermes.tools');
   });
 
+  it('returns error when tools contains non-string entries', () => {
+    const fm = validFrontmatter({
+      metadata: { hermes: { tools: ['read_email', 42 as unknown as string] } },
+    });
+    const errors = validateSkillFrontmatter(fm);
+    expect(errors.some(e => e.field === 'metadata.hermes.tools')).toBe(true);
+  });
+
   it('returns error when match is not an array', () => {
     const fm = validFrontmatter({
       metadata: { hermes: { match: 'receipt' as unknown as string[] } },
@@ -105,6 +113,14 @@ describe('validateSkillFrontmatter', () => {
     const errors = validateSkillFrontmatter(fm);
     expect(errors).toHaveLength(1);
     expect(errors[0].field).toBe('metadata.hermes.match');
+  });
+
+  it('returns error when match contains non-string entries', () => {
+    const fm = validFrontmatter({
+      metadata: { hermes: { match: ['invoice', true as unknown as string] } },
+    });
+    const errors = validateSkillFrontmatter(fm);
+    expect(errors.some(e => e.field === 'metadata.hermes.match')).toBe(true);
   });
 
   it('returns error when enabled is not a boolean', () => {

@@ -11,7 +11,7 @@ import {
   findFilesystemSkill,
   executeFilesystemSkillByName,
 } from '../domains/skills/runtime/index.js';
-import type { LoadedSkill, SkillLoadError, SkillExecutionResult } from '../domains/skills/types.js';
+import type { LoadedSkill, SkillLoadError, SkillExecutionResult, SkillChannel } from '../domains/skills/types.js';
 import type { AgentExecutionContext } from '../executor/types.js';
 
 export type SkillsRegistry = {
@@ -21,7 +21,8 @@ export type SkillsRegistry = {
   executeByName(
     skillName: string,
     userMessage: string,
-    context: AgentExecutionContext
+    context: AgentExecutionContext,
+    channelOverride?: SkillChannel
   ): Promise<SkillExecutionResult>;
 };
 

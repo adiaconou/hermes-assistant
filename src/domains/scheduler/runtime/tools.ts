@@ -20,6 +20,7 @@ import {
   cronToHuman,
 } from '../service/parser.js';
 import { getSchedulerDb } from './index.js';
+import { findFilesystemSkill } from '../providers/skills.js';
 
 export const createScheduledJob: ToolDefinition = {
   tool: {
@@ -46,6 +47,10 @@ Use this for SMS/text reminders. For calendar events, use create_calendar_event 
           type: 'string',
           description: "When to run, in natural language. Examples: 'daily at 9am', 'every weekday at 8:30am', 'every Monday at noon', 'every hour'",
         },
+        skill_name: {
+          type: 'string',
+          description: 'Optional filesystem skill name to execute for this job. If provided, prompt is passed as skill input.',
+        },
       },
       required: ['prompt', 'schedule'],
     },
@@ -53,11 +58,23 @@ Use this for SMS/text reminders. For calendar events, use create_calendar_event 
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
 
-    const { user_request, prompt, schedule } = input as {
+    const { user_request, prompt, schedule, skill_name } = input as {
       user_request?: string;
       prompt: string;
       schedule: string;
+      skill_name?: string;
     };
+
+    const skillName = skill_name?.trim();
+    if (skillName) {
+      const skill = findFilesystemSkill(skillName);
+      if (!skill) {
+        return { success: false, error: `Skill not found: ${skillName}` };
+      }
+      if (!skill.channels.includes('scheduler')) {
+        return { success: false, error: `Skill "${skillName}" is not enabled for scheduler channel` };
+      }
+    }
 
     // Validate prompt length (max 1000 chars)
     if (!prompt || prompt.length === 0) {
@@ -138,6 +155,7 @@ Use this for SMS/text reminders. For calendar events, use create_calendar_event 
         channel,
         userRequest: user_request,
         prompt,
+        skillName,
         cronExpression,
         timezone,
         nextRunAt,
@@ -218,6 +236,7 @@ export const listScheduledJobs: ToolDefinition = {
         description: job.userRequest || (job.prompt.length > 50 ? job.prompt.slice(0, 50) + '...' : job.prompt),
         type: job.isRecurring ? 'recurring' : 'one-time',
         schedule: job.isRecurring ? cronToHuman(job.cronExpression) : 'one-time',
+        skill_name: job.skillName ?? null,
         enabled: job.enabled,
         next_run: job.enabled && job.nextRunAt
           ? new Date(job.nextRunAt * 1000).toLocaleString('en-US', {
@@ -276,6 +295,10 @@ When updating the schedule of a one-time reminder, parse the input as a specific
           type: 'boolean',
           description: 'Set to false to pause, true to resume (optional)',
         },
+        skill_name: {
+          type: 'string',
+          description: 'Optional filesystem skill name for this job (optional)',
+        },
       },
       required: ['job_id'],
     },
@@ -283,11 +306,12 @@ When updating the schedule of a one-time reminder, parse the input as a specific
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
 
-    const { job_id, prompt, schedule, enabled } = input as {
+    const { job_id, prompt, schedule, enabled, skill_name } = input as {
       job_id: string;
       prompt?: string;
       schedule?: string;
       enabled?: boolean;
+      skill_name?: string;
     };
 
     try {
@@ -310,6 +334,21 @@ When updating the schedule of a one-time reminder, parse the input as a specific
 
       if (enabled !== undefined) {
         updates.enabled = enabled;
+      }
+
+      if (skill_name !== undefined) {
+        const trimmedSkillName = skill_name.trim();
+        if (trimmedSkillName.length === 0) {
+          return { success: false, error: 'skill_name must not be empty when provided' };
+        }
+        const skill = findFilesystemSkill(trimmedSkillName);
+        if (!skill) {
+          return { success: false, error: `Skill not found: ${trimmedSkillName}` };
+        }
+        if (!skill.channels.includes('scheduler')) {
+          return { success: false, error: `Skill "${trimmedSkillName}" is not enabled for scheduler channel` };
+        }
+        updates.skillName = trimmedSkillName;
       }
 
       // Recalculate next_run_at when re-enabling a recurring job (unless schedule is also being updated)

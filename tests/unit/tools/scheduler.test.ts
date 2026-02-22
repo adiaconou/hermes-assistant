@@ -44,6 +44,10 @@ vi.mock('../../../src/domains/scheduler/runtime/index.js', () => ({
   getSchedulerDb: vi.fn(() => ({})),
 }));
 
+vi.mock('../../../src/domains/scheduler/providers/skills.js', () => ({
+  findFilesystemSkill: vi.fn(() => ({ name: 'sample-skill', channels: ['scheduler'] })),
+}));
+
 import {
   createScheduledJob,
   listScheduledJobs,
@@ -59,6 +63,7 @@ import {
   deleteJob,
 } from '../../../src/domains/scheduler/repo/sqlite.js';
 import { getUserConfigStore } from '../../../src/services/user-config/index.js';
+import { findFilesystemSkill } from '../../../src/domains/scheduler/providers/skills.js';
 
 describe('createScheduledJob', () => {
   const baseContext: ToolContext = {
@@ -98,6 +103,24 @@ describe('createScheduledJob', () => {
         type: 'recurring',
       });
       expect(createJob).toHaveBeenCalled();
+    });
+
+    it('should validate skill_name for scheduled skill jobs', async () => {
+      const result = await createScheduledJob.handler(
+        {
+          prompt: 'Generate digest',
+          schedule: 'daily at 9am',
+          skill_name: 'sample-skill',
+        },
+        baseContext
+      );
+
+      expect(result.success).toBe(true);
+      expect(findFilesystemSkill).toHaveBeenCalledWith('sample-skill');
+      expect(createJob).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ skillName: 'sample-skill' })
+      );
     });
 
     it('should create a one-time reminder', async () => {
@@ -174,6 +197,22 @@ describe('createScheduledJob', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('Could not parse schedule');
+    });
+
+    it('should fail if provided skill_name does not exist', async () => {
+      (findFilesystemSkill as ReturnType<typeof vi.fn>).mockReturnValueOnce(null);
+
+      const result = await createScheduledJob.handler(
+        {
+          prompt: 'Generate digest',
+          schedule: 'daily at 9am',
+          skill_name: 'missing-skill',
+        },
+        baseContext
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Skill not found');
     });
 
     it('should fail without phone number', async () => {
@@ -333,6 +372,23 @@ describe('updateScheduledJob', () => {
         expect.anything(),
         'job_123',
         expect.objectContaining({ enabled: false })
+      );
+    });
+
+    it('should update skill_name when provided', async () => {
+      const result = await updateScheduledJob.handler(
+        {
+          job_id: 'job_123',
+          skill_name: 'sample-skill',
+        },
+        baseContext
+      );
+
+      expect(result.success).toBe(true);
+      expect(updateJob).toHaveBeenCalledWith(
+        expect.anything(),
+        'job_123',
+        expect.objectContaining({ skillName: 'sample-skill' })
       );
     });
 

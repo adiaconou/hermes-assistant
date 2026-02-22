@@ -1,12 +1,10 @@
 /**
- * @fileoverview Email skill management and default skill seeding.
+ * @fileoverview Legacy email-skill compatibility helpers.
  *
- * Provides validation for user-created skills and seeds default skills
- * (tax-tracker, expense-tracker, invite-detector) when the email watcher
- * is initialized for a user.
+ * Runtime email watcher behavior now uses filesystem skills only.
+ * This module retains validation helpers and init wiring used by auth flow.
  */
 
-import { getEmailSkillStore } from '../repo/sqlite.js';
 import { getUserConfigStore } from '../../../services/user-config/index.js';
 import type { EmailSkill, SkillValidationError } from '../types.js';
 
@@ -17,52 +15,16 @@ const ALLOWED_SKILL_TOOLS = [
   'find_document', 'create_document', 'append_to_document',
 ];
 
-/** Default skill definitions seeded per-user on watcher init */
-const DEFAULT_SKILLS: Array<Omit<EmailSkill, 'id' | 'phoneNumber' | 'createdAt' | 'updatedAt'>> = [
-  {
-    name: 'tax-tracker',
-    description: 'Identify and log tax-related emails to a spreadsheet',
-    matchCriteria: 'Tax-related emails: W-2 forms, 1099 forms, IRS correspondence, property tax statements, tax refund notices, tax preparation service communications, HSA/FSA tax documents, charitable donation receipts for tax purposes, mortgage interest statements',
-    extractFields: ['date', 'vendor', 'document_type', 'tax_year', 'amount', 'description'],
-    actionType: 'execute_with_tools',
-    actionPrompt: 'Append a row to the "<year> Tax Documents" spreadsheet in the Hermes folder, where <year> is the tax year from the extracted data (not necessarily the current year — e.g., a W-2 received in Jan 2026 for tax year 2025 goes in "2025 Tax Documents"). If the spreadsheet doesn\'t exist, create it with headers: Date | Source | Type | Tax Year | Amount | Description | Email Subject. Before appending, read the last 10 rows and skip if a duplicate entry already exists (same source, type, and tax year). Use "N/A" for any missing fields.',
-    tools: ['find_spreadsheet', 'create_spreadsheet', 'read_spreadsheet', 'append_to_spreadsheet'],
-    enabled: true,
-  },
-  {
-    name: 'expense-tracker',
-    description: 'Identify and log expense-related emails to a spreadsheet',
-    matchCriteria: 'Expense-related emails: purchase receipts, invoices, order confirmations, subscription charges, payment confirmations, billing statements, refund notices',
-    extractFields: ['vendor', 'amount', 'date', 'category', 'description'],
-    actionType: 'execute_with_tools',
-    actionPrompt: 'Append a row to the "<year> Expenses" spreadsheet in the Hermes folder, where <year> is determined from the email/transaction date. If the spreadsheet doesn\'t exist, create it with headers: Date | Vendor | Amount | Category | Description | Email Subject. Before appending, read the last 10 rows and skip if a duplicate entry already exists (same vendor, amount, and date). Use "N/A" for any missing fields.',
-    tools: ['find_spreadsheet', 'create_spreadsheet', 'read_spreadsheet', 'append_to_spreadsheet'],
-    enabled: true,
-  },
-  {
-    name: 'invite-detector',
-    description: 'Detect calendar invitations and notify via SMS',
-    matchCriteria: 'Calendar invitations, event invites, meeting requests, RSVP requests, conference registrations, webinar invitations. Not general "save the date" marketing.',
-    extractFields: ['event_title', 'event_date', 'organizer', 'location'],
-    actionType: 'notify',
-    actionPrompt: 'Summarize the invitation: include event title, organizer, date/time, and location. Keep it to 1-2 sentences.',
-    tools: [],
-    enabled: true,
-  },
-];
-
 /**
- * Seed default skills for a user if they don't already exist.
+ * No-op kept for backwards compatibility.
  */
 export function seedDefaultSkills(phoneNumber: string): void {
-  const store = getEmailSkillStore();
-  const existing = store.getSkillsForUser(phoneNumber);
-
-  for (const skill of DEFAULT_SKILLS) {
-    if (!existing.some(s => s.name === skill.name)) {
-      store.createSkill({ ...skill, phoneNumber });
-    }
-  }
+  console.log(JSON.stringify({
+    level: 'info',
+    message: 'seedDefaultSkills is deprecated; filesystem skills are managed on disk',
+    phone: phoneNumber.slice(-4).padStart(phoneNumber.length, '*'),
+    timestamp: new Date().toISOString(),
+  }));
 }
 
 /**
@@ -142,10 +104,9 @@ export function validateSkillDefinition(
  * Initialize email watcher state for a user.
  *
  * Called after successful Google OAuth. Sets the user's watcher
- * to enabled and seeds default skills.
+ * to enabled.
  */
 export async function initEmailWatcherState(phoneNumber: string): Promise<void> {
   const userConfigStore = getUserConfigStore();
   await userConfigStore.set(phoneNumber, { emailWatcherEnabled: true });
-  seedDefaultSkills(phoneNumber);
 }

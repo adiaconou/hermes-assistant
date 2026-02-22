@@ -38,6 +38,7 @@ export interface CreateJobInput {
   channel: MessageChannel;
   userRequest?: string;
   prompt: string;
+  skillName?: string;
   cronExpression: string;
   timezone: string;
   nextRunAt: number;
@@ -50,6 +51,7 @@ export interface CreateJobInput {
 export interface JobUpdates {
   prompt?: string;
   userRequest?: string;
+  skillName?: string;
   cronExpression?: string;
   timezone?: string;
   nextRunAt?: number;

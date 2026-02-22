@@ -46,10 +46,24 @@ export function validateSkillFrontmatter(fm: SkillFrontmatter): ValidationError[
 
     if (hermes.tools !== undefined && !Array.isArray(hermes.tools)) {
       errors.push({ field: 'metadata.hermes.tools', message: 'tools must be an array of strings' });
+    } else if (Array.isArray(hermes.tools)) {
+      for (const tool of hermes.tools) {
+        if (typeof tool !== 'string' || tool.trim().length === 0) {
+          errors.push({ field: 'metadata.hermes.tools', message: 'all tools entries must be non-empty strings' });
+          break;
+        }
+      }
     }
 
     if (hermes.match !== undefined && !Array.isArray(hermes.match)) {
       errors.push({ field: 'metadata.hermes.match', message: 'match must be an array of strings' });
+    } else if (Array.isArray(hermes.match)) {
+      for (const hint of hermes.match) {
+        if (typeof hint !== 'string' || hint.trim().length === 0) {
+          errors.push({ field: 'metadata.hermes.match', message: 'all match entries must be non-empty strings' });
+          break;
+        }
+      }
     }
 
     if (hermes.enabled !== undefined && typeof hermes.enabled !== 'boolean') {

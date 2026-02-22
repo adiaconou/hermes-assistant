@@ -65,6 +65,7 @@ describe('scheduler sqlite', () => {
       expect(job.timezone).toBe('America/New_York');
       expect(job.enabled).toBe(true);
       expect(job.isRecurring).toBe(true);
+      expect(job.skillName).toBeUndefined();
     });
 
     it('creates a one-time reminder with isRecurring=false', () => {
@@ -82,6 +83,24 @@ describe('scheduler sqlite', () => {
       expect(job.id).toBeDefined();
       expect(job.isRecurring).toBe(false);
       expect(job.cronExpression).toBe('@once');
+    });
+
+    it('persists optional skillName', () => {
+      const created = createJob(db, {
+        phoneNumber: '+1234567890',
+        channel: 'sms',
+        prompt: 'Run weekly summary',
+        skillName: 'weekly-summary',
+        cronExpression: '0 9 * * 1',
+        timezone: 'UTC',
+        nextRunAt: Math.floor(Date.now() / 1000) + 3600,
+        isRecurring: true,
+      });
+
+      const retrieved = getJobById(db, created.id);
+
+      expect(retrieved).not.toBeNull();
+      expect(retrieved?.skillName).toBe('weekly-summary');
     });
   });
 
@@ -272,11 +291,13 @@ describe('scheduler sqlite', () => {
         enabled: false,
         nextRunAt: 2000,
         prompt: 'Updated prompt',
+        skillName: 'updated-skill',
       });
 
       expect(updated?.enabled).toBe(false);
       expect(updated?.nextRunAt).toBe(2000);
       expect(updated?.prompt).toBe('Updated prompt');
+      expect(updated?.skillName).toBe('updated-skill');
     });
 
     it('returns null when updating non-existent job', () => {
