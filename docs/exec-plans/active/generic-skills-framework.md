@@ -22,6 +22,7 @@ A user-visible way to verify the change is to add a new skill folder, run the se
 - [x] (2026-02-22) Implement Milestone 3: created scheduler and email-watcher provider bridges to skills domain, added `skillName` field to ScheduledJob, updated scheduler executor for skill-based jobs. 0 architecture violations, 766 tests pass.
 - [x] (2026-02-22) Implement Milestone 4: created admin `/admin/api/skills` endpoint, migration script at `scripts/skills/migrate-email-skills.mjs`, verified Railway deployment path. 0 architecture violations, 766 tests pass.
 - [x] (2026-02-22) Implement Milestone 5: removed email skill CRUD tools (create/list/update/delete/test) from tools.ts, tools/index.ts, email agent, and admin routes. Kept only `toggle_email_watcher` and watcher status/toggle admin endpoints. Updated all affected test files. 0 architecture violations, 768 tests pass.
+- [x] (2026-02-22) Completed strict decommission cleanup: removed legacy `email_skills` runtime storage (`src/domains/email-watcher/repo/sqlite.ts`), deleted obsolete admin UI (`src/admin/views/email-skills.html`), removed deprecated compatibility exports/helpers, and updated integration/unit tests to filesystem-skill-only behavior. Validation rerun: `skills:validate`, unit tests (52 files, 688 tests), integration tests (3 files, 29 tests), `lint`, `lint:architecture --strict`, and `build` all pass.
 
 ## Surprises & Discoveries
 
@@ -86,7 +87,7 @@ A user-visible way to verify the change is to add a new skill folder, run the se
 
 ## Outcomes & Retrospective
 
-All five milestones implemented. Filesystem skills (`skills/<name>/SKILL.md`) are the sole skill system. The orchestrator planner selects between skills and agents via `targetType` in plan steps. Background triggers (scheduler, email-watcher) invoke skills directly via cross-domain provider bridges. Legacy email skill CRUD tools and admin routes have been removed; only `toggle_email_watcher` and watcher status endpoints remain. 768 tests pass across 56 files with 0 architecture violations.
+All five milestones implemented. Filesystem skills (`skills/<name>/SKILL.md`) are the sole skill system. The orchestrator planner selects between skills and agents via `targetType` in plan steps. Background triggers (scheduler, email-watcher) invoke skills directly via cross-domain provider bridges. Legacy email skill CRUD/runtime/admin artifacts have been removed; only `toggle_email_watcher` and watcher status endpoints remain for watcher state management. 688 unit tests and 29 integration tests pass with 0 architecture violations.
 
 ## Context and Orientation
 

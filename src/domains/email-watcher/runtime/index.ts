@@ -16,12 +16,10 @@ import { classifyEmails } from '../service/classifier.js';
 import { executeSkillActions } from '../service/actions.js';
 
 // Re-export domain public API
-export { getEmailSkillStore, resetEmailSkillStore } from '../repo/sqlite.js';
 export { classifyEmails } from '../service/classifier.js';
 export { syncNewEmails, prepareEmailForClassification } from '../providers/gmail-sync.js';
 export { executeSkillActions } from '../service/actions.js';
-export { seedDefaultSkills, validateSkillDefinition, initEmailWatcherState } from '../service/skills.js';
-export { buildClassifierPrompt } from '../service/prompt.js';
+export { initEmailWatcherState } from '../service/skills.js';
 export { setEmailWatcherExecuteWithTools } from '../providers/executor.js';
 export type * from '../types.js';
 

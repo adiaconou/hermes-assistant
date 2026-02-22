@@ -1,7 +1,7 @@
 /**
  * @fileoverview Email watcher type definitions.
  *
- * Shared types for the email watcher service, classifier, and skill system.
+ * Shared types for email watcher service, classifier, and action execution.
  */
 
 /** Email representation after fetch + normalization */
@@ -20,22 +20,6 @@ export type EmailAttachment = {
   sizeBytes: number;
 };
 
-/** Skill definition (matches DB schema) */
-export type EmailSkill = {
-  id: string;
-  phoneNumber: string;
-  name: string;
-  description: string;
-  matchCriteria: string;
-  extractFields: string[];
-  actionType: 'execute_with_tools' | 'notify';
-  actionPrompt: string;
-  tools: string[];
-  enabled: boolean;
-  createdAt: number;
-  updatedAt: number;
-};
-
 /** Classifier output */
 export type ClassificationResult = {
   emailIndex: number;
@@ -48,12 +32,6 @@ export type SkillMatch = {
   confidence: number;
   extracted: Record<string, string | number | null>;
   summary: string;
-};
-
-/** Skill validation */
-export type SkillValidationError = {
-  field: string;
-  message: string;
 };
 
 /** Notification throttle state */

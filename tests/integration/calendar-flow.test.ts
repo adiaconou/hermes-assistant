@@ -4,8 +4,7 @@
  * Tests the full path from OAuth routes through calendar tools.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import Database from 'better-sqlite3';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createMockReqRes } from '../helpers/mock-http.js';
 import {
   setMockEvents,
@@ -19,28 +18,16 @@ import {
   getCredentialStore,
   resetCredentialStore
 } from '../../src/services/credentials/index.js';
-import { getEmailSkillStore, resetEmailSkillStore } from '../../src/domains/email-watcher/repo/sqlite.js';
 
 import { generateAuthUrl, handleGoogleAuth, handleGoogleCallback } from '../../src/routes/auth.js';
 
 describe('Calendar Integration', () => {
   const testPhone = '+1234567890';
-  let emailSkillDb: InstanceType<typeof Database> | null = null;
 
   beforeEach(() => {
     clearCalendarMocks();
     clearSentMessages();
     resetCredentialStore();
-    resetEmailSkillStore();
-    emailSkillDb = new Database(':memory:');
-    getEmailSkillStore(emailSkillDb);
-  });
-
-  afterEach(() => {
-    if (emailSkillDb) {
-      emailSkillDb.close();
-      emailSkillDb = null;
-    }
   });
 
   describe('OAuth Flow', () => {
