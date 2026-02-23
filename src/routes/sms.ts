@@ -100,6 +100,8 @@ function checkRateLimit(phoneNumber: string): boolean {
  */
 type TwilioWebhookBody = {
   MessageSid: string;
+  SmsSid?: string;
+  SmsMessageSid?: string;
   From: string;
   To: string;
   Body: string;
@@ -126,6 +128,16 @@ type TwilioWebhookBody = {
   MediaUrl9?: string;
   MediaContentType9?: string;
 };
+
+/**
+ * Resolve inbound Twilio message SID from webhook payload.
+ *
+ * Twilio commonly provides MessageSid, but some integrations include SmsSid/
+ * SmsMessageSid aliases. We accept all to avoid losing typing indicators.
+ */
+function getInboundMessageSid(body: TwilioWebhookBody): string | null {
+  return body.MessageSid || body.SmsMessageSid || body.SmsSid || null;
+}
 
 /**
  * Extract media attachments from Twilio webhook body.
@@ -458,12 +470,22 @@ export async function handleSmsWebhook(req: Request, res: Response): Promise<voi
       }));
 
       // Start typing indicator, stop in .finally()
-      const stopTyping = startTypingIndicator(webhookBody.MessageSid);
+      const inboundMessageSid = getInboundMessageSid(webhookBody);
+      const stopTyping = inboundMessageSid
+        ? startTypingIndicator(inboundMessageSid)
+        : () => {};
+
+      if (!inboundMessageSid) {
+        console.log(JSON.stringify({
+          level: 'warn',
+          message: 'WhatsApp typing indicator skipped - missing inbound message SID',
+          timestamp: new Date().toISOString(),
+        }));
+      }
 
       const configStore = getUserConfigStore();
-      const userConfig = await configStore.get(sender);
-
-      processAsyncWork(sender, message, channel, userConfig, mediaAttachments, userMessage.id)
+      Promise.resolve(configStore.get(sender))
+        .then((userConfig) => processAsyncWork(sender, message, channel, userConfig, mediaAttachments, userMessage.id))
         .catch((error) => {
           console.error(JSON.stringify({
             level: 'error',
