@@ -5,6 +5,28 @@
  */
 
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
+
+const { mockStartTypingIndicator, getTypingIndicatorCalls, clearTypingIndicatorCalls } = vi.hoisted(() => {
+  let calls: string[] = [];
+  const startTyping = vi.fn((messageSid: string) => {
+    calls.push(messageSid);
+    return () => {};
+  });
+
+  return {
+    mockStartTypingIndicator: startTyping,
+    getTypingIndicatorCalls: () => [...calls],
+    clearTypingIndicatorCalls: () => {
+      calls = [];
+      startTyping.mockClear();
+    },
+  };
+});
+
+vi.mock('../../src/services/twilio/typing-indicator.js', () => ({
+  startTypingIndicator: mockStartTypingIndicator,
+}));
+
 import { createMockReqRes } from '../helpers/mock-http.js';
 import { handleSmsWebhook } from '../../src/routes/sms.js';
 import { healthHandler } from '../../src/routes/health.js';
@@ -37,6 +59,7 @@ describe('POST /webhook/sms', () => {
   beforeEach(() => {
     clearMockState();
     clearSentMessages();
+    clearTypingIndicatorCalls();
   });
 
   describe('basic response flow', () => {
@@ -208,6 +231,46 @@ describe('POST /webhook/sms', () => {
 
       const sentMessages = getSentMessages();
       expect(sentMessages[0].to).toBe('whatsapp:+15551234567');
+    });
+
+    it('uses SmsSid alias for typing indicator when MessageSid is empty', async () => {
+      setMockResponses([
+        // Planner
+        createTextResponse(JSON.stringify({
+          analysis: 'Simple greeting',
+          goal: 'Greet user',
+          steps: [{ id: 'step_1', agent: 'memory-agent', task: 'Respond to greeting' }],
+        })),
+        // Executor
+        createTextResponse('Hi there!'),
+        // Response Composer
+        createTextResponse('Hey! How can I help you?'),
+      ]);
+
+      const payload = {
+        ...createWhatsAppPayload('Hello', '+15551234567'),
+        MessageSid: '',
+        SmsSid: 'SM_alias_1234567890',
+      };
+
+      const { req, res } = createMockReqRes({
+        method: 'POST',
+        url: '/webhook/sms',
+        headers: { 'x-twilio-signature': signPayload(payload) },
+        body: payload,
+      });
+
+      await handleSmsWebhook(req, res);
+
+      expect(res.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+
+      await vi.waitFor(() => {
+        const messages = getSentMessages();
+        expect(messages.length).toBeGreaterThan(0);
+      }, { timeout: 5000 });
+
+      expect(mockStartTypingIndicator).toHaveBeenCalledTimes(1);
+      expect(getTypingIndicatorCalls()).toEqual(['SM_alias_1234567890']);
     });
   });
 
