@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { formatMediaContext, hasMediaContext, formatCurrentMediaContext } from '../../../src/orchestrator/media-context.js';
+import { formatMediaContext, hasMediaContext, formatCurrentMediaContext, MAX_HISTORICAL_MEDIA_ENTRIES } from '../../../src/orchestrator/media-context.js';
 import type { ConversationMessage, ImageAnalysisMetadata, CurrentMediaSummary } from '../../../src/services/conversation/types.js';
 
 describe('formatMediaContext', () => {
@@ -153,6 +153,56 @@ describe('formatMediaContext', () => {
 
     expect(result.match(/<image/g)?.length).toBe(2);
     expect(result).not.toContain('msg2');
+  });
+
+  it('caps entries at MAX_HISTORICAL_MEDIA_ENTRIES, keeping most recent', () => {
+    const count = MAX_HISTORICAL_MEDIA_ENTRIES + 5;
+    const messages: ConversationMessage[] = [];
+    const metadataMap = new Map<string, ImageAnalysisMetadata[]>();
+
+    for (let i = 0; i < count; i++) {
+      const id = `msg_${i}`;
+      messages.push(createMessage(id, `Image ${i}`, Date.now() - (count - i) * 1000));
+      metadataMap.set(id, [{
+        driveFileId: `file_${i}`,
+        mimeType: 'image/jpeg',
+        analysis: `Analysis ${i}`,
+      }]);
+    }
+
+    const result = formatMediaContext(metadataMap, messages);
+
+    const imageCount = result.match(/<image/g)?.length ?? 0;
+    expect(imageCount).toBe(MAX_HISTORICAL_MEDIA_ENTRIES);
+
+    // Should contain the most recent entries (the last MAX entries)
+    const firstKept = count - MAX_HISTORICAL_MEDIA_ENTRIES;
+    expect(result).toContain(`Analysis ${firstKept}`);
+    expect(result).toContain(`Analysis ${count - 1}`);
+
+    // Should NOT contain the oldest entries
+    expect(result).not.toContain('Analysis 0');
+  });
+
+  it('returns all entries unchanged when fewer than cap', () => {
+    const count = 3; // Well under MAX_HISTORICAL_MEDIA_ENTRIES
+    const messages: ConversationMessage[] = [];
+    const metadataMap = new Map<string, ImageAnalysisMetadata[]>();
+
+    for (let i = 0; i < count; i++) {
+      const id = `msg_${i}`;
+      messages.push(createMessage(id, `Image ${i}`, Date.now() - (count - i) * 1000));
+      metadataMap.set(id, [{
+        driveFileId: `file_${i}`,
+        mimeType: 'image/jpeg',
+        analysis: `Analysis ${i}`,
+      }]);
+    }
+
+    const result = formatMediaContext(metadataMap, messages);
+
+    const imageCount = result.match(/<image/g)?.length ?? 0;
+    expect(imageCount).toBe(count);
   });
 });
 

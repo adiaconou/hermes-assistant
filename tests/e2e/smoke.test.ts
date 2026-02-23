@@ -29,8 +29,17 @@ describeE2E('Smoke test', () => {
     });
     console.log(`\n📄 Report: ${reportPath}\n`);
 
-    // Any non-empty response is acceptable
+    // WhatsApp always-orchestrate: sync response is empty TwiML
+    expect(result.syncResponse).toBe('');
+
+    // Typing indicator was fired with valid MessageSid and stopped after completion
+    const typingCalls = harness.getTypingIndicatorCalls();
+    expect(typingCalls.length).toBe(1);
+    expect(typingCalls[0].messageSid).toMatch(/^SM\d+$/);
+    expect(typingCalls[0].stopped).toBe(true);
+
+    // Final response comes from the orchestrator (async path)
     expect(result.finalResponse).toBeTruthy();
     expect(result.finalResponse.length).toBeGreaterThan(0);
-  }, 60_000);
+  }, 90_000);
 });

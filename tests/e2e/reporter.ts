@@ -64,7 +64,11 @@ export function writeTestReport(report: TestReport): string {
     const turn = report.turns[i];
     lines.push(`### Turn ${i + 1}`);
     lines.push(`**[USER]**: ${turn.userMessage}`);
-    lines.push(`**[ASSISTANT sync]**: ${turn.response.syncResponse}`);
+    if (turn.response.syncResponse) {
+      lines.push(`**[ASSISTANT sync]**: ${turn.response.syncResponse}`);
+    } else {
+      lines.push(`**[ASSISTANT sync]**: _(empty TwiML — WhatsApp typing indicator shown)_`);
+    }
     if (turn.response.asyncResponse) {
       lines.push(`**[ASSISTANT async]**: ${turn.response.asyncResponse}`);
     }

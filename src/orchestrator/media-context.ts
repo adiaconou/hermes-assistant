@@ -12,6 +12,9 @@ const MAX_ANALYSIS_LENGTH = 2000;
 const MAX_CURRENT_MEDIA_SUMMARIES = 5;
 const MAX_CURRENT_MEDIA_SUMMARY_CHARS = 300;
 
+/** Cap on historical media entries to keep context window manageable. */
+export const MAX_HISTORICAL_MEDIA_ENTRIES = 10;
+
 /**
  * Escape XML special characters to prevent prompt injection.
  */
@@ -95,10 +98,13 @@ export function formatMediaContext(
 
   if (entries.length === 0) return '';
 
+  // Keep most recent entries within cap
+  const cappedEntries = entries.slice(-MAX_HISTORICAL_MEDIA_ENTRIES);
+
   return `<media_context>
 The following images were previously analyzed in this conversation. Use this context to answer follow-up questions about images without re-analyzing them.
 
-${entries.join('\n\n')}
+${cappedEntries.join('\n\n')}
 </media_context>`;
 }
 

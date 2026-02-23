@@ -1,14 +1,19 @@
 /**
  * SMS/WhatsApp Webhook Route
  *
- * Handles inbound messages from Twilio using a SYNC classification pattern:
- * 1. Receive webhook from Twilio
- * 2. Classify message synchronously (fast LLM call)
- * 3. Return TwiML with immediate response
- * 4. If async work needed, spawn background processing for full response
+ * Handles inbound messages from Twilio with channel-specific patterns:
  *
- * Classification is fast (<5s typically) and provides a meaningful immediate
- * response. Heavy work (UI generation, complex queries) runs asynchronously.
+ * **WhatsApp flow** (skip classifier, use typing indicator):
+ * 1. Receive webhook, store user message
+ * 2. Return empty TwiML (no ack message)
+ * 3. Start typing indicator, run orchestrator in background
+ *
+ * **SMS flow** (classifier for personalized ack):
+ * 1. Receive webhook, classify for ack text
+ * 2. Store user message + ack, return TwiML with ack
+ * 3. Always run orchestrator in background
+ *
+ * Both channels always route through the orchestrator.
  */
 import { Router, Request, Response } from 'express';
 import { classifyMessage } from '../services/anthropic/index.js';
@@ -19,10 +24,12 @@ import { getUserConfigStore, type UserConfig } from '../services/user-config/ind
 import { getMemoryStore } from '../domains/memory/runtime/index.js';
 import { handleWithOrchestrator } from '../orchestrator/index.js';
 import type { MediaAttachment } from '../types/media.js';
-import type { StoredMediaAttachment, CurrentMediaSummary } from '../services/conversation/types.js';
+import type { StoredMediaAttachment, CurrentMediaSummary, ImageAnalysisMetadata } from '../services/conversation/types.js';
 import { processMediaAttachments } from '../services/media/index.js';
+import { getConversationStore } from '../services/conversation/index.js';
 import config from '../config.js';
 import { detectChannel, normalize, sanitize, type MessageChannel } from '../utils/phone.js';
+import { startTypingIndicator } from '../services/twilio/typing-indicator.js';
 
 // Re-export for backwards compatibility
 export type { MediaAttachment } from '../types/media.js';
@@ -284,6 +291,43 @@ async function processAsyncWork(
           timestamp: new Date().toISOString(),
         }));
       }
+
+      // Backfill media attachments on the user message (Issue #5)
+      if (userMessageId && storedMedia.length > 0) {
+        try {
+          const conversationStore = getConversationStore();
+          await conversationStore.updateMediaAttachments(userMessageId, storedMedia);
+        } catch (backfillError) {
+          console.log(JSON.stringify({
+            level: 'warn',
+            message: 'Failed to backfill media attachments on user message',
+            error: backfillError instanceof Error ? backfillError.message : String(backfillError),
+            timestamp: new Date().toISOString(),
+          }));
+        }
+      }
+
+      // Persist pre-analysis summaries as metadata (Issue #2)
+      if (userMessageId && preAnalysis.length > 0) {
+        const conversationStore = getConversationStore();
+        for (const summary of preAnalysis) {
+          try {
+            await conversationStore.addMessageMetadata(
+              userMessageId,
+              sender,
+              'image_analysis',
+              { mimeType: summary.mime_type, analysis: summary.summary } satisfies Pick<ImageAnalysisMetadata, 'mimeType' | 'analysis'>
+            );
+          } catch (metadataError) {
+            console.log(JSON.stringify({
+              level: 'warn',
+              message: 'Failed to persist pre-analysis metadata',
+              error: metadataError instanceof Error ? metadataError.message : String(metadataError),
+              timestamp: new Date().toISOString(),
+            }));
+          }
+        }
+      }
     }
 
     // Always use orchestrator handler (pass pre-analysis for planner enrichment)
@@ -337,8 +381,10 @@ async function processAsyncWork(
  * POST /webhook/sms
  *
  * Twilio calls this endpoint when an SMS or WhatsApp message is received.
- * Classifies message synchronously and returns TwiML with immediate response.
- * Spawns async work if classification indicates it's needed.
+ * Always routes through the orchestrator for both channels.
+ *
+ * WhatsApp: skip classifier, return empty TwiML, show typing indicator.
+ * SMS: run classifier for personalized ack, return TwiML with ack.
  */
 export async function handleSmsWebhook(req: Request, res: Response): Promise<void> {
   const startTime = Date.now();
@@ -396,57 +442,84 @@ export async function handleSmsWebhook(req: Request, res: Response): Promise<voi
   );
 
   try {
-    // Get conversation history, user config, and memory facts
-    const configStore = getUserConfigStore();
-    const memoryStore = getMemoryStore();
-    const [history, userConfig, userFacts] = await Promise.all([
-      getHistory(sender),
-      configStore.get(sender),
-      memoryStore.getFacts(sender),
-    ]);
+    if (channel === 'whatsapp') {
+      // ── WhatsApp flow: skip classifier, return empty TwiML, typing indicator ──
+      const userMessage = await addMessage(sender, 'user', message, channel);
 
-    // Classify message synchronously - this should be fast
-    const classification = await classifyMessage(TOOLS, message, history, userConfig, userFacts);
+      // Return empty TwiML immediately (no ack stored in history)
+      res.type('text/xml');
+      res.send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
 
-    console.log(JSON.stringify({
-      level: 'info',
-      message: 'Classification complete',
-      needsAsyncWork: classification.needsAsyncWork,
-      classificationDurationMs: Date.now() - startTime,
-      timestamp: new Date().toISOString(),
-    }));
+      console.log(JSON.stringify({
+        level: 'info',
+        message: 'Empty TwiML sent (WhatsApp)',
+        durationMs: Date.now() - startTime,
+        timestamp: new Date().toISOString(),
+      }));
 
-    const hasMedia = mediaAttachments.length > 0;
-    const immediateResponse = hasMedia
-      ? MEDIA_IMMEDIATE_ACK
-      : classification.immediateResponse;
+      // Start typing indicator, stop in .finally()
+      const stopTyping = startTypingIndicator(webhookBody.MessageSid);
 
-    // Store messages in history
-    const userMessage = await addMessage(sender, 'user', message, channel);
-    await addMessage(sender, 'assistant', immediateResponse, channel);
+      const configStore = getUserConfigStore();
+      const userConfig = await configStore.get(sender);
 
-    // Enforce SMS length limits for TwiML response (WhatsApp is unaffected).
-    const safeImmediateResponse = enforceSmsLength(immediateResponse, channel);
+      processAsyncWork(sender, message, channel, userConfig, mediaAttachments, userMessage.id)
+        .catch((error) => {
+          console.error(JSON.stringify({
+            level: 'error',
+            message: 'Unhandled error in async work',
+            error: error instanceof Error ? error.message : String(error),
+            timestamp: new Date().toISOString(),
+          }));
+        })
+        .finally(stopTyping);
+    } else {
+      // ── SMS flow: classifier for personalized ack, always run orchestrator ──
+      const configStore = getUserConfigStore();
+      const memoryStore = getMemoryStore();
+      const [history, userConfig, userFacts] = await Promise.all([
+        getHistory(sender),
+        configStore.get(sender),
+        memoryStore.getFacts(sender),
+      ]);
 
-    // Return TwiML with the immediate response
-    res.type('text/xml');
-    res.send(
-      `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(safeImmediateResponse)}</Message></Response>`
-    );
+      // Classify for ack text only — result no longer gates orchestrator
+      const classification = await classifyMessage(TOOLS, message, history, userConfig, userFacts);
 
-    console.log(JSON.stringify({
-      level: 'info',
-      message: 'TwiML response sent',
-      channel,
-      durationMs: Date.now() - startTime,
-      timestamp: new Date().toISOString(),
-    }));
+      console.log(JSON.stringify({
+        level: 'info',
+        message: 'Classification complete',
+        classificationDurationMs: Date.now() - startTime,
+        timestamp: new Date().toISOString(),
+      }));
 
-    // Force async for media messages (belt-and-suspenders: don't rely solely on classifier)
-    const needsAsync = classification.needsAsyncWork || mediaAttachments.length > 0;
+      const hasMedia = mediaAttachments.length > 0;
+      const immediateResponse = hasMedia
+        ? MEDIA_IMMEDIATE_ACK
+        : classification.immediateResponse;
 
-    // If async work needed, spawn background processing (fire and forget)
-    if (needsAsync) {
+      // Store messages in history
+      const userMessage = await addMessage(sender, 'user', message, channel);
+      await addMessage(sender, 'assistant', immediateResponse, channel);
+
+      // Enforce SMS length limits for TwiML response
+      const safeImmediateResponse = enforceSmsLength(immediateResponse, channel);
+
+      // Return TwiML with the immediate response
+      res.type('text/xml');
+      res.send(
+        `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(safeImmediateResponse)}</Message></Response>`
+      );
+
+      console.log(JSON.stringify({
+        level: 'info',
+        message: 'TwiML response sent',
+        channel,
+        durationMs: Date.now() - startTime,
+        timestamp: new Date().toISOString(),
+      }));
+
+      // Always spawn background processing (fire and forget)
       processAsyncWork(sender, message, channel, userConfig, mediaAttachments, userMessage.id).catch((error) => {
         console.error(JSON.stringify({
           level: 'error',
@@ -459,24 +532,31 @@ export async function handleSmsWebhook(req: Request, res: Response): Promise<voi
   } catch (error) {
     console.error(JSON.stringify({
       level: 'error',
-      message: 'Failed to classify message',
+      message: 'Webhook processing failed',
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
       durationMs: Date.now() - startTime,
       timestamp: new Date().toISOString(),
     }));
 
-    // Fall back to generic response if classification fails
+    // Fall back to generic response
     const fallbackMessage = "⏳ I'm processing your message and will respond shortly.";
     const fallbackUserMessage = await addMessage(sender, 'user', message, channel);
-    await addMessage(sender, 'assistant', fallbackMessage, channel);
 
-    res.type('text/xml');
-    res.send(
-      `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(fallbackMessage)}</Message></Response>`
-    );
+    if (channel === 'whatsapp') {
+      // WhatsApp: return empty TwiML, always orchestrate
+      res.type('text/xml');
+      res.send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+    } else {
+      // SMS: return fallback ack
+      await addMessage(sender, 'assistant', fallbackMessage, channel);
+      res.type('text/xml');
+      res.send(
+        `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(fallbackMessage)}</Message></Response>`
+      );
+    }
 
-    // Try to process with full pipeline even after classification failure
+    // Try to process with full pipeline even after failure
     const configStore = getUserConfigStore();
     configStore.get(sender).then((userConfig) => {
       processAsyncWork(sender, message, channel, userConfig, mediaAttachments, fallbackUserMessage.id).catch((asyncError) => {

@@ -261,6 +261,15 @@ export class SqliteConversationStore implements ConversationStore {
       .run(now, ...messageIds);
   }
 
+  async updateMediaAttachments(messageId: string, attachments: StoredMediaAttachment[]): Promise<void> {
+    const mediaJson = attachments.length > 0 ? JSON.stringify(attachments) : null;
+    this.db
+      .prepare(
+        `UPDATE conversation_messages SET media_attachments = ? WHERE id = ?`
+      )
+      .run(mediaJson, messageId);
+  }
+
   async getRecentMedia(
     phoneNumber: string,
     limit: number = 10

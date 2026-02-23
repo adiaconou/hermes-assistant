@@ -31,6 +31,9 @@ describeE2E('Multi-turn: Grocery List', () => {
       'Create a grocery list with eggs, milk, bread and butter'
     );
 
+    // WhatsApp always-orchestrate: sync response is empty TwiML
+    expect(turn1.syncResponse).toBe('');
+
     // Deterministic: extract URL and verify HTML contains all items
     const firstUrl = harness.extractShortUrl(turn1.finalResponse);
     const firstHtml = (await harness.fetchPageHtml(firstUrl)).toLowerCase();
@@ -43,6 +46,9 @@ describeE2E('Multi-turn: Grocery List', () => {
       'Add hummus and regenerate the page. Return the new link.'
     );
 
+    // WhatsApp always-orchestrate: sync response is empty TwiML on every turn
+    expect(turn2.syncResponse).toBe('');
+
     // Deterministic: new URL, HTML contains all original items plus hummus
     const secondUrl = harness.extractShortUrl(turn2.finalResponse);
     expect(secondUrl).not.toBe(firstUrl);
@@ -51,6 +57,16 @@ describeE2E('Multi-turn: Grocery List', () => {
     for (const item of [...initialItems, 'hummus']) {
       expect(secondHtml).toContain(item);
     }
+
+    // Typing indicator fired once per turn with valid MessageSid, stopped after each
+    const typingCalls = harness.getTypingIndicatorCalls();
+    expect(typingCalls.length).toBe(2);
+    expect(typingCalls[0].messageSid).toMatch(/^SM\d+$/);
+    expect(typingCalls[0].stopped).toBe(true);
+    expect(typingCalls[1].messageSid).toMatch(/^SM\d+$/);
+    expect(typingCalls[1].stopped).toBe(true);
+    // Each turn gets a unique MessageSid
+    expect(typingCalls[0].messageSid).not.toBe(typingCalls[1].messageSid);
 
     // Capture turns for report before judge + assertions (written even on failure)
     const turns = [

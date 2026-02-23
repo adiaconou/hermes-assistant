@@ -60,6 +60,8 @@ Analyze the user's request and create a plan with sequential steps.
 
 {currentMedia}
 
+{mediaContext}
+
 <rules>
 1. Use the MINIMUM number of steps needed - prefer fewer steps
 2. For any request that reaches this planner, pick the best-fit specialized agent. Greetings and small talk are already handled before this planner runs.
@@ -79,6 +81,7 @@ Analyze the user's request and create a plan with sequential steps.
 13. If <current_media> exists, resolve "this/that/it" to current-turn media before conversation history.
 14. Intent priority: explicit user text first, then <current_media>, then history. If the request is media-only or still ambiguous, create one memory-agent step that asks a concise clarification question.
 15. Skills vs agents: Prefer a SKILL when the task matches a structured workflow (extraction, checklists, transforms, reports). Prefer an AGENT when the task needs open-ended domain reasoning or complex tool orchestration. If a skill matches the request well, use "targetType": "skill".
+16. If <media_context> exists, the user may reference previously analyzed images. Route to the appropriate agent (usually drive-agent) rather than asking a clarification question.
 </rules>
 
 <output_format>
@@ -242,6 +245,7 @@ export async function createPlan(
     .replace('{userContext}', userContextText)
     .replace('{history}', historyText)
     .replace('{currentMedia}', currentMediaBlock)
+    .replace('{mediaContext}', context.mediaContext || '')
     .replace('{today}', today);
 
   console.log(JSON.stringify({

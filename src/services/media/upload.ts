@@ -175,6 +175,7 @@ export async function uploadBuffersToDrive(
           filename: file.name,
           mimeType: attachment.contentType,
           webViewLink: file.webViewLink,
+          originalIndex: attachment.index,
         });
 
         console.log(JSON.stringify({

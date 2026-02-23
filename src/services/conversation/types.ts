@@ -96,6 +96,8 @@ export interface StoredMediaAttachment {
   mimeType: string;
   /** Google Drive web view link */
   webViewLink?: string;
+  /** Original index of the attachment in the inbound message (0-based). Preserved across download/upload failures that compact the array. */
+  originalIndex?: number;
 }
 
 /**
@@ -209,6 +211,14 @@ export interface ConversationStore {
     messageId: string;
     createdAt: number;
   }>>;
+
+  /**
+   * Update the media attachments on an existing message.
+   * Used to backfill storedMedia after async upload completes.
+   * @param messageId ID of the message to update
+   * @param attachments Array of stored media attachments
+   */
+  updateMediaAttachments(messageId: string, attachments: StoredMediaAttachment[]): Promise<void>;
 
   // ============================================================================
   // Message Metadata Methods (for image analysis persistence)

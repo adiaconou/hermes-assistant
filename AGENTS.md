@@ -109,6 +109,7 @@ Design docs describe how a subsystem works and why it was built that way. Create
 2. Run `npm run test:unit` and `npm run test:integration`
 3. Fix failures before proceeding
 4. Check if architecture docs need updating
+5. **Check if e2e tests need updating** (see [E2E Tests](#e2e-tests) below)
 
 ### Before Committing
 
@@ -138,6 +139,32 @@ The agent will automatically be available to the planner and router.
 2. Add it to `allTools` array in `src/tools/index.ts`
 3. Add the tool name to the relevant domain agent capability in `src/domains/*/runtime/agent.ts`
 4. If it's safe for scheduled execution, add to `READ_ONLY_TOOLS`
+
+---
+
+## E2E Tests
+
+End-to-end tests live in `tests/e2e/` and send simulated Twilio webhooks through the real handler with real LLM calls. They require `ANTHROPIC_API_KEY` to run and are skipped automatically in CI.
+
+```bash
+npm run test:e2e            # Run e2e tests (requires API key)
+```
+
+### When to update e2e tests
+
+Update e2e tests when changes affect:
+- **Webhook routing** (`src/routes/sms.ts`) — e.g., changing TwiML responses, classifier gating, or channel-specific behavior
+- **Orchestrator flow** (`src/orchestrator/`) — e.g., changing how plans are created, how agents are dispatched, or how responses are composed
+- **Tool behavior** (`src/tools/`, `src/domains/*/runtime/tools.ts`) — e.g., changing how tools execute or what they return
+- **Conversation persistence** (`src/services/conversation/`) — e.g., changing what's stored or how history is retrieved
+
+### Key design decisions
+
+- **WhatsApp payloads only**: E2e tests use `createWhatsAppPayload` to avoid SMS 160-char truncation. All assertions reflect WhatsApp behavior.
+- **Always-orchestrate**: WhatsApp messages return empty TwiML (`syncResponse` is `''`) and always route through the orchestrator. Assert `syncResponse === ''` to verify this.
+- **Typing indicator**: The WhatsApp typing indicator fires best-effort and silently fails in tests (no real Twilio credentials). No mock needed.
+- **Harness pattern**: `E2EHarness` handles webhook dispatch, async completion polling (via trace logs), and page HTML fetching. See `tests/e2e/harness.ts`.
+- **LLM Judge**: Multi-turn tests use `harness.judgeConversation(criteria)` for qualitative evaluation. Reports are written to `tests/e2e/output/`.
 
 ---
 

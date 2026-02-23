@@ -62,10 +62,21 @@ describe('POST /webhook/sms', () => {
       expect(res.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Message>Hello!</Message></Response>');
     });
 
-    it('should not send via Twilio API when no async work needed', async () => {
-      // Set up mock for classification (simple response, no async work)
+    it('should always send async follow-up via Twilio API for SMS', async () => {
+      // SMS always runs orchestrator now, so even simple messages get an async follow-up
       setMockResponses([
+        // Classification (for ack text)
         createTextResponse('{"needsAsyncWork": false, "immediateResponse": "Hi there! How can I help you today?"}'),
+        // Planner
+        createTextResponse(JSON.stringify({
+          analysis: 'Simple greeting',
+          goal: 'Greet user',
+          steps: [{ id: 'step_1', agent: 'memory-agent', task: 'Respond' }],
+        })),
+        // Executor
+        createTextResponse('Hi!'),
+        // Response Composer
+        createTextResponse('Hello! How can I help?'),
       ]);
 
       const payload = createSmsPayload('Hello!', '+15551234567');
@@ -79,19 +90,31 @@ describe('POST /webhook/sms', () => {
 
       await handleSmsWebhook(req, res);
 
-      // Give time for any potential async processing
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Wait for async follow-up
+      await vi.waitFor(() => {
+        const messages = getSentMessages();
+        expect(messages.length).toBeGreaterThan(0);
+      }, { timeout: 5000 });
 
-      // No messages should be sent via Twilio API - response is in TwiML
       const sentMessages = getSentMessages();
-      expect(sentMessages.length).toBe(0);
+      expect(sentMessages[0].to).toBe('+15551234567');
     });
   });
 
   describe('WhatsApp messages', () => {
-    it('should return TwiML response for WhatsApp messages', async () => {
+    it('should return empty TwiML for WhatsApp messages (no ack)', async () => {
+      // WhatsApp skips classifier, so only orchestrator LLM calls are needed
       setMockResponses([
-        createTextResponse('{"needsAsyncWork": false, "immediateResponse": "Hello via WhatsApp!"}'),
+        // Planner
+        createTextResponse(JSON.stringify({
+          analysis: 'User said hello',
+          goal: 'Greet user',
+          steps: [{ id: 'step_1', agent: 'memory-agent', task: 'Greet the user' }],
+        })),
+        // Executor
+        createTextResponse('Hello!'),
+        // Response Composer
+        createTextResponse('Hello via WhatsApp!'),
       ]);
 
       const payload = createWhatsAppPayload('Hi from WhatsApp', '+15551234567');
@@ -107,14 +130,13 @@ describe('POST /webhook/sms', () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.headers['content-type']).toContain('text/xml');
-      expect(res.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Message>Hello via WhatsApp!</Message></Response>');
+      // WhatsApp returns empty TwiML (no <Message> element)
+      expect(res.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
     });
 
     it('should send async follow-up via WhatsApp API with correct prefix', async () => {
-      // The orchestrator architecture makes multiple LLM calls
+      // WhatsApp skips classifier, so only orchestrator LLM calls are needed
       setMockResponses([
-        // Classification
-        createTextResponse('{"needsAsyncWork": true, "immediateResponse": "Working on it!"}'),
         // Planner
         createTextResponse(JSON.stringify({
           analysis: 'User wants something complex',
@@ -138,6 +160,9 @@ describe('POST /webhook/sms', () => {
 
       await handleSmsWebhook(req, res);
 
+      // WhatsApp should return empty TwiML immediately
+      expect(res.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+
       // Wait for async response
       await vi.waitFor(() => {
         const messages = getSentMessages();
@@ -148,6 +173,41 @@ describe('POST /webhook/sms', () => {
       // WhatsApp messages should have whatsapp: prefix
       expect(sentMessages[0].to).toBe('whatsapp:+15551234567');
       expect(sentMessages[0].from).toContain('whatsapp:');
+    });
+
+    it('should always run orchestrator for WhatsApp even for simple messages', async () => {
+      setMockResponses([
+        // Planner
+        createTextResponse(JSON.stringify({
+          analysis: 'Simple greeting',
+          goal: 'Greet user',
+          steps: [{ id: 'step_1', agent: 'memory-agent', task: 'Respond to greeting' }],
+        })),
+        // Executor
+        createTextResponse('Hi there!'),
+        // Response Composer
+        createTextResponse('Hey! How can I help you?'),
+      ]);
+
+      const payload = createWhatsAppPayload('Hello', '+15551234567');
+
+      const { req, res } = createMockReqRes({
+        method: 'POST',
+        url: '/webhook/sms',
+        headers: { 'x-twilio-signature': signPayload(payload) },
+        body: payload,
+      });
+
+      await handleSmsWebhook(req, res);
+
+      // Wait for orchestrator to complete and send message
+      await vi.waitFor(() => {
+        const messages = getSentMessages();
+        expect(messages.length).toBeGreaterThan(0);
+      }, { timeout: 5000 });
+
+      const sentMessages = getSentMessages();
+      expect(sentMessages[0].to).toBe('whatsapp:+15551234567');
     });
   });
 

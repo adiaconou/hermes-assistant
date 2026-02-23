@@ -534,7 +534,7 @@ Common analysis prompts:
         }
       } else if (context.storedMedia && context.storedMedia.length > 0) {
         source = 'storedMedia';
-        storedItem = context.storedMedia[attachmentIndex];
+        storedItem = context.storedMedia.find(m => m.originalIndex === attachmentIndex) ?? context.storedMedia[attachmentIndex];
         if (!storedItem) {
           return { success: false, error: `No stored media at index ${attachmentIndex}. Available indices: 0-${context.storedMedia.length - 1}` };
         }
@@ -568,7 +568,7 @@ Common analysis prompts:
 
       if (!storedItem && (source === 'media_url' || source === 'mediaAttachments')) {
         if (context.storedMedia && context.storedMedia.length > 0) {
-          storedItem = context.storedMedia[attachmentIndex];
+          storedItem = context.storedMedia.find(m => m.originalIndex === attachmentIndex) ?? context.storedMedia[attachmentIndex];
         }
       }
 

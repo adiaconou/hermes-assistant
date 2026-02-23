@@ -14,6 +14,7 @@ import { createMockReqRes } from '../helpers/mock-http.js';
 import { createWhatsAppPayload } from '../fixtures/webhook-payloads.js';
 import { getSentMessages, clearSentMessages } from './mocks/twilio.js';
 import { seedGoogleCredentials } from './mocks/google.js';
+import { getTypingIndicatorCalls, clearTypingIndicatorCalls, type TypingIndicatorCall } from './mocks/typing-indicator.js';
 import { getConversationStore, closeConversationStore, resetConversationStore } from '../../src/services/conversation/index.js';
 import { getMemoryStore, closeMemoryStore, resetMemoryStore } from '../../src/domains/memory/runtime/index.js';
 import { resetCredentialStore } from '../../src/services/credentials/index.js';
@@ -282,6 +283,7 @@ export class E2EHarness {
     resetMemoryStore();
 
     clearSentMessages();
+    clearTypingIndicatorCalls();
     this.turnCount = 0;
     this.turnLogs = [];
     this.seenLogFiles.clear();
@@ -360,6 +362,14 @@ export class E2EHarness {
    */
   getGeneratedPages(): Map<string, string> {
     return new Map(this.generatedPages);
+  }
+
+  /**
+   * Get all typing indicator calls captured by the mock.
+   * Each call records the messageSid and whether stop() was called.
+   */
+  getTypingIndicatorCalls(): TypingIndicatorCall[] {
+    return getTypingIndicatorCalls();
   }
 
   /**

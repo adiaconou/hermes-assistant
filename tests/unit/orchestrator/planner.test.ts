@@ -450,6 +450,63 @@ describe('createPlan', () => {
       expect(calls[0].system).toContain('media-only or still ambiguous');
       expect(calls[0].system).toContain('memory-agent step');
     });
+
+    it('should replace {mediaContext} placeholder with context.mediaContext', async () => {
+      const mediaContextBlock = '<media_context>\nPreviously analyzed images here\n</media_context>';
+
+      setMockResponses([
+        createTextResponse(JSON.stringify({
+          analysis: 'User references a previous image',
+          goal: 'Answer about image',
+          steps: [{ id: 'step_1', agent: 'drive-agent', task: 'Look up image analysis' }],
+        })),
+      ]);
+
+      await createPlan({
+        ...baseContext,
+        userMessage: 'What was in that receipt?',
+        mediaContext: mediaContextBlock,
+      }, mockRegistry);
+
+      const calls = getCreateCalls();
+      expect(calls[0].system).toContain('Previously analyzed images here');
+      expect(calls[0].system).toContain('<media_context>');
+      // Placeholder should be replaced, not present literally
+      expect(calls[0].system).not.toContain('{mediaContext}');
+    });
+
+    it('should replace {mediaContext} with empty string when no mediaContext', async () => {
+      setMockResponses([
+        createTextResponse(JSON.stringify({
+          analysis: 'Test',
+          goal: 'Goal',
+          steps: [{ id: 'step_1', agent: 'calendar-agent', task: 'Task' }],
+        })),
+      ]);
+
+      await createPlan(baseContext, mockRegistry);
+
+      const calls = getCreateCalls();
+      // Should not contain the literal placeholder
+      expect(calls[0].system).not.toContain('{mediaContext}');
+    });
+
+    it('should include media_context routing rule (rule 16) in prompt', async () => {
+      setMockResponses([
+        createTextResponse(JSON.stringify({
+          analysis: 'Test',
+          goal: 'Goal',
+          steps: [{ id: 'step_1', agent: 'calendar-agent', task: 'Task' }],
+        })),
+      ]);
+
+      await createPlan(baseContext, mockRegistry);
+
+      const calls = getCreateCalls();
+      expect(calls[0].system).toContain('media_context');
+      expect(calls[0].system).toContain('previously analyzed images');
+      expect(calls[0].system).toContain('drive-agent');
+    });
   });
 });
 

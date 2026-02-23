@@ -57,10 +57,11 @@ process.once('exit', cleanupTempRoot);
 process.once('SIGINT', cleanupTempRoot);
 process.once('SIGTERM', cleanupTempRoot);
 
-// ── Import mocks (Twilio and Google; NOT Anthropic — real SDK is used) ──
+// ── Import mocks (Twilio, Google, typing indicator; NOT Anthropic — real SDK is used) ──
 // vi.mock() calls inside these files are hoisted by vitest regardless of import order.
 import './mocks/twilio.js';
 import './mocks/google.js';
+import './mocks/typing-indicator.js';
 
 // ── Wire ALL domain executor providers ──
 // IMPORTANT: These must be dynamic imports (await import) because static imports
