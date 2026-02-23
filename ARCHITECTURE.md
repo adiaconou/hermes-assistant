@@ -30,7 +30,7 @@ Hermes is a multi-agent assistant that receives messages via Twilio (SMS/WhatsAp
 
 ### Key Design Principles
 
-- **Two-phase response**: Fast synchronous classification (<5s) + asynchronous deep processing
+- **Always-orchestrate**: Every message routes through the orchestrator for deep processing. WhatsApp skips the classifier entirely (typing indicator provides UX feedback); SMS retains a fast classifier call for an immediate ack but always runs async processing regardless of classification result
 - **Agent orchestration**: An LLM planner decomposes requests into steps and delegates to specialized agents
 - **Tool isolation**: Each agent has access to only the tools it needs
 - **Background memory**: Facts are extracted from conversations asynchronously, not during real-time interactions
@@ -65,8 +65,8 @@ Hermes is a multi-agent assistant that receives messages via Twilio (SMS/WhatsAp
 ┌─────────────────────────────────────────────────────┐  ┌────────────────────────┐
 │               Message Processing Pipeline            │  │  Email Classification  │
 │                                                      │  │                        │
-│  Classifier ──▶ Orchestrator ──▶ Agents ──▶ Compose  │  │  Classify ──▶ Actions  │
-│  (fast path)    (planner)       (execute)   (reply)  │  │  (Haiku)    (tools/SMS)│
+│  Webhook ──▶ Orchestrator ──▶ Agents ──▶ Compose     │  │  Classify ──▶ Actions  │
+│  (always)    (planner)       (execute)   (reply)     │  │  (Haiku)    (tools/SMS)│
 └──────────────────────────┬───────────────────────────┘  └──────────┬─────────────┘
                            │                                         │
                            ▼                                         ▼
@@ -409,32 +409,82 @@ For the full migration history, see [forward-layered-architecture-refactor.md](d
 
 ## Request Processing Flow
 
-### Two-Phase Processing
+### Always-Orchestrate Model
 
-| Phase | Duration | What Happens |
-|-------|----------|--------------|
-| **Sync** | <5s | Validate Twilio signature → Classifier LLM call (512 tokens, no tools) → Return TwiML with immediate reply |
-| **Async** | Up to 5 min | Download media → Upload to Drive + Pre-analyze via Gemini (parallel) → Create plan → Execute agents → Compose response → Send SMS/WhatsApp |
+Every inbound message — regardless of complexity — routes through the orchestrator. The sync phase differs by channel:
 
-### Classification
+| Channel | Sync Phase | Async Phase |
+|---------|-----------|-------------|
+| **WhatsApp** | Return empty TwiML `<Response></Response>` immediately. Start typing indicator (dots visible in WhatsApp). No classifier call. | Download media → Upload to Drive + Pre-analyze via Gemini (parallel) → Create plan → Execute agents → Compose response → Send WhatsApp reply. Stop typing indicator in `.finally()`. |
+| **SMS** | Classifier LLM call (512 tokens) → Return TwiML with immediate ack text. | Same async pipeline as WhatsApp. Classifier result is used only for ack text — it does **not** gate whether async work runs. |
 
-The classifier (`src/services/anthropic/classification.ts`) is a fast LLM call that determines routing:
+### Classification (SMS only)
+
+The classifier (`src/services/anthropic/classification.ts`) provides a fast ack for SMS:
 
 - Uses Claude with max 512 tokens, no tools enabled
 - Only considers last 4 conversation messages
 - Returns `{needsAsyncWork: boolean, immediateResponse: string}`
-- Simple requests (greetings, thanks) get a direct reply; everything else spawns async work
+- The `immediateResponse` is sent as the TwiML ack; `needsAsyncWork` is **ignored** — async processing always runs
 
-### Sequence: Inbound Message
+### WhatsApp Typing Indicator
+
+`src/services/twilio/typing-indicator.ts` provides UX feedback while the orchestrator processes:
+
+- **Fire immediately** on webhook receipt (non-blocking)
+- **Re-fire every 20 seconds** — WhatsApp indicators expire ~25s
+- **Stop function** returned to caller — called in `.finally()` after orchestrator completes
+- **Best-effort**: Errors logged but never thrown (UX polish, not critical path)
+- **API**: POST to `https://messaging.twilio.com/v2/Indicators/Typing.json` with Basic Auth, body `messageId=<MessageSid>&channel=whatsapp`
+
+### Sequence: WhatsApp Inbound Message
+
+```
+User ──WhatsApp──▶ Twilio ──POST──▶ /webhook/sms
+                                         │
+                              Store user message
+                              Return empty TwiML
+                              Start typing indicator (dots)
+                                         │
+                                         ▼
+                             processMediaAttachments()
+                                         │
+                               downloadAllMedia()
+                                         │
+                              ┌──────────┴──────────┐
+                              ▼                     ▼
+                       uploadBuffersToDrive()  preAnalyzeMedia()
+                         (Google Drive)        (Gemini Vision)
+                              └──────────┬──────────┘
+                                         │
+                              updateMediaAttachments()  ← backfill storedMedia
+                              persist pre-analysis      ← as message metadata
+                                         │
+                                         ▼
+                              handleWithOrchestrator()
+                                         │
+                         ┌───────────────┼───────────────┐
+                         ▼               ▼               ▼
+                    createPlan()    executeStep()   synthesizeResponse()
+                         │               │               │
+                         ▼               ▼               ▼
+                LLM: choose +     Agent + tools    LLM: compose
+                <current_media>    (loop)          user reply
+                + <media_context>                       │
+                   agents                               ▼
+                                                Twilio sendSms()
+                                                Stop typing indicator
+```
+
+### Sequence: SMS Inbound Message
 
 ```
 User ──SMS──▶ Twilio ──POST──▶ /webhook/sms
                                     │
-                         classifyMessage() → fast reply via TwiML
+                         classifyMessage() → ack text via TwiML
+                         Store user message + ack
                                     │
-                         needsAsyncWork? (always true for media)
-                                    │ yes
-                                    ▼
+                                    ▼  (always — not gated by needsAsyncWork)
                         processMediaAttachments()
                                     │
                           downloadAllMedia()
@@ -444,6 +494,10 @@ User ──SMS──▶ Twilio ──POST──▶ /webhook/sms
                   uploadBuffersToDrive()  preAnalyzeMedia()
                     (Google Drive)        (Gemini Vision)
                          └──────────┬──────────┘
+                                    │
+                         updateMediaAttachments()  ← backfill storedMedia
+                         persist pre-analysis      ← as message metadata
+                                    │
                                     ▼
                          handleWithOrchestrator()
                                     │
@@ -454,8 +508,8 @@ User ──SMS──▶ Twilio ──POST──▶ /webhook/sms
                     ▼               ▼               ▼
            LLM: choose +     Agent + tools    LLM: compose
            <current_media>    (loop)          user reply
-              agents                               │
-                                                    ▼
+           + <media_context>                       │
+              agents                               ▼
                                            Twilio sendSms()
 ```
 
@@ -476,6 +530,7 @@ The orchestrator (`src/orchestrator/`) is the central coordination system.
 | **synthesizeResponse()** | `response-composer.ts` | LLM call to produce the final user-facing reply |
 | **handler.ts** | `handler.ts` | Integration layer between SMS route and orchestrator |
 | **conversation-window.ts** | `conversation-window.ts` | Sliding window filter for conversation history |
+| **media-context.ts** | `media-context.ts` | Builds `<media_context>` XML from historical image analysis metadata (capped at 10 most recent) |
 
 ### Execution Flow
 
@@ -792,8 +847,8 @@ All persistent data uses **SQLite** via `better-sqlite3`. Three separate databas
 
 | Table | Key Columns |
 |-------|-------------|
-| `conversation_messages` | `id`, `phone_number`, `role`, `content`, `channel`, `created_at`, `memory_processed`, `media_attachments` |
-| `conversation_message_metadata` | `id`, `message_id` (FK), `phone_number`, `kind`, `payload_json` |
+| `conversation_messages` | `id`, `phone_number`, `role`, `content`, `channel`, `created_at`, `memory_processed`, `media_attachments`. Note: `media_attachments` is backfilled after media processing via `updateMediaAttachments()` |
+| `conversation_message_metadata` | `id`, `message_id` (FK), `phone_number`, `kind`, `payload_json`. Used for `image_analysis` metadata (pre-analysis persisted per image) |
 
 ### `data/memory.db`
 
@@ -816,6 +871,7 @@ On Railway, databases are stored at `/app/data/` via a persistent volume mount (
 | Inbound | POST webhook | Receive SMS/WhatsApp messages |
 | Media | GET (authenticated) | Download MMS/WhatsApp attachments |
 | Outbound | REST API | Send SMS/WhatsApp responses |
+| Typing indicator | POST to Messaging API v2 | Show "..." dots in WhatsApp while processing (re-fires every 20s) |
 
 ### Google APIs (OAuth2)
 
@@ -877,22 +933,24 @@ The ui-agent has **no network access** — it can only render data passed to it 
 1. Twilio webhook includes `MediaUrl0` for MMS/WhatsApp images
 2. `processMediaAttachments()` downloads from Twilio once (shared buffer pool)
 3. Two parallel operations via `Promise.all`:
-   - **Drive upload** — file uploaded to Google Drive (Hermes folder)
+   - **Drive upload** — file uploaded to Google Drive (Hermes folder). Each `StoredMediaAttachment` carries `originalIndex` so downstream lookups aren't broken by skipped failures
    - **Pre-analysis** — Gemini Vision produces a compact summary + category per image
-4. Metadata stored in `conversation_messages.media_attachments`
-5. Pre-analysis summaries injected into planner prompt as `<current_media>` XML block
-6. Drive agent can do deeper analysis via Gemini Vision tool if needed
-7. Pre-analysis is used only for current-turn planning (no persistence in V1)
+4. **Backfill**: `updateMediaAttachments()` patches the user message row with `storedMedia` (user message is stored before media processing, so `media_attachments` starts null)
+5. **Persist pre-analysis**: Each summary is written as `image_analysis` metadata via `addMessageMetadata()`, ensuring the analysis survives even if `analyze_image` is never called
+6. Pre-analysis summaries injected into planner prompt as `<current_media>` XML block
+7. Historical media analysis (from earlier turns) injected as `<media_context>` — capped at the 10 most recent entries (`MAX_HISTORICAL_MEDIA_ENTRIES`)
+8. Drive agent can do deeper analysis via Gemini Vision tool if needed — this supplements (not replaces) the pre-analysis
 
 ### Media-First Intent Resolution
 
-When the user sends media (images), the planner receives structured `<current_media>` context with per-attachment summaries. Three prompt rules govern how the planner interprets media:
+When the user sends media (images), the planner receives structured `<current_media>` context with per-attachment summaries. For text-only follow-ups referencing earlier images, `<media_context>` provides historical analysis. Four prompt rules govern how the planner interprets media:
 
 | Rule | Behavior |
 |------|----------|
 | **Intent precedence** | (1) explicit user text → (2) current-turn media → (3) prior conversation history |
 | **Deictic resolution** | "this", "that", "it" bind to `<current_media>` attachments before conversation history |
 | **Image-only clarification** | If the user sends only an image with no text and the category is ambiguous, the planner emits a memory-agent step that asks a concise clarification question |
+| **Historical media routing** | If `<media_context>` exists (previous turns had images), the planner routes to the appropriate agent (usually drive-agent) rather than asking unnecessary clarification |
 
 ### Pre-Analysis Pipeline
 
@@ -1007,7 +1065,7 @@ src/
 │   ├── date/                   # Date resolution
 │   ├── media/                  # Media handling pipeline
 │   ├── ui/                     # UI page generation service
-│   └── twilio/                 # Twilio media utilities
+│   └── twilio/                 # Twilio media utilities + typing indicator
 │
 └── utils/
     ├── poller.ts               # Shared interval poller
