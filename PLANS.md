@@ -132,6 +132,8 @@ Prefer additive code changes followed by subtractions that keep tests passing. P
 
     Describe how to start or exercise the system and what to observe. Phrase acceptance as behavior, with specific inputs and outputs. If tests are involved, say "run <project's test command> and expect <N> passed; the new test <name> fails before the change and passes after>".
 
+    If the change alters request processing flow, agents/tools, data persistence, external integrations, media handling, or planner prompts, include updating [ARCHITECTURE.md](ARCHITECTURE.md) as an explicit deliverable.
+
     ## Idempotence and Recovery
 
     If steps can be repeated safely, say so. If a step is risky, provide a safe retry or rollback path. Keep the environment clean after completion.

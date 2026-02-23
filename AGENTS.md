@@ -108,7 +108,12 @@ Design docs describe how a subsystem works and why it was built that way. Create
 1. Write/update tests for new code paths and error modes
 2. Run `npm run test:unit` and `npm run test:integration`
 3. Fix failures before proceeding
-4. Check if architecture docs need updating
+4. **Check if [ARCHITECTURE.md](ARCHITECTURE.md) needs updating** — update it in the same PR when your change:
+   - Alters the request processing flow (e.g., webhook routing, classifier behavior, sync/async split)
+   - Adds, removes, or changes an agent, tool, or orchestrator component
+   - Changes how data is persisted (new tables, new columns, new metadata kinds)
+   - Adds or modifies an external integration (new API endpoint, new Twilio feature)
+   - Changes the media handling pipeline or planner prompt structure
 5. **Check if e2e tests need updating** (see [E2E Tests](#e2e-tests) below)
 
 ### Before Committing
@@ -116,7 +121,7 @@ Design docs describe how a subsystem works and why it was built that way. Create
 1. Verify tests pass: `npm run test:unit && npm run test:integration`
 2. Run linter: `npm run lint`
 3. Build to verify: `npm run build`
-4. Update docs if applicable (ARCHITECTURE.md and/or relevant design doc)
+4. Verify ARCHITECTURE.md is up to date if applicable (see step 4 above)
 
 ---
 
