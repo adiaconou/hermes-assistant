@@ -1,7 +1,8 @@
 /**
  * Unit tests for WhatsApp typing indicator service.
  *
- * Tests fire-immediately, 20s re-fire interval, stop function, and error handling.
+ * Tests fire-immediately, interim message chain, stop function, error handling,
+ * and fallback when no sendInterim callback is provided.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -53,30 +54,61 @@ describe('typing-indicator', () => {
     stop();
   });
 
-  it('re-fires every 20 seconds', () => {
-    const stop = startTypingIndicator('SM_test_456');
-    expect(mockFetchWithRetry).toHaveBeenCalledTimes(1);
+  it('sends interim message and fires new indicator every 20s', async () => {
+    let interimCount = 0;
+    const mockSendInterim = vi.fn(async () => {
+      interimCount++;
+      return `SM_interim_${interimCount}`;
+    });
 
-    // Advance 20s
-    vi.advanceTimersByTime(20_000);
+    const stop = startTypingIndicator('SM_test_456', mockSendInterim);
+    // Initial fire
+    expect(mockFetchWithRetry).toHaveBeenCalledTimes(1);
+    expect(mockSendInterim).not.toHaveBeenCalled();
+
+    // Advance 20s — triggers interim message + new typing indicator
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(mockSendInterim).toHaveBeenCalledTimes(1);
     expect(mockFetchWithRetry).toHaveBeenCalledTimes(2);
 
+    // Second fire should use the interim message's SID
+    const [, secondInit] = mockFetchWithRetry.mock.calls[1] as [string, RequestInit, string, number[]];
+    expect(secondInit.body).toContain('messageId=SM_interim_1');
+
     // Advance another 20s
-    vi.advanceTimersByTime(20_000);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(mockSendInterim).toHaveBeenCalledTimes(2);
     expect(mockFetchWithRetry).toHaveBeenCalledTimes(3);
+
+    const [, thirdInit] = mockFetchWithRetry.mock.calls[2] as [string, RequestInit, string, number[]];
+    expect(thirdInit.body).toContain('messageId=SM_interim_2');
 
     stop();
   });
 
-  it('stop function cancels the interval', () => {
-    const stop = startTypingIndicator('SM_test_789');
+  it('stop function cancels further interim messages', async () => {
+    const mockSendInterim = vi.fn(async () => 'SM_interim');
+
+    const stop = startTypingIndicator('SM_test_789', mockSendInterim);
     expect(mockFetchWithRetry).toHaveBeenCalledTimes(1);
 
     stop();
 
-    // Advancing time should not trigger more calls
-    vi.advanceTimersByTime(60_000);
+    // Advancing time should not trigger interim messages
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(mockSendInterim).not.toHaveBeenCalled();
     expect(mockFetchWithRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('without sendInterim, only fires once (no re-fire)', async () => {
+    const stop = startTypingIndicator('SM_no_interim');
+    expect(mockFetchWithRetry).toHaveBeenCalledTimes(1);
+
+    // Advancing time should NOT trigger more calls (no interval without sendInterim)
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(mockFetchWithRetry).toHaveBeenCalledTimes(1);
+
+    stop();
   });
 
   it('does not throw when fetch fails', () => {
@@ -85,6 +117,29 @@ describe('typing-indicator', () => {
     // Should not throw
     const stop = startTypingIndicator('SM_error_test');
     expect(mockFetchWithRetry).toHaveBeenCalledTimes(1);
+
+    stop();
+  });
+
+  it('does not throw when interim message fails', async () => {
+    const mockSendInterim = vi.fn(async () => {
+      throw new Error('send failed');
+    });
+
+    const stop = startTypingIndicator('SM_interim_err', mockSendInterim);
+    expect(mockFetchWithRetry).toHaveBeenCalledTimes(1);
+
+    // Advance 20s — interim fails but should not throw
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(mockSendInterim).toHaveBeenCalledTimes(1);
+    // No new typing indicator fired (interim failed)
+    expect(mockFetchWithRetry).toHaveBeenCalledTimes(1);
+
+    // Should still schedule next attempt
+    mockSendInterim.mockResolvedValueOnce('SM_recovered');
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(mockSendInterim).toHaveBeenCalledTimes(2);
+    expect(mockFetchWithRetry).toHaveBeenCalledTimes(2);
 
     stop();
   });
@@ -103,7 +158,7 @@ describe('typing-indicator', () => {
 
     const stop = startTypingIndicator('SM_no_creds');
 
-    // Stop the interval immediately to prevent infinite timer loop
+    // Stop immediately to prevent further scheduling
     stop();
 
     // Advance a small amount to let the initial async fire complete

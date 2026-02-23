@@ -33,7 +33,7 @@ export function clearTypingIndicatorCalls(): void {
 /**
  * Mock startTypingIndicator that records the call and returns a stop function.
  */
-const mockStartTypingIndicator = vi.fn((messageSid: string): (() => void) => {
+const mockStartTypingIndicator = vi.fn((messageSid: string, _sendInterim?: () => Promise<string>): (() => void) => {
   const call: TypingIndicatorCall = {
     messageSid,
     timestamp: new Date(),

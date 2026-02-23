@@ -470,9 +470,15 @@ export async function handleSmsWebhook(req: Request, res: Response): Promise<voi
       }));
 
       // Start typing indicator, stop in .finally()
+      // Twilio's typing indicator has a hard 25-second expiry per messageId.
+      // To keep dots alive, we send an interim message every ~20s and fire
+      // a new indicator from that message's SID.
       const inboundMessageSid = getInboundMessageSid(webhookBody);
       const stopTyping = inboundMessageSid
-        ? startTypingIndicator(inboundMessageSid)
+        ? startTypingIndicator(inboundMessageSid, async () => {
+            const sid = await sendWhatsApp(sender, '...');
+            return sid;
+          })
         : () => {};
 
       if (!inboundMessageSid) {
