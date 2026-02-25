@@ -79,7 +79,7 @@ _Drags score down: Direct imports from sibling domain internals, upward layer im
 | Domain | Tests | Errors | Docs | Boundaries | Observability | Architecture | Core Beliefs | Structure | Overall |
 |--------|-------|--------|------|------------|---------------|-------------|-------------|-----------|---------|
 | Orchestrator | 90 | 90 | 90 | 90 | 90 | 90 | 90 | 90 | 90 |
-| Calendar agent | 90 | 90 | 90 | 90 | 90 | 85 | 85 | 90 | 89 |
+| Calendar agent | 90 | 90 | 90 | 90 | 90 | 90 | 90 | 90 | 90 |
 | Scheduler agent | 55 | 70 | 80 | 65 | 65 | 80 | 75 | 90 | 73 |
 | Email agent | 55 | 75 | 85 | 65 | 70 | 80 | 80 | 90 | 75 |
 | Memory agent | 65 | 75 | 85 | 70 | 70 | 85 | 85 | 90 | 78 |

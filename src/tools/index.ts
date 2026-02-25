@@ -6,7 +6,8 @@ import type { Tool } from '@anthropic-ai/sdk/resources/messages';
 import type { ToolDefinition, ToolHandler, ToolContext } from './types.js';
 
 import { generateUi } from '../domains/ui/runtime/tools.js';
-import { getCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, resolveDateTool } from '../domains/calendar/runtime/tools.js';
+import { getCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '../domains/calendar/runtime/tools.js';
+import { resolveDateTool } from './date.js';
 import { getEmails, readEmail, getEmailThread } from '../domains/email/runtime/tools.js';
 import { extractMemory, listMemories, updateMemory, removeMemory } from '../domains/memory/runtime/tools.js';
 import { setUserConfig, deleteUserData } from './user-config.js';
@@ -33,6 +34,7 @@ const allTools: ToolDefinition[] = [
   createCalendarEvent,
   updateCalendarEvent,
   deleteCalendarEvent,
+  // Date resolution (shared across calendar + scheduler agents)
   resolveDateTool,
   // Email
   getEmails,

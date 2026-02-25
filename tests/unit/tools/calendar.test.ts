@@ -52,8 +52,8 @@ import {
   createCalendarEvent,
   updateCalendarEvent,
   deleteCalendarEvent,
-  resolveDateTool,
 } from '../../../src/domains/calendar/runtime/tools.js';
+import { resolveDateTool } from '../../../src/tools/date.js';
 import type { ToolContext } from '../../../src/tools/types.js';
 import {
   listEvents,
