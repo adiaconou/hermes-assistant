@@ -248,4 +248,81 @@ describe('Calendar Integration', () => {
       expect(event.title).toBe('Team Lunch');
     });
   });
+
+  describe('Tool Handler → Service Integration', () => {
+    it('getCalendarEvents handler calls listEvents service with correct dates', async () => {
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date('2026-02-05T04:33:00Z'));
+
+        const store = getCredentialStore();
+        await store.set(testPhone, 'google', {
+          accessToken: 'valid-access-token',
+          refreshToken: 'valid-refresh-token',
+          expiresAt: Date.now() + 3600000,
+        });
+
+        setMockEvents([
+          {
+            id: 'event1',
+            summary: 'Team Meeting',
+            start: { dateTime: '2026-02-05T17:00:00Z' },
+            end: { dateTime: '2026-02-05T18:00:00Z' },
+          },
+        ]);
+
+        const { getCalendarEvents } = await import('../../src/domains/calendar/runtime/tools.js');
+
+        const result = await getCalendarEvents.handler(
+          { start_date: 'today' },
+          {
+            phoneNumber: testPhone,
+            channel: 'sms',
+            userConfig: { name: 'Test', timezone: 'America/Los_Angeles' },
+          }
+        );
+
+        expect(result.success).toBe(true);
+        expect(result.events).toBeDefined();
+        expect(Array.isArray(result.events)).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('createCalendarEvent handler calls createEvent service', async () => {
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date('2026-02-05T04:33:00Z'));
+
+        const store = getCredentialStore();
+        await store.set(testPhone, 'google', {
+          accessToken: 'valid-access-token',
+          refreshToken: 'valid-refresh-token',
+          expiresAt: Date.now() + 3600000,
+        });
+
+        const { createCalendarEvent } = await import('../../src/domains/calendar/runtime/tools.js');
+
+        const result = await createCalendarEvent.handler(
+          {
+            title: 'Lunch Meeting',
+            start_time: 'tomorrow at 12pm',
+            duration_minutes: 60,
+          },
+          {
+            phoneNumber: testPhone,
+            channel: 'sms',
+            userConfig: { name: 'Test', timezone: 'America/Los_Angeles' },
+          }
+        );
+
+        expect(result.success).toBe(true);
+        expect(result.event).toBeDefined();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+  });
 });

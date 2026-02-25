@@ -95,19 +95,25 @@ Tokens include:
 │   SMS → Message Handler → LLM (Claude) → Tools → Response → SMS    │
 │                                │                                    │
 │                                ▼                                    │
-│                    ┌──────────────────────┐                        │
-│                    │    NEW COMPONENTS    │                        │
-│                    ├──────────────────────┤                        │
-│                    │ • get_calendar_events│ ◄─── LLM Tools         │
-│                    │ • create_calendar_event                       │
-│                    ├──────────────────────┤                        │
-│                    │ • listEvents()       │ ◄─── Calendar Functions│
-│                    │ • createEvent()      │                        │
-│                    ├──────────────────────┤                        │
-│                    │ • CredentialStore    │ ◄─── Token Storage     │
-│                    ├──────────────────────┤                        │
-│                    │ • /auth/google/*     │ ◄─── OAuth Routes      │
-│                    └──────────────────────┘                        │
+│                    ┌──────────────────────────┐                    │
+│                    │    CALENDAR COMPONENTS    │                    │
+│                    ├──────────────────────────┤                    │
+│                    │ • get_calendar_events    │ ◄─── LLM Tools     │
+│                    │ • create_calendar_event  │                    │
+│                    │ • update_calendar_event  │                    │
+│                    │ • delete_calendar_event  │                    │
+│                    │ • resolve_date           │                    │
+│                    ├──────────────────────────┤                    │
+│                    │ • listEvents()           │ ◄─── Calendar Svc  │
+│                    │ • createEvent()          │                    │
+│                    │ • updateEvent()          │                    │
+│                    │ • deleteEvent()          │                    │
+│                    │ • getEvent()             │                    │
+│                    ├──────────────────────────┤                    │
+│                    │ • CredentialStore        │ ◄─── Token Storage │
+│                    ├──────────────────────────┤                    │
+│                    │ • /auth/google/*         │ ◄─── OAuth Routes  │
+│                    └──────────────────────────┘                    │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -265,11 +271,11 @@ router.get('/auth/google/callback', async (req, res) => {
 
 | | |
 |---|---|
-| **What** | Two functions: `listEvents(phoneNumber, start, end)` and `createEvent(phoneNumber, title, start, end, location)`. Handles token refresh automatically. |
+| **What** | Five functions: `listEvents`, `createEvent`, `updateEvent`, `deleteEvent`, `getEvent`. Handles token refresh automatically via `withRetry`. |
 | **Why** | Wraps Google Calendar API with our auth. Throws `AuthRequiredError` if no credentials exist, letting the tool handler respond with an auth link. |
-| **Success Criteria** | Can list events and create events for authenticated users. Automatically refreshes expired tokens. Throws clear error when user hasn't connected Google yet. |
+| **Success Criteria** | Full CRUD on events for authenticated users. Automatically refreshes expired tokens. Throws clear error when user hasn't connected Google yet. Supports both timed and all-day events. |
 
-**File**: `src/services/google/calendar.ts`
+**File**: `src/domains/calendar/providers/google-calendar.ts`
 
 Plain functions, no class. No FreeBusy API - Claude can derive free time from the event list.
 
@@ -368,13 +374,13 @@ Note: No `getFreeBusy()` - when user asks "when am I free?", we list events and 
 
 | | |
 |---|---|
-| **What** | Two Claude tools: `get_calendar_events` and `create_calendar_event`. Added to the existing TOOLS array in llm.ts. |
-| **Why** | Lets Claude access calendar on behalf of the user. When auth is missing, tools return `auth_required: true` with a link, which Claude relays to the user naturally. |
-| **Success Criteria** | "What's on my calendar today?" returns events (or auth prompt). "Schedule lunch tomorrow at noon" creates an event. Claude handles date interpretation and formats responses for SMS. |
+| **What** | Five Claude tools: `get_calendar_events`, `create_calendar_event`, `update_calendar_event`, `delete_calendar_event`, and `resolve_date`. Registered via the calendar agent's tool list. |
+| **Why** | Full CRUD lets Claude manage calendar events on behalf of the user. `resolve_date` lets the LLM verify date interpretation. When auth is missing, tools return `auth_required: true` with a link. All tools validate inputs at the boundary before calling the service layer. |
+| **Success Criteria** | "What's on my calendar today?" returns events. "Schedule lunch tomorrow at noon" creates an event. "Move my 3pm to 4pm" updates it. "Cancel my dentist" deletes it. All tools handle auth errors, Google API 404/403/429 errors, and invalid inputs gracefully. |
 
-**File**: `src/llm.ts` (additions to existing TOOLS array)
+**File**: `src/domains/calendar/runtime/tools.ts`
 
-Simplified: one tool for reading, one for creating. No `query_type` - just return events and let Claude figure out free time.
+Full CRUD plus date resolution. Tools accept natural language dates via the unified date resolver.
 
 ```typescript
 const CALENDAR_TOOLS: Tool[] = [

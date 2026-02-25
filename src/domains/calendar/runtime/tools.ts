@@ -12,6 +12,26 @@ import {
   isValidTimezone,
 } from '../../../services/date/resolver.js';
 
+/** Max event duration: 7 days in minutes */
+const MAX_DURATION_MINUTES = 7 * 24 * 60;
+
+/**
+ * Translate common Google Calendar API errors to user-friendly messages.
+ */
+function friendlyCalendarError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes('404') || message.includes('Not Found')) {
+    return 'Event not found. It may have been deleted.';
+  }
+  if (message.includes('403') || message.includes('Forbidden')) {
+    return 'Permission denied. You may not have access to this event.';
+  }
+  if (message.includes('Rate Limit') || message.includes('429')) {
+    return 'Too many requests. Please try again in a moment.';
+  }
+  return message;
+}
+
 export const getCalendarEvents: ToolDefinition = {
   tool: {
     name: 'get_calendar_events',
@@ -38,6 +58,14 @@ export const getCalendarEvents: ToolDefinition = {
       start_date: string;
       end_date?: string;
     };
+
+    // Boundary validation
+    if (typeof start_date !== 'string' || !start_date.trim()) {
+      return { success: false, error: 'start_date must be a non-empty string.' };
+    }
+    if (end_date !== undefined && (typeof end_date !== 'string' || !end_date.trim())) {
+      return { success: false, error: 'end_date must be a non-empty string when provided.' };
+    }
 
     try {
       const timezone = context.userConfig?.timezone;
@@ -110,12 +138,22 @@ export const getCalendarEvents: ToolDefinition = {
       console.log(JSON.stringify({
         level: 'info',
         message: 'Fetching calendar events',
+        phoneNumber,
+        messageId: context.messageId,
         startDate: startDate.toISOString(),
         endDate: endDate.toISOString(),
         timestamp: new Date().toISOString(),
       }));
 
       const events = await listEvents(phoneNumber, startDate, endDate);
+
+      console.log(JSON.stringify({
+        level: 'info',
+        message: 'Calendar events fetched',
+        phoneNumber,
+        eventCount: events.length,
+        timestamp: new Date().toISOString(),
+      }));
 
       return { success: true, events };
     } catch (error) {
@@ -125,12 +163,14 @@ export const getCalendarEvents: ToolDefinition = {
       console.error(JSON.stringify({
         level: 'error',
         message: 'Calendar query failed',
+        phoneNumber,
+        messageId: context.messageId,
         error: error instanceof Error ? error.message : String(error),
         timestamp: new Date().toISOString(),
       }));
       return {
         success: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: friendlyCalendarError(error),
       };
     }
   },
@@ -178,6 +218,25 @@ export const createCalendarEvent: ToolDefinition = {
       location?: string;
     };
 
+    // Boundary validation
+    if (typeof title !== 'string' || !title.trim()) {
+      return { success: false, error: 'title must be a non-empty string.' };
+    }
+    if (typeof start_time !== 'string' || !start_time.trim()) {
+      return { success: false, error: 'start_time must be a non-empty string.' };
+    }
+    if (end_time !== undefined && (typeof end_time !== 'string' || !end_time.trim())) {
+      return { success: false, error: 'end_time must be a non-empty string when provided.' };
+    }
+    if (duration_minutes !== undefined) {
+      if (typeof duration_minutes !== 'number' || duration_minutes <= 0) {
+        return { success: false, error: 'duration_minutes must be a positive number.' };
+      }
+      if (duration_minutes > MAX_DURATION_MINUTES) {
+        return { success: false, error: `duration_minutes cannot exceed ${MAX_DURATION_MINUTES} (7 days).` };
+      }
+    }
+
     try {
       const timezone = context.userConfig?.timezone;
       if (!timezone) {
@@ -192,34 +251,50 @@ export const createCalendarEvent: ToolDefinition = {
         return { success: false, error: `Could not parse start time: "${start_time}"` };
       }
 
-      const endResult = end_time
-        ? resolveDate(end_time, {
+      if (end_time) {
+        const endResult = resolveDate(end_time, {
           timezone,
           referenceDate: new Date(startResult.timestamp * 1000),
           forwardDate: true,
-        })
-        : null;
+        });
+        if (!endResult) {
+          return { success: false, error: `Could not parse end time: "${end_time}"` };
+        }
 
-      if (!endResult && !duration_minutes) {
+        const start = new Date(startResult.timestamp * 1000);
+        const end = new Date(endResult.timestamp * 1000);
+
+        if (end.getTime() <= start.getTime()) {
+          return { success: false, error: 'End time must be after start time.' };
+        }
+
+        console.log(JSON.stringify({
+          level: 'info',
+          message: 'Creating calendar event',
+          phoneNumber,
+          messageId: context.messageId,
+          title,
+          start: start.toISOString(),
+          end: end.toISOString(),
+          timestamp: new Date().toISOString(),
+        }));
+
+        const event = await createEvent(phoneNumber, title, start, end, location);
+        return { success: true, event };
+      }
+
+      if (!duration_minutes) {
         return { success: false, error: 'Provide end_time or duration_minutes.' };
       }
 
-      if (duration_minutes !== undefined && duration_minutes <= 0) {
-        return { success: false, error: 'duration_minutes must be greater than 0.' };
-      }
-
       const start = new Date(startResult.timestamp * 1000);
-      const end = endResult
-        ? new Date(endResult.timestamp * 1000)
-        : new Date(start.getTime() + duration_minutes! * 60000);
-
-      if (end.getTime() <= start.getTime()) {
-        return { success: false, error: 'End time must be after start time.' };
-      }
+      const end = new Date(start.getTime() + duration_minutes * 60000);
 
       console.log(JSON.stringify({
         level: 'info',
         message: 'Creating calendar event',
+        phoneNumber,
+        messageId: context.messageId,
         title,
         start: start.toISOString(),
         end: end.toISOString(),
@@ -236,12 +311,14 @@ export const createCalendarEvent: ToolDefinition = {
       console.error(JSON.stringify({
         level: 'error',
         message: 'Calendar event creation failed',
+        phoneNumber,
+        messageId: context.messageId,
         error: error instanceof Error ? error.message : String(error),
         timestamp: new Date().toISOString(),
       }));
       return {
         success: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: friendlyCalendarError(error),
       };
     }
   },
@@ -289,6 +366,14 @@ export const updateCalendarEvent: ToolDefinition = {
       location?: string;
     };
 
+    // Boundary validation
+    if (typeof event_id !== 'string' || !event_id.trim()) {
+      return { success: false, error: 'event_id must be a non-empty string.' };
+    }
+    if (title === undefined && start_time === undefined && end_time === undefined && location === undefined) {
+      return { success: false, error: 'Provide at least one field to update (title, start_time, end_time, or location).' };
+    }
+
     try {
       const updates: {
         title?: string;
@@ -327,6 +412,8 @@ export const updateCalendarEvent: ToolDefinition = {
       console.log(JSON.stringify({
         level: 'info',
         message: 'Updating calendar event',
+        phoneNumber,
+        messageId: context.messageId,
         eventId: event_id,
         hasTitle: !!title,
         hasStart: !!start_time,
@@ -346,12 +433,15 @@ export const updateCalendarEvent: ToolDefinition = {
       console.error(JSON.stringify({
         level: 'error',
         message: 'Calendar event update failed',
+        phoneNumber,
+        messageId: context.messageId,
+        eventId: event_id,
         error: error instanceof Error ? error.message : String(error),
         timestamp: new Date().toISOString(),
       }));
       return {
         success: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: friendlyCalendarError(error),
       };
     }
   },
@@ -377,10 +467,17 @@ export const deleteCalendarEvent: ToolDefinition = {
 
     const { event_id } = input as { event_id: string };
 
+    // Boundary validation
+    if (typeof event_id !== 'string' || !event_id.trim()) {
+      return { success: false, error: 'event_id must be a non-empty string.' };
+    }
+
     try {
       console.log(JSON.stringify({
         level: 'info',
         message: 'Deleting calendar event',
+        phoneNumber,
+        messageId: context.messageId,
         eventId: event_id,
         timestamp: new Date().toISOString(),
       }));
@@ -395,12 +492,15 @@ export const deleteCalendarEvent: ToolDefinition = {
       console.error(JSON.stringify({
         level: 'error',
         message: 'Calendar event deletion failed',
+        phoneNumber,
+        messageId: context.messageId,
+        eventId: event_id,
         error: error instanceof Error ? error.message : String(error),
         timestamp: new Date().toISOString(),
       }));
       return {
         success: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: friendlyCalendarError(error),
       };
     }
   },
@@ -440,6 +540,14 @@ Use this for debugging/verification. Calendar tools can accept natural language 
       timezone: string;
     };
 
+    // Boundary validation
+    if (typeof dateInput !== 'string' || !dateInput.trim()) {
+      return { success: false, error: 'input must be a non-empty string.' };
+    }
+    if (typeof timezone !== 'string' || !timezone.trim()) {
+      return { success: false, error: 'timezone must be a non-empty string.' };
+    }
+
     if (!isValidTimezone(timezone)) {
       return {
         success: false,
@@ -450,6 +558,17 @@ Use this for debugging/verification. Calendar tools can accept natural language 
     try {
       const range = resolveDateRange(dateInput, { timezone, referenceDate: new Date(), forwardDate: true });
       if (range) {
+        console.log(JSON.stringify({
+          level: 'info',
+          message: 'Date range resolved',
+          input: dateInput,
+          timezone,
+          start: range.start.iso,
+          end: range.end.iso,
+          granularity: range.granularity,
+          timestamp: new Date().toISOString(),
+        }));
+
         return {
           success: true,
           start: range.start.iso,
