@@ -31,11 +31,12 @@ function escapeXml(text: string): string {
  * Truncate text with ellipsis if it exceeds max length.
  * Logs a warning when truncation occurs so it's visible in debugging.
  */
-function truncateText(text: string, maxLength: number): string {
+function truncateText(text: string, maxLength: number, label?: string): string {
   if (text.length <= maxLength) return text;
   console.log(JSON.stringify({
     level: 'warn',
     message: 'Media analysis truncated',
+    label: label || 'unknown',
     originalLength: text.length,
     maxLength,
     timestamp: new Date().toISOString(),
@@ -81,7 +82,7 @@ export function formatMediaContext(
     const relativeTime = formatRelativeTime(message.createdAt);
 
     for (const item of metadata) {
-      const escapedAnalysis = escapeXml(truncateText(item.analysis, MAX_ANALYSIS_LENGTH));
+      const escapedAnalysis = escapeXml(truncateText(item.analysis, MAX_ANALYSIS_LENGTH, `msg:${message.id}`));
       const mimeType = item.mimeType || 'image/unknown';
       const driveFileId = item.driveFileId ? escapeXml(item.driveFileId) : '';
       const driveUrl = item.driveUrl ? escapeXml(item.driveUrl) : '';
@@ -132,7 +133,7 @@ export function formatCurrentMediaContext(summaries: CurrentMediaSummary[]): str
   const capped = summaries.slice(0, MAX_CURRENT_MEDIA_SUMMARIES);
 
   const entries = capped.map(s => {
-    const summary = escapeXml(truncateText(s.summary, MAX_CURRENT_MEDIA_SUMMARY_CHARS));
+    const summary = escapeXml(truncateText(s.summary, MAX_CURRENT_MEDIA_SUMMARY_CHARS, `attachment:${s.attachment_index}`));
     const categoryAttr = s.category ? ` category="${escapeXml(s.category)}"` : '';
     return `<attachment index="${s.attachment_index}" mime_type="${escapeXml(s.mime_type)}"${categoryAttr}>\n${summary}\n</attachment>`;
   });

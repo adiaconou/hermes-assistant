@@ -118,7 +118,16 @@ function parseReplanResponse(text: string): {
   const jsonText = jsonMatch ? jsonMatch[1].trim() : text.trim();
 
   try {
-    return JSON.parse(jsonText);
+    const parsed = JSON.parse(jsonText);
+    if (!parsed || !Array.isArray(parsed.steps)) {
+      console.warn(JSON.stringify({
+        level: 'warn',
+        message: 'Replan response missing valid steps array, using fallback',
+        timestamp: new Date().toISOString(),
+      }));
+    } else {
+      return parsed;
+    }
   } catch (error) {
     console.error(JSON.stringify({
       level: 'error',
@@ -127,19 +136,19 @@ function parseReplanResponse(text: string): {
       error: error instanceof Error ? error.message : String(error),
       timestamp: new Date().toISOString(),
     }));
-
-    // Return a memory-agent fallback so the user gets some response
-    return {
-      analysis: 'Could not parse replan response, falling back to memory-agent',
-      steps: [{
-        id: 'step_fallback',
-        targetType: 'agent',
-        agent: 'memory-agent',
-        task: 'Summarize what was accomplished so far and let the user know if anything failed.',
-        status: 'pending',
-      }],
-    };
   }
+
+  // Return a memory-agent fallback so the user gets some response
+  return {
+    analysis: 'Could not parse replan response, falling back to memory-agent',
+    steps: [{
+      id: 'step_fallback',
+      targetType: 'agent',
+      agent: 'memory-agent',
+      task: 'Summarize what was accomplished so far and let the user know if anything failed.',
+      status: 'pending',
+    }],
+  };
 }
 
 /**
@@ -251,6 +260,8 @@ export async function replan(
     if (parsedStep.status === 'completed') {
       continue;
     }
+    if (typeof parsedStep.agent !== 'string' || !parsedStep.agent) continue;
+    if (typeof parsedStep.task !== 'string' || !parsedStep.task) continue;
 
     // Check for duplicates
     const isDuplicate = newSteps.some(

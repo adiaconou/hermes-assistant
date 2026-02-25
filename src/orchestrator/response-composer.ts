@@ -77,6 +77,7 @@ Write ONLY the final text message. No JSON, no explanation.`;
  * Format step results for the composition prompt.
  */
 const MAX_RESULT_OUTPUT_CHARS = 2000;
+const MAX_TOTAL_RESULTS_CHARS = 6000;
 
 function formatStepResults(stepResults: Record<string, StepResult>): string {
   const entries = Object.entries(stepResults);
@@ -84,6 +85,11 @@ function formatStepResults(stepResults: Record<string, StepResult>): string {
   if (entries.length === 0) {
     return '(No step results)';
   }
+
+  // Calculate per-step budget when total would exceed limit
+  const perStepBudget = entries.length > 1
+    ? Math.min(MAX_RESULT_OUTPUT_CHARS, Math.floor(MAX_TOTAL_RESULTS_CHARS / entries.length))
+    : MAX_RESULT_OUTPUT_CHARS;
 
   return entries
     .map(([stepId, result]) => {
@@ -93,8 +99,8 @@ function formatStepResults(stepResults: Record<string, StepResult>): string {
           ? result.output
           : JSON.stringify(result.output)
         : '(no output)';
-      const output = rawOutput.length > MAX_RESULT_OUTPUT_CHARS
-        ? `${rawOutput.slice(0, MAX_RESULT_OUTPUT_CHARS)}...(truncated)`
+      const output = rawOutput.length > perStepBudget
+        ? `${rawOutput.slice(0, perStepBudget)}...(truncated)`
         : rawOutput;
       const error = result.error ? `\n    Error: ${result.error}` : '';
 

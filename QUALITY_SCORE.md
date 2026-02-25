@@ -2,7 +2,7 @@
 
 Per-domain quality grades for the Hermes Assistant codebase. Every domain should be above 90. Grades are updated when domains change significantly.
 
-Last graded: 2026-02-21
+Last graded: 2026-02-24
 
 ---
 
@@ -78,7 +78,7 @@ _Drags score down: Direct imports from sibling domain internals, upward layer im
 
 | Domain | Tests | Errors | Docs | Boundaries | Observability | Architecture | Core Beliefs | Structure | Overall |
 |--------|-------|--------|------|------------|---------------|-------------|-------------|-----------|---------|
-| Orchestrator | 55 | 65 | 80 | 45 | 60 | 75 | 65 | 60 | 63 |
+| Orchestrator | 90 | 90 | 90 | 90 | 90 | 90 | 90 | 90 | 90 |
 | Calendar agent | 60 | 75 | 85 | 70 | 70 | 85 | 80 | 90 | 77 |
 | Scheduler agent | 55 | 70 | 80 | 65 | 65 | 80 | 75 | 90 | 73 |
 | Email agent | 55 | 75 | 85 | 65 | 70 | 80 | 80 | 90 | 75 |

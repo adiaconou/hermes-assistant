@@ -115,11 +115,11 @@ The orchestrator is responsible for:
 
 | ID | Constraint | Value |
 |----|------------|-------|
-| **C-1** | Max plan execution time | 2 minutes |
+| **C-1** | Max plan execution time | 5 minutes |
 | **C-2** | Max replans per request | 3 |
 | **C-3** | Max total steps | 10 |
 | **C-4** | Max retries per step | 2 (configurable) |
-| **C-5** | Step timeout | 60 seconds per step |
+| **C-5** | Step timeout | 2 minutes per step |
 
 ### Acceptance Criteria
 
@@ -326,7 +326,7 @@ The executor processes steps in order, one at a time:
 ```
 executePlan(plan):
   1. For each step in order:
-     a. Check plan-level timeout (C-1: 2 min limit)
+     a. Check plan-level timeout (C-1: 5 min limit)
      b. Execute step with previous results as context
      c. Store result in context.stepResults
      d. If failed:
@@ -913,11 +913,11 @@ To prevent infinite replanning:
 ```typescript
 /** Constraints from requirements (C-1 through C-5) */
 const ORCHESTRATOR_LIMITS = {
-  maxExecutionTimeMs: 120_000, // C-1: 2 minute hard limit
+  maxExecutionTimeMs: 300_000, // C-1: 5 minute hard limit
   maxReplans: 3,               // C-2: Max replan attempts
   maxTotalSteps: 10,           // C-3: Max steps across all plan versions
   maxRetriesPerStep: 2,        // C-4: Default retries per step
-  stepTimeoutMs: 60_000,       // C-5: Per-step timeout
+  stepTimeoutMs: 120_000,      // C-5: Per-step timeout (2 minutes)
 };
 
 function canReplan(plan: ExecutionPlan): boolean {

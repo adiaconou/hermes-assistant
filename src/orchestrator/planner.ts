@@ -217,10 +217,17 @@ export async function createPlan(
   const agentDescriptions = formatAgentsForPrompt(registry);
   const historyText = formatHistoryForPrompt(context.conversationHistory);
 
-  // Build user context with memory
+  // Build user context with memory (cap at 4000 chars to prevent context overflow)
   let memoryXml = '';
   if (context.userFacts.length > 0) {
-    const factsText = context.userFacts.map(f => f.fact).join('. ') + '.';
+    const MAX_FACTS_CHARS = 4000;
+    let factsText = '';
+    for (const f of context.userFacts) {
+      const next = factsText ? factsText + '. ' + f.fact : f.fact;
+      if (next.length > MAX_FACTS_CHARS) break;
+      factsText = next;
+    }
+    factsText += '.';
     memoryXml = `\n  <facts>\n    ${factsText}\n  </facts>`;
   }
   const userContextText = buildUserContext(context.userConfig, memoryXml);
@@ -302,16 +309,23 @@ export async function createPlan(
     parsed = createFallbackPlan(context.userMessage, 'planning_parse_failed', context.userConfig?.timezone);
   }
 
+  // Validate parsed steps structure
+  if (!Array.isArray(parsed.steps) || parsed.steps.length === 0) {
+    parsed = createFallbackPlan(context.userMessage, 'invalid_steps_structure', context.userConfig?.timezone);
+  }
+
   // Convert to PlanSteps
-  const steps: PlanStep[] = parsed.steps.map((s, i) => ({
-    id: s.id || `step_${i + 1}`,
-    targetType: (s.targetType === 'skill' ? 'skill' : 'agent') as PlanStepTargetType,
-    agent: s.agent,
-    task: s.task,
-    status: 'pending' as const,
-    retryCount: 0,
-    maxRetries: 2,
-  }));
+  const steps: PlanStep[] = parsed.steps
+    .filter(s => typeof s.agent === 'string' && s.agent.length > 0 && typeof s.task === 'string' && s.task.length > 0)
+    .map((s, i) => ({
+      id: s.id || `step_${i + 1}`,
+      targetType: (s.targetType === 'skill' ? 'skill' : 'agent') as PlanStepTargetType,
+      agent: s.agent,
+      task: s.task.length > 500 ? s.task.slice(0, 500) + '...' : s.task,
+      status: 'pending' as const,
+      retryCount: 0,
+      maxRetries: 2,
+    }));
 
   // Enforce maximum total steps (C-3) for the initial plan as well
   const cappedSteps =

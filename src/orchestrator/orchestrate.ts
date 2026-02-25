@@ -99,6 +99,17 @@ export async function orchestrate(
   currentMediaSummaries?: CurrentMediaSummary[],
 ): Promise<OrchestratorResult> {
   const startTime = Date.now();
+
+  // Validate userMessage is non-empty
+  if (!userMessage || !userMessage.trim()) {
+    return {
+      success: false,
+      response: 'I received an empty message. Could you try again?',
+      stepResults: {},
+      error: 'Empty user message',
+    };
+  }
+
   const registry = createAgentRegistry();
 
   console.log(JSON.stringify({
@@ -161,7 +172,7 @@ export async function orchestrate(
     let currentStepIndex = 0;
 
     while (currentStepIndex < plan.steps.length) {
-      // Check plan-level timeout (C-1: 2 minute limit)
+      // Check plan-level timeout (C-1: 5 minute limit)
       const elapsed = Date.now() - startTime;
       if (elapsed > ORCHESTRATOR_LIMITS.maxExecutionTimeMs) {
         logPlanEvent('plan_timeout', plan, { elapsedMs: elapsed });
@@ -175,6 +186,22 @@ export async function orchestrate(
           error: `Execution timeout after ${Math.round(elapsed / 1000)}s`,
           plan,
         };
+      }
+
+      // Warn when approaching timeout (80% elapsed)
+      const timeoutWarningThreshold = ORCHESTRATOR_LIMITS.maxExecutionTimeMs * 0.8;
+      if (elapsed > timeoutWarningThreshold) {
+        const remainingMs = ORCHESTRATOR_LIMITS.maxExecutionTimeMs - elapsed;
+        const pendingSteps = plan.steps.filter(s => s.status === 'pending').length;
+        console.log(JSON.stringify({
+          level: 'warn',
+          message: 'Approaching execution timeout',
+          planId: plan.id,
+          elapsedMs: elapsed,
+          remainingMs,
+          pendingSteps,
+          timestamp: new Date().toISOString(),
+        }));
       }
 
       const step = plan.steps[currentStepIndex];
@@ -195,6 +222,7 @@ export async function orchestrate(
         'Retry count': step.retryCount,
       });
 
+      const stepStartTime = Date.now();
       const result = await executeStep(step, context, registry, logger);
 
       if (result.success) {
@@ -206,11 +234,12 @@ export async function orchestrate(
         logStepEvent('step_completed', plan, step.id, step.agent, {
           hasOutput: !!result.output,
           toolCallCount: result.toolCalls?.length || 0,
+          durationMs: Date.now() - stepStartTime,
         });
         logger.stepEvent('complete', step.id, step.agent, {
           Success: true,
           'Tool calls': result.toolCalls?.length || 0,
-          'Duration ms': result.tokenUsage ? undefined : undefined, // Duration tracked elsewhere
+          'Duration ms': Date.now() - stepStartTime,
         });
 
         // Check if agent signaled replanning
@@ -250,6 +279,7 @@ export async function orchestrate(
         logStepEvent('step_failed', plan, step.id, step.agent, {
           error: result.error,
           retryCount: step.retryCount,
+          durationMs: Date.now() - stepStartTime,
         });
         logger.stepEvent('failed', step.id, step.agent, {
           Error: result.error,

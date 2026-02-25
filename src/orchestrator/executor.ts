@@ -48,6 +48,20 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 /**
+ * Normalize a StepResult to ensure all required fields are defined.
+ * Guards against agents returning partial results.
+ */
+function normalizeStepResult(result: StepResult): StepResult {
+  return {
+    success: result.success,
+    output: result.output ?? null,
+    error: result.error,
+    toolCalls: result.toolCalls,
+    tokenUsage: result.tokenUsage,
+  };
+}
+
+/**
  * Execute a single plan step.
  *
  * @param step The step to execute
@@ -111,11 +125,11 @@ export async function executeStep(
         timestamp: new Date().toISOString(),
       }));
 
-      return {
+      return normalizeStepResult({
         success: result.success,
         output: result.output,
         error: result.error,
-      };
+      });
     } catch (error) {
       const durationMs = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -177,7 +191,7 @@ export async function executeStep(
       timestamp: new Date().toISOString(),
     }));
 
-    return result;
+    return normalizeStepResult(result);
   } catch (error) {
     const durationMs = Date.now() - startTime;
     const errorMessage = error instanceof Error ? error.message : String(error);
