@@ -370,6 +370,18 @@ The config file (`config/architecture-boundaries.json`) contains all rules:
 - `domainExternalRules` — which top-level modules domains may/may not import
 - `exceptions` — temporary allowlist for known violations with expiry dates
 
+### `npm run lint:boundaries` — Boundary Validation Guard
+
+**Script**: [check-boundary-validations.mjs](scripts/check-boundary-validations.mjs)
+**Exit code**: 0 = no boundary violations, 1 = violations found
+
+This script enforces mechanical boundary validation rules for high-risk ingress points:
+- Tool handlers that cast `input as ...` must use `validateInput(...)` or explicit manual type checks in the same handler.
+- Route-level `TwilioWebhookBody` casts must be paired with nearby field validation (or explicitly annotated `// boundary-ok`).
+- Google provider files cannot use non-null assertions on API response fields unless explicitly documented with `// boundary-ok`.
+
+The goal is to prevent regression on external-boundary validation while keeping architecture lint focused on import-direction boundaries.
+
 ### `npm run lint:agents` — Agent Registry Checker
 
 **Script**: [check-agent-registry.mjs](scripts/check-agent-registry.mjs)
@@ -398,6 +410,7 @@ Reads domain capabilities, agent metadata (descriptions, examples), tool definit
 | Command | What it enforces | Fails on |
 |---------|-----------------|----------|
 | `npm run lint:architecture` | Forward-only layer deps, cross-domain boundaries, domain↔external rules | Any import that violates the layer matrix, crosses domains without a declared `via`, or reaches forbidden top-level modules |
+| `npm run lint:boundaries` | Runtime boundary validation guardrails at external ingress points | Unvalidated tool input casts, unvalidated Twilio body casts, non-null API response assertions in Google providers |
 | `npm run lint:agents` | Agent registry ↔ domain capability consistency | Missing `capability.ts`, missing `runtime/agent.ts` or `runtime/prompt.ts` for agent domains, registry mismatches |
 | `npm run lint` | TypeScript/ESLint code quality | Standard lint errors |
 | `npm run build` | TypeScript compilation | Type errors, unresolved imports |

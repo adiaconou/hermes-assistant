@@ -6,7 +6,7 @@
  */
 
 import type { ToolDefinition } from '../../../tools/types.js';
-import { requirePhoneNumber } from '../../../tools/utils.js';
+import { requirePhoneNumber, validateInput } from '../../../tools/utils.js';
 import { getUserConfigStore } from '../../../services/user-config/index.js';
 
 export const toggleEmailWatcher: ToolDefinition = {
@@ -26,6 +26,12 @@ export const toggleEmailWatcher: ToolDefinition = {
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      enabled: { type: 'boolean', required: true },
+    });
+    if (validationError) return validationError;
+
     const { enabled } = input as { enabled: boolean };
 
     const userConfigStore = getUserConfigStore();

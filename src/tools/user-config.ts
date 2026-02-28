@@ -7,7 +7,7 @@ import { getUserConfigStore } from '../services/user-config/index.js';
 import { getMemoryStore } from '../domains/memory/runtime/index.js';
 import { getConversationStore } from '../services/conversation/index.js';
 import { isValidTimezone } from '../services/date/resolver.js';
-import { requirePhoneNumber } from './utils.js';
+import { requirePhoneNumber, validateInput } from './utils.js';
 
 export const setUserConfig: ToolDefinition = {
   tool: {
@@ -23,6 +23,13 @@ export const setUserConfig: ToolDefinition = {
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      name: { type: 'string', required: false, nonEmpty: true },
+      timezone: { type: 'string', required: false, nonEmpty: true },
+    });
+    if (validationError) return validationError;
+
     const { name, timezone } = input as { name?: string; timezone?: string };
 
     if (timezone && !isValidTimezone(timezone)) {
@@ -53,6 +60,12 @@ export const deleteUserData: ToolDefinition = {
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      confirm: { type: 'boolean', required: true },
+    });
+    if (validationError) return validationError;
+
     const { confirm } = input as { confirm: boolean };
 
     if (!confirm) {

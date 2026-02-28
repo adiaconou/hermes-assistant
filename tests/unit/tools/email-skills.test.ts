@@ -44,4 +44,16 @@ describe('email watcher toggle tool', () => {
     expect(result.email_watcher_enabled).toBe(false);
     expect(mockSet).toHaveBeenCalledWith('+1234567890', { emailWatcherEnabled: false });
   });
+
+  it('rejects missing enabled', async () => {
+    const result = await toggleEmailWatcher.handler({}, context);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('enabled');
+  });
+
+  it('rejects non-boolean enabled', async () => {
+    const result = await toggleEmailWatcher.handler({ enabled: 'false' }, context);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('enabled');
+  });
 });

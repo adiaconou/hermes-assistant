@@ -114,7 +114,9 @@ _Drags score down: Direct imports from sibling domain internals, upward layer im
 - Removed General agent row (fully retired in commit `02d6b54`, no code exists).
 - Shared `validateInput` utility added to `src/tools/utils.ts` for standardized LLM tool input validation.
 - Mechanical boundary lint added (`npm run lint:boundaries`) — 0 violations.
+- Post-implementation hardening (same day): `scripts/check-boundary-validations.mjs` now executes tool-handler checks and reports unvalidated handler casts.
 - All tool handlers across Scheduler, Email, Drive, Memory, and UI agents now call `validateInput` before `as` casts.
+- Global/shared tools now also enforce boundary checks: `src/tools/user-config.ts` and `src/domains/email-watcher/runtime/tools.ts`.
 - Twilio webhook (`src/routes/sms.ts`) validates `From` field and rejects malformed payloads with HTTP 400.
 - Anthropic JSON responses (`src/services/anthropic/classification.ts`, `src/orchestrator/planner.ts`) are shape-checked after `JSON.parse`.
 - Google API responses (`gmail.ts`, `google-drive.ts`, `google-sheets.ts`, `google-docs.ts`, `drive-folders.ts`) replaced all non-null assertions with explicit field checks.
@@ -126,7 +128,9 @@ _Drags score down: Direct imports from sibling domain internals, upward layer im
 - Email watcher classifier text capped at 10,000 chars for long attachment lists.
 - Verified with:
   - `tests/unit/tools/validation.test.ts` (23 tests)
+  - `tests/unit/tools/user-config.test.ts` (confirmation/type boundary tests, including `"confirm": "false"` case)
   - `tests/unit/tools/scheduler.test.ts`, `tests/unit/tools/email.test.ts`, `tests/unit/tools/memory.test.ts`, `tests/unit/tools/drive-handler.test.ts`, `tests/unit/tools/ui.test.ts` (boundary sections)
+  - `tests/unit/tools/email-skills.test.ts` (toggle_email_watcher boundary tests)
   - `tests/unit/tools/maps.test.ts` (boundary tests)
   - `tests/unit/scheduler/sqlite.test.ts` (row corruption tests)
   - `tests/unit/memory-sqlite.test.ts` (confidence clamping, corrupt row tests)

@@ -27,6 +27,7 @@ The user-visible proof: run `npm run test:unit` and see new boundary-focused tes
 - SQLite NOT NULL constraints prevent inserting NULL values for testing row-level boundary checks. Data-layer boundary tests use empty strings (which pass NOT NULL but are logically invalid) instead of NULLs to exercise the application-level validation. The database schema provides the first layer of defense; the application code provides defense-in-depth.
 - The boundary lint script initially found 24 violations across the codebase. All were resolved by Milestone 3.
 - The maps tool was the only tool that threw on invalid input instead of returning `{ success: false, error }`. Aligned it with the standard pattern in Milestone 5.
+- Post-completion review found the boundary lint script's tool-handler check was implemented but not executed, and two tool handlers (`delete_user_data`, `toggle_email_watcher`) still lacked runtime input validation. Added script wiring and validation/tests the same day.
 
 ## Decision Log
 
@@ -65,7 +66,7 @@ The user-visible proof: run `npm run test:unit` and see new boundary-focused tes
 All 15 active domains now have boundary validation scores of 90 in `QUALITY_SCORE.md`. The retired General agent row was removed.
 
 Final verification results:
-- `npm run test:unit` — 875 tests passed (65 test files)
+- `npm run test:unit` — 884 tests passed (66 test files)
 - `npm run test:integration` — 42 tests passed (5 test files)
 - `npm run lint` — clean
 - `npm run lint:boundaries` — 0 violations
@@ -74,8 +75,8 @@ Final verification results:
 
 Key deliverables:
 1. `validateInput` utility in `src/tools/utils.ts` — standardized tool input validation across all domains
-2. `scripts/check-boundary-validations.mjs` — mechanical boundary lint to prevent regressions
-3. 26 tool handlers across 5 domains now validate LLM inputs before `as` casts
+2. `scripts/check-boundary-validations.mjs` — mechanical boundary lint to prevent regressions (including active tool-handler checks)
+3. Tool handlers across Scheduler, Email, Drive, Memory, UI, plus shared `user-config` and `email-watcher` tools now validate LLM inputs before `as` casts
 4. All Google API non-null assertions replaced with explicit field checks
 5. Twilio webhook rejects malformed payloads with HTTP 400
 6. Anthropic JSON responses shape-checked after parsing

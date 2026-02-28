@@ -41,11 +41,6 @@ function relativePath(filePath) {
 
 // Rule 1: Tool handler files that use `input as {` without validateInput
 function checkToolHandlers() {
-  const toolPatterns = [
-    'src/domains/*/runtime/tools.ts',
-    'src/tools/*.ts',
-  ];
-
   const toolFiles = walkTs(SRC).filter(f => {
     const rel = path.relative(SRC, f);
     return (
@@ -58,33 +53,54 @@ function checkToolHandlers() {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
 
-    // Find handler functions and check for input as { without validateInput
     let inHandler = false;
     let handlerStart = 0;
-    let hasValidateInput = false;
-    let hasInputAs = false;
-    let inputAsLine = 0;
+    let handlerLines = [];
     let braceDepth = 0;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      const openBraces = (line.match(/\{/g) || []).length;
+      const closeBraces = (line.match(/\}/g) || []).length;
 
-      if (line.includes('handler:') && line.includes('async')) {
+      if (!inHandler && line.includes('handler:') && line.includes('async')) {
         inHandler = true;
         handlerStart = i + 1;
-        hasValidateInput = false;
-        hasInputAs = false;
-        braceDepth = 0;
+        handlerLines = [line];
+        braceDepth = openBraces - closeBraces;
+        continue;
       }
 
-      if (inHandler) {
-        if (line.includes('validateInput')) {
-          hasValidateInput = true;
+      if (!inHandler) {
+        continue;
+      }
+
+      handlerLines.push(line);
+      braceDepth += openBraces - closeBraces;
+
+      if (braceDepth <= 0) {
+        const block = handlerLines.join('\n');
+        const hasInputCast = /input\s+as(?:\s+\{|\s*$)/m.test(block);
+        if (hasInputCast && !block.includes('// boundary-ok')) {
+          const hasValidateInput = block.includes('validateInput(');
+          const hasManualTypeChecks =
+            /typeof\s+[a-zA-Z0-9_.]+\s*!==\s*'/.test(block) ||
+            /Array\.isArray\(/.test(block);
+
+          if (!hasValidateInput && !hasManualTypeChecks) {
+            const castLineOffset = handlerLines.findIndex((candidate) => /input\s+as/.test(candidate));
+            violations.push({
+              file: relativePath(filePath),
+              line: handlerStart + (castLineOffset >= 0 ? castLineOffset : 0),
+              rule: 'unvalidated-tool-input-cast',
+              detail: 'Tool handler casts input without validateInput or manual type checks',
+            });
+          }
         }
-        if (line.match(/input\s+as\s+\{/) || line.match(/input\s+as\s*$/)) {
-          hasInputAs = true;
-          inputAsLine = i + 1;
-        }
+
+        inHandler = false;
+        handlerLines = [];
+        braceDepth = 0;
       }
     }
   }
@@ -155,6 +171,7 @@ function checkTwilioWebhookCast() {
 }
 
 // Run all checks
+checkToolHandlers();
 checkNonNullAssertions();
 checkTwilioWebhookCast();
 
