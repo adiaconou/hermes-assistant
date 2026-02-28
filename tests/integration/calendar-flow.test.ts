@@ -18,8 +18,15 @@ import {
   getCredentialStore,
   resetCredentialStore
 } from '../../src/services/credentials/index.js';
+import * as googleAuthProvider from '../../src/domains/google-core/providers/auth.js';
+import { clearOAuthStateNonceStore } from '../../src/services/auth/oauth-state-nonce.js';
 
-import { generateAuthUrl, handleGoogleAuth, handleGoogleCallback } from '../../src/routes/auth.js';
+import {
+  generateAuthUrl,
+  handleGoogleAuth,
+  handleGoogleCallback,
+  resetAuthRateLimitMapForTests,
+} from '../../src/routes/auth.js';
 
 describe('Calendar Integration', () => {
   const testPhone = '+1234567890';
@@ -28,6 +35,8 @@ describe('Calendar Integration', () => {
     clearCalendarMocks();
     clearSentMessages();
     resetCredentialStore();
+    clearOAuthStateNonceStore();
+    resetAuthRateLimitMapForTests();
   });
 
   describe('OAuth Flow', () => {
@@ -86,6 +95,34 @@ describe('Calendar Integration', () => {
       expect(res.headers.location).toContain('accounts.google.com');
       expect(res.headers.location).toContain('oauth2');
     });
+
+    it('returns 429 when auth endpoint is rate limited by IP', async () => {
+      const authUrl = generateAuthUrl(testPhone);
+      const state = authUrl.split('state=')[1];
+      const ip = '203.0.113.10';
+
+      for (let i = 0; i < 30; i++) {
+        const { req, res } = createMockReqRes({
+          method: 'GET',
+          url: '/auth/google',
+          headers: { 'x-forwarded-for': ip },
+          query: { state },
+        });
+        handleGoogleAuth(req, res);
+        expect(res.statusCode).toBe(302);
+      }
+
+      const { req, res } = createMockReqRes({
+        method: 'GET',
+        url: '/auth/google',
+        headers: { 'x-forwarded-for': ip },
+        query: { state },
+      });
+      handleGoogleAuth(req, res);
+
+      expect(res.statusCode).toBe(429);
+      expect(res.text).toContain('Too many auth requests');
+    });
   });
 
   describe('Calendar Tool - Auth Required', () => {
@@ -109,6 +146,7 @@ describe('Calendar Integration', () => {
 
   describe('OAuth Callback', () => {
     it('stores credentials and returns success page for valid callback', async () => {
+      const clearCacheSpy = vi.spyOn(googleAuthProvider, 'clearClientCacheForPhone');
       const state = generateAuthUrl(testPhone).split('state=')[1];
 
       setMockTokenResponse({
@@ -131,10 +169,13 @@ describe('Calendar Integration', () => {
       const creds = await store.get(testPhone, 'google');
       expect(creds?.accessToken).toBe('callback-access-token');
       expect(creds?.refreshToken).toBe('callback-refresh-token');
+      expect(clearCacheSpy).toHaveBeenCalledWith(testPhone);
 
       await vi.waitFor(() => {
         expect(getSentMessages().length).toBeGreaterThan(0);
       }, { timeout: 5000 });
+
+      clearCacheSpy.mockRestore();
     });
 
     it('shows declined page when user denies consent', async () => {
@@ -187,6 +228,34 @@ describe('Calendar Integration', () => {
         refresh_token: 'oauth-refresh-token',
         expiry_date: Date.now() + 3600000,
       });
+    });
+
+    it('rejects replay of previously consumed OAuth state', async () => {
+      const state = generateAuthUrl(testPhone).split('state=')[1];
+
+      setMockTokenResponse({
+        access_token: 'callback-access-token',
+        refresh_token: 'callback-refresh-token',
+        expiry_date: Date.now() + 3600000,
+      });
+
+      const first = createMockReqRes({
+        method: 'GET',
+        url: '/auth/google/callback',
+        query: { code: 'auth-code-123', state },
+      });
+      await handleGoogleCallback(first.req, first.res);
+      expect(first.res.statusCode).toBe(200);
+
+      const second = createMockReqRes({
+        method: 'GET',
+        url: '/auth/google/callback',
+        query: { code: 'auth-code-456', state },
+      });
+      await handleGoogleCallback(second.req, second.res);
+
+      expect(second.res.statusCode).toBe(400);
+      expect(second.res.text).toContain('Invalid or expired');
     });
   });
 

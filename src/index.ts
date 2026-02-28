@@ -37,6 +37,8 @@ import { closeConversationStore } from './services/conversation/index.js';
 import { startMemoryProcessor, stopMemoryProcessor } from './domains/memory/service/processor.js';
 import { closeMemoryStore } from './domains/memory/runtime/index.js';
 import { startEmailWatcher, stopEmailWatcher } from './domains/email-watcher/runtime/index.js';
+import { closeTwilioWebhookIdempotencyStore } from './services/twilio/webhook-idempotency.js';
+import { closeOAuthStateNonceStore } from './services/auth/oauth-state-nonce.js';
 
 const app = express();
 
@@ -100,6 +102,8 @@ const server = app.listen(config.port, () => {
       message: 'Config check',
       hasCredentialEncryptionKey: !!config.credentials.encryptionKey,
       credentialEncryptionKeyLength: config.credentials.encryptionKey?.length ?? 0,
+      hasOAuthStateEncryptionKey: !!config.oauth.stateEncryptionKey,
+      oauthStateEncryptionKeyLength: config.oauth.stateEncryptionKey?.length ?? 0,
       hasGoogleClientId: !!config.google.clientId,
       hasGoogleClientSecret: !!config.google.clientSecret,
       googleRedirectUri: config.google.redirectUri,
@@ -107,6 +111,18 @@ const server = app.listen(config.port, () => {
       timestamp: new Date().toISOString(),
     })
   );
+
+  if (config.nodeEnv === 'development' && process.env.SKIP_TWILIO_VALIDATION === 'true') {
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        message: 'Twilio signature validation bypass is ACTIVE (development only)',
+        baseUrl: config.baseUrl,
+        port: config.port,
+        timestamp: new Date().toISOString(),
+      })
+    );
+  }
 
   // Start the scheduler poller after server is ready
   poller.start();
@@ -145,6 +161,8 @@ async function shutdown(signal: string) {
   // Then close database connections
   closeConversationStore();
   closeMemoryStore();
+  closeTwilioWebhookIdempotencyStore();
+  closeOAuthStateNonceStore();
   db.close();
 
   const forceExitTimer = setTimeout(() => {

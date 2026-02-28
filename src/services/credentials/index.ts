@@ -43,8 +43,9 @@ export function getCredentialStore(): CredentialStore {
       instance = new MemoryCredentialStore();
       break;
     default:
-      // Default to memory for safety (e.g., in tests without config)
-      instance = new MemoryCredentialStore();
+      throw new Error(
+        `Invalid CREDENTIAL_STORE_PROVIDER: ${config.credentials.provider}. Expected 'sqlite' or 'memory'.`
+      );
   }
 
   return instance;

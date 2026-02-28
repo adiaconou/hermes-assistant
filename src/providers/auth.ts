@@ -3,6 +3,7 @@
 
 import crypto from 'crypto';
 import config from '../config.js';
+import { registerOAuthStateNonce } from '../services/auth/oauth-state-nonce.js';
 
 /**
  * Error thrown when user needs to authenticate with a provider.
@@ -22,35 +23,47 @@ interface OAuthStatePayload {
   phone: string;
   channel: MessageChannel;
   exp: number;
+  nonce: string;
 }
 
 // State encryption constants
 const STATE_ALGORITHM = 'aes-256-gcm';
 const STATE_IV_LENGTH = 12;
 const STATE_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
+const STATE_KEY_HEX_LENGTH = 64;
 
 /** Decrypted OAuth state */
 export interface DecryptedState {
   phone: string;
   channel: MessageChannel;
+  nonce: string;
+}
+
+function getStateKeyBuffer(): Buffer | null {
+  const key = config.oauth.stateEncryptionKey;
+  if (!key || key.length !== STATE_KEY_HEX_LENGTH || !/^[0-9a-fA-F]+$/.test(key)) {
+    return null;
+  }
+  const keyBuffer = Buffer.from(key, 'hex');
+  return keyBuffer.length === 32 ? keyBuffer : null;
 }
 
 /**
  * Encrypt state parameter containing phone number, channel, and expiry.
  */
 export function encryptState(phoneNumber: string, channel: MessageChannel = 'sms'): string {
-  const key = config.credentials.encryptionKey;
-  if (!key) {
-    throw new Error('CREDENTIAL_ENCRYPTION_KEY required for OAuth state');
+  const keyBuffer = getStateKeyBuffer();
+  if (!keyBuffer) {
+    throw new Error('OAUTH_STATE_ENCRYPTION_KEY must be a 64-character hex string');
   }
 
   const payload: OAuthStatePayload = {
     phone: phoneNumber,
     channel,
     exp: Date.now() + STATE_EXPIRY_MS,
+    nonce: crypto.randomBytes(16).toString('base64url'),
   };
 
-  const keyBuffer = Buffer.from(key, 'hex');
   const iv = crypto.randomBytes(STATE_IV_LENGTH);
   const cipher = crypto.createCipheriv(STATE_ALGORITHM, keyBuffer, iv);
 
@@ -62,6 +75,7 @@ export function encryptState(phoneNumber: string, channel: MessageChannel = 'sms
 
   // Combine iv + authTag + encrypted into URL-safe base64
   const combined = Buffer.concat([iv, authTag, encrypted]);
+  registerOAuthStateNonce(payload.nonce, payload.exp);
   return combined.toString('base64url');
 }
 
@@ -70,8 +84,8 @@ export function encryptState(phoneNumber: string, channel: MessageChannel = 'sms
  * @returns Decrypted state with phone and channel if valid, null if invalid/expired
  */
 export function decryptState(state: string): DecryptedState | null {
-  const key = config.credentials.encryptionKey;
-  if (!key) {
+  const keyBuffer = getStateKeyBuffer();
+  if (!keyBuffer) {
     return null;
   }
 
@@ -81,7 +95,6 @@ export function decryptState(state: string): DecryptedState | null {
     const authTag = combined.subarray(STATE_IV_LENGTH, STATE_IV_LENGTH + 16);
     const encrypted = combined.subarray(STATE_IV_LENGTH + 16);
 
-    const keyBuffer = Buffer.from(key, 'hex');
     const decipher = crypto.createDecipheriv(STATE_ALGORITHM, keyBuffer, iv);
     decipher.setAuthTag(authTag);
 
@@ -91,6 +104,16 @@ export function decryptState(state: string): DecryptedState | null {
     ]);
     const decrypted = decryptedBuffer.toString('utf8');
     const payload = JSON.parse(decrypted) as OAuthStatePayload;
+
+    if (
+      typeof payload.phone !== 'string' ||
+      (payload.channel !== 'sms' && payload.channel !== 'whatsapp') ||
+      typeof payload.exp !== 'number' ||
+      typeof payload.nonce !== 'string' ||
+      payload.nonce.length === 0
+    ) {
+      return null;
+    }
 
     // Check expiry
     if (payload.exp < Date.now()) {
@@ -105,6 +128,7 @@ export function decryptState(state: string): DecryptedState | null {
     return {
       phone: payload.phone,
       channel: payload.channel || 'sms',
+      nonce: payload.nonce,
     };
   } catch (error) {
     console.log(JSON.stringify({

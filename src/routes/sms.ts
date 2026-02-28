@@ -30,6 +30,7 @@ import { getConversationStore } from '../services/conversation/index.js';
 import config from '../config.js';
 import { detectChannel, normalize, sanitize, type MessageChannel } from '../utils/phone.js';
 import { startTypingIndicator } from '../services/twilio/typing-indicator.js';
+import { registerInboundMessageSid } from '../services/twilio/webhook-idempotency.js';
 
 // Re-export for backwards compatibility
 export type { MediaAttachment } from '../types/media.js';
@@ -420,6 +421,20 @@ export async function handleSmsWebhook(req: Request, res: Response): Promise<voi
 
   const channel = detectChannel(From || '');
   const sender = normalize(From || '');
+  const inboundMessageSid = getInboundMessageSid(webhookBody);
+
+  if (inboundMessageSid && !registerInboundMessageSid(inboundMessageSid)) {
+    console.log(JSON.stringify({
+      level: 'info',
+      message: 'Duplicate Twilio webhook ignored',
+      messageSid: inboundMessageSid,
+      from: sanitize(sender),
+      timestamp: new Date().toISOString(),
+    }));
+    res.type('text/xml');
+    res.send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+    return;
+  }
 
   // Per-phone rate limiting
   if (!checkRateLimit(sender)) {
@@ -473,7 +488,6 @@ export async function handleSmsWebhook(req: Request, res: Response): Promise<voi
       // Twilio's typing indicator has a hard 25-second expiry per messageId.
       // To keep dots alive, we send an interim message every ~20s and fire
       // a new indicator from that message's SID.
-      const inboundMessageSid = getInboundMessageSid(webhookBody);
       const stopTyping = inboundMessageSid
         ? startTypingIndicator(inboundMessageSid, async () => {
             const sid = await sendWhatsApp(sender, '...');

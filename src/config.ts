@@ -48,6 +48,16 @@ function dbPath(envKey: string, prodPath: string, devPath: string): string {
   return process.env[envKey] || (process.env.NODE_ENV === 'production' ? prodPath : devPath);
 }
 
+/** Return true when the URL points to localhost/loopback. */
+function isLocalBaseUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '::1';
+  } catch {
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Config object
 // ---------------------------------------------------------------------------
@@ -80,6 +90,11 @@ const config = {
     sharedDriveId: process.env.GOOGLE_SHARED_DRIVE_ID,
     geminiApiKey: process.env.GEMINI_API_KEY,
     geminiModel: optional('GEMINI_MODEL', 'gemini-2.5-flash'),
+  },
+
+  /** OAuth state encryption (separate from stored credential encryption). */
+  oauth: {
+    stateEncryptionKey: required('OAUTH_STATE_ENCRYPTION_KEY'),
   },
 
   /** Credential storage configuration */
@@ -185,6 +200,41 @@ export function validateConfig(): void {
     errors.push('CREDENTIAL_ENCRYPTION_KEY is required');
   } else if (!/^[0-9a-fA-F]{64}$/.test(config.credentials.encryptionKey)) {
     errors.push('CREDENTIAL_ENCRYPTION_KEY must be a 64-character hex string (32 bytes)');
+  }
+
+  if (!config.oauth.stateEncryptionKey) {
+    errors.push('OAUTH_STATE_ENCRYPTION_KEY is required');
+  } else if (!/^[0-9a-fA-F]{64}$/.test(config.oauth.stateEncryptionKey)) {
+    errors.push('OAUTH_STATE_ENCRYPTION_KEY must be a 64-character hex string (32 bytes)');
+  }
+
+  if (
+    config.credentials.encryptionKey &&
+    config.oauth.stateEncryptionKey &&
+    config.credentials.encryptionKey === config.oauth.stateEncryptionKey
+  ) {
+    errors.push('OAUTH_STATE_ENCRYPTION_KEY must be different from CREDENTIAL_ENCRYPTION_KEY');
+  }
+
+  if (!['sqlite', 'memory'].includes(config.credentials.provider)) {
+    errors.push(
+      `CREDENTIAL_STORE_PROVIDER must be 'sqlite' or 'memory', got ${config.credentials.provider}`
+    );
+  }
+
+  const skipTwilioValidation = process.env.SKIP_TWILIO_VALIDATION === 'true';
+  if (skipTwilioValidation && config.nodeEnv !== 'development') {
+    errors.push('SKIP_TWILIO_VALIDATION=true is only allowed when NODE_ENV=development');
+  }
+  if (
+    skipTwilioValidation &&
+    config.nodeEnv === 'development' &&
+    !isLocalBaseUrl(config.baseUrl) &&
+    config.port !== 3000
+  ) {
+    errors.push(
+      'Refusing SKIP_TWILIO_VALIDATION=true: use localhost BASE_URL or PORT=3000 for local development only'
+    );
   }
 
   // Numeric bounds

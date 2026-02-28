@@ -41,6 +41,7 @@ import { getSentMessages, clearSentMessages } from '../mocks/twilio.js';
 import { getExpectedTwilioSignature } from 'twilio/lib/webhooks/webhooks.js';
 import { executeWithTools } from '../../src/executor/tool-executor.js';
 import { setMemoryExecuteWithTools } from '../../src/domains/memory/providers/executor.js';
+import { clearTwilioWebhookIdempotencyStore } from '../../src/services/twilio/webhook-idempotency.js';
 
 // Wire the memory-agent provider so the orchestrator can route to it.
 // In production this happens in src/index.ts; tests must do it explicitly.
@@ -60,6 +61,7 @@ describe('POST /webhook/sms', () => {
     clearMockState();
     clearSentMessages();
     clearTypingIndicatorCalls();
+    clearTwilioWebhookIdempotencyStore();
   });
 
   describe('basic response flow', () => {
@@ -425,6 +427,34 @@ describe('POST /webhook/sms', () => {
       expect(res.statusCode).toBe(403);
       expect(res.text).toBe('Forbidden');
       expect(getSentMessages()).toHaveLength(0);
+    });
+
+    it('ignores duplicate webhooks with the same MessageSid', async () => {
+      setMockResponses([
+        createTextResponse('{"needsAsyncWork": false, "immediateResponse": "Hello!"}'),
+      ]);
+
+      const payload = createSmsPayload('Hi duplicate');
+
+      const first = createMockReqRes({
+        method: 'POST',
+        url: '/webhook/sms',
+        headers: { 'x-twilio-signature': signPayload(payload) },
+        body: payload,
+      });
+      await handleSmsWebhook(first.req, first.res);
+      expect(first.res.statusCode).toBe(200);
+
+      const second = createMockReqRes({
+        method: 'POST',
+        url: '/webhook/sms',
+        headers: { 'x-twilio-signature': signPayload(payload) },
+        body: payload,
+      });
+      await handleSmsWebhook(second.req, second.res);
+
+      expect(second.res.statusCode).toBe(200);
+      expect(second.res.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
     });
 
     it('returns 429 after exceeding per-sender rate limit window', async () => {

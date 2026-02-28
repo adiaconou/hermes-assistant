@@ -7,12 +7,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // Mock config before importing the module
 vi.mock('../../src/config.js', () => ({
   default: {
+    nodeEnv: 'test',
     baseUrl: 'https://example.com',
-    credentials: {
+    oauth: {
       // Valid 64-character hex string (32 bytes)
-      encryptionKey: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      stateEncryptionKey: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      },
     },
-  },
 }));
 
 // Import after mocking

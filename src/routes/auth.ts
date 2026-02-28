@@ -17,6 +17,8 @@ import { getCredentialStore } from '../services/credentials/index.js';
 import { sendSms, sendWhatsApp } from '../twilio.js';
 import { addMessage } from '../conversation.js';
 import { initEmailWatcherState } from '../domains/email-watcher/service/skills.js';
+import { clearClientCacheForPhone } from '../domains/google-core/providers/auth.js';
+import { hasActiveOAuthStateNonce, consumeOAuthStateNonce } from '../services/auth/oauth-state-nonce.js';
 import { encryptState, decryptState, generateAuthUrl } from '../providers/auth.js';
 import type { DecryptedState } from '../providers/auth.js';
 
@@ -24,6 +26,57 @@ import type { DecryptedState } from '../providers/auth.js';
 export { encryptState, decryptState, generateAuthUrl } from '../providers/auth.js';
 
 const router = Router();
+
+const AUTH_RATE_LIMIT_WINDOW_MS = 60_000;
+const AUTH_RATE_LIMIT_MAX = 30;
+const authRateLimitMap = new Map<string, number[]>();
+
+function getRequestIp(req: Request): string | null {
+  const forwarded = req.headers['x-forwarded-for'];
+  const headerValue = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  if (headerValue) {
+    const first = headerValue.split(',')[0]?.trim();
+    if (first) return first;
+  }
+
+  if (typeof req.ip === 'string' && req.ip.trim().length > 0) {
+    return req.ip.trim();
+  }
+
+  const remote = req.socket?.remoteAddress;
+  if (typeof remote === 'string' && remote.trim().length > 0) {
+    return remote.trim();
+  }
+
+  return null;
+}
+
+function checkAuthRateLimit(req: Request): boolean {
+  const key = getRequestIp(req);
+  if (!key) {
+    return true;
+  }
+
+  const now = Date.now();
+  const timestamps = authRateLimitMap.get(key) || [];
+  const fresh = timestamps.filter(t => now - t < AUTH_RATE_LIMIT_WINDOW_MS);
+  if (fresh.length === 0) {
+    authRateLimitMap.delete(key);
+  }
+
+  if (fresh.length >= AUTH_RATE_LIMIT_MAX) {
+    authRateLimitMap.set(key, fresh);
+    return false;
+  }
+
+  fresh.push(now);
+  authRateLimitMap.set(key, fresh);
+  return true;
+}
+
+export function resetAuthRateLimitMapForTests(): void {
+  authRateLimitMap.clear();
+}
 
 // Google API scopes - Calendar, Gmail, and Google Workspace
 const SCOPES = [
@@ -78,6 +131,11 @@ async function continueAfterAuth(decryptedState: DecryptedState): Promise<void> 
  * Initiates OAuth flow - redirects to Google consent screen.
  */
 export function handleGoogleAuth(req: Request, res: Response): void {
+  if (!checkAuthRateLimit(req)) {
+    res.status(429).send(errorHtml('Too many auth requests. Please try again in a minute.'));
+    return;
+  }
+
   const state = req.query.state as string | undefined;
 
   if (!state) {
@@ -88,6 +146,11 @@ export function handleGoogleAuth(req: Request, res: Response): void {
   // Validate state before redirecting (catches expired/invalid early)
   const decrypted = decryptState(state);
   if (!decrypted) {
+    res.status(400).send(errorHtml('⏰ Invalid or expired link. Please request a new one.'));
+    return;
+  }
+
+  if (!hasActiveOAuthStateNonce(decrypted.nonce)) {
     res.status(400).send(errorHtml('⏰ Invalid or expired link. Please request a new one.'));
     return;
   }
@@ -110,6 +173,11 @@ router.get('/auth/google', handleGoogleAuth);
  * Handles OAuth callback from Google.
  */
 export async function handleGoogleCallback(req: Request, res: Response): Promise<void> {
+  if (!checkAuthRateLimit(req)) {
+    res.status(429).send(errorHtml('Too many auth requests. Please try again in a minute.'));
+    return;
+  }
+
   const { code, state, error } = req.query as {
     code?: string;
     state?: string;
@@ -140,6 +208,11 @@ export async function handleGoogleCallback(req: Request, res: Response): Promise
     return;
   }
 
+  if (!consumeOAuthStateNonce(decrypted.nonce)) {
+    res.status(400).send(errorHtml('⏰ Invalid or expired link. Please request a new one.'));
+    return;
+  }
+
   try {
     // Exchange code for tokens
     const oauth2Client = getOAuth2Client();
@@ -156,6 +229,7 @@ export async function handleGoogleCallback(req: Request, res: Response): Promise
       refreshToken: tokens.refresh_token,
       expiresAt: tokens.expiry_date || Date.now() + 3600000,
     });
+    clearClientCacheForPhone(decrypted.phone);
 
     // Initialize email watcher for new users
     await initEmailWatcherState(decrypted.phone);

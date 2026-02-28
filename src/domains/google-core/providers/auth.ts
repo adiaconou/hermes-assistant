@@ -32,6 +32,13 @@ export function clearClientCache(): void {
 }
 
 /**
+ * Clear a single user's cached OAuth2 client.
+ */
+export function clearClientCacheForPhone(phoneNumber: string): void {
+  clientCache.delete(phoneNumber);
+}
+
+/**
  * Create a bare OAuth2 client (no credentials set).
  */
 export function createOAuth2Client(): OAuth2Client {

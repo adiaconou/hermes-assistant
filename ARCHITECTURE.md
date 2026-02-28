@@ -442,6 +442,8 @@ The classifier (`src/services/anthropic/classification.ts`) provides a fast ack 
 ```
 User ──WhatsApp──▶ Twilio ──POST──▶ /webhook/sms
                                          │
+                              Validate Twilio signature
+                              Deduplicate by MessageSid
                               Store user message
                               Return empty TwiML
                               Start typing indicator (dots)
@@ -481,6 +483,8 @@ User ──WhatsApp──▶ Twilio ──POST──▶ /webhook/sms
 ```
 User ──SMS──▶ Twilio ──POST──▶ /webhook/sms
                                     │
+                         Validate Twilio signature
+                         Deduplicate by MessageSid
                          classifyMessage() → ack text via TwiML
                          Store user message + ack
                                     │
@@ -882,6 +886,10 @@ On Railway, databases are stored at `/app/data/` via a persistent volume mount (
 | Drive | `drive.file` | Upload files, manage Hermes folder |
 | Sheets | `spreadsheets` | Create and update spreadsheets |
 | Docs | `documents` | Create and update documents |
+
+OAuth route hardening:
+- `state` payload is encrypted and includes a one-time nonce consumed on callback
+- `/auth/*` endpoints apply per-IP rate limiting
 
 ### Google Gemini
 

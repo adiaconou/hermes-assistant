@@ -19,6 +19,7 @@ process.env.UI_SHORTENER_PROVIDER = 'memory';
 process.env.UI_LOCAL_STORAGE_PATH = './data/test-pages';
 process.env.CREDENTIAL_STORE_PROVIDER = 'memory';
 process.env.CREDENTIAL_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+process.env.OAUTH_STATE_ENCRYPTION_KEY = 'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
 process.env.GOOGLE_CLIENT_ID = 'test-client-id';
 process.env.GOOGLE_CLIENT_SECRET = 'test-client-secret';
 process.env.GOOGLE_REDIRECT_URI = 'http://localhost:3000/auth/google/callback';

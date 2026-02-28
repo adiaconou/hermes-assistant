@@ -18,6 +18,13 @@ export interface TwilioWebhookPayload {
   NumSegments?: string;
 }
 
+let sidCounter = 0;
+
+function nextMessageSid(): string {
+  sidCounter += 1;
+  return `SM${Date.now()}${sidCounter}`;
+}
+
 /**
  * Create a basic SMS webhook payload.
  */
@@ -27,7 +34,7 @@ export function createSmsPayload(
   to = '+15555550000'
 ): TwilioWebhookPayload {
   return {
-    MessageSid: `SM${Date.now()}`,
+    MessageSid: nextMessageSid(),
     AccountSid: 'test-account-sid',
     From: from,
     To: to,
@@ -47,7 +54,7 @@ export function createWhatsAppPayload(
   to = '+15555550000'
 ): TwilioWebhookPayload {
   return {
-    MessageSid: `SM${Date.now()}`,
+    MessageSid: nextMessageSid(),
     AccountSid: 'test-account-sid',
     From: `whatsapp:${from}`,
     To: `whatsapp:${to}`,

@@ -30,9 +30,15 @@ Security practices, credential management, and input validation for Hermes Assis
 
 ### Twilio Webhooks
 
-- **Signature validation**: Currently missing (T-02) — unauthenticated webhook is a cost and security risk
+- **Signature validation**: Enforced on `/webhook/sms` using `X-Twilio-Signature` + `TWILIO_AUTH_TOKEN`
+- **Replay protection**: Inbound `MessageSid` values are recorded to ignore duplicate deliveries/replays
 - All webhook payload fields should be treated as untrusted external input
 - Phone numbers are used as user identity — no additional authentication layer
+
+### OAuth Routes
+
+- OAuth `state` values are encrypted and **single-use** (nonce consumed on callback)
+- `/auth/*` endpoints are rate-limited per client IP
 
 ### User SMS Content
 
@@ -70,6 +76,7 @@ Generated UI pages are served with CSP headers:
 | `TWILIO_AUTH_TOKEN` | Twilio webhook signature validation |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth |
 | `CREDENTIAL_ENCRYPTION_KEY` | AES-256-GCM encryption key |
+| `OAUTH_STATE_ENCRYPTION_KEY` | OAuth state encryption key |
 | `GEMINI_API_KEY` | Gemini Vision API |
 
 ### Not Sensitive

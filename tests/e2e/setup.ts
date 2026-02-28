@@ -39,6 +39,7 @@ process.env.TWILIO_AUTH_TOKEN = 'test-auth-token';
 process.env.TWILIO_PHONE_NUMBER = '+15555550000';
 process.env.BASE_URL = 'http://localhost:3000';
 process.env.CREDENTIAL_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+process.env.OAUTH_STATE_ENCRYPTION_KEY = 'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
 process.env.GOOGLE_CLIENT_ID = 'test-client-id';
 process.env.GOOGLE_CLIENT_SECRET = 'test-client-secret';
 
