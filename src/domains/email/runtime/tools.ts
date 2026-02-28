@@ -3,7 +3,7 @@
  */
 
 import type { ToolDefinition } from '../../../tools/types.js';
-import { requirePhoneNumber, handleAuthError } from '../../../tools/utils.js';
+import { requirePhoneNumber, handleAuthError, validateInput } from '../../../tools/utils.js';
 import { listEmails, getEmail as getEmailService, getThread as getThreadService } from '../providers/gmail.js';
 
 export const getEmails: ToolDefinition = {
@@ -44,6 +44,14 @@ Combine operators: "from:hotel newer_than:1y subject:confirmation"`,
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      query: { type: 'string', required: false },
+      max_results: { type: 'number', required: false },
+      include_spam: { type: 'boolean', required: false },
+    });
+    if (validationError) return validationError;
+
     const { query: userQuery, max_results = 10, include_spam = false } = input as {
       query?: string;
       max_results?: number;
@@ -92,6 +100,12 @@ export const readEmail: ToolDefinition = {
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      id: { type: 'string', required: true },
+    });
+    if (validationError) return validationError;
+
     const { id } = input as { id: string };
 
     try {
@@ -131,6 +145,12 @@ This is useful for:
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      thread_id: { type: 'string', required: true },
+    });
+    if (validationError) return validationError;
+
     const { thread_id } = input as { thread_id: string };
 
     try {

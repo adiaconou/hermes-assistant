@@ -3,7 +3,7 @@
  */
 
 import type { ToolDefinition } from '../../../tools/types.js';
-import { requirePhoneNumber } from '../../../tools/utils.js';
+import { requirePhoneNumber, validateInput } from '../../../tools/utils.js';
 import { getMemoryStore } from './index.js';
 
 /**
@@ -30,11 +30,14 @@ export const extractMemory: ToolDefinition = {
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
-    const { fact, category } = input as { fact: string; category?: string };
 
-    if (!fact || typeof fact !== 'string') {
-      return { success: false, error: 'fact is required' };
-    }
+    const validationError = validateInput(input, {
+      fact: { type: 'string', required: true },
+      category: { type: 'string', required: false },
+    });
+    if (validationError) return validationError;
+
+    const { fact, category } = input as { fact: string; category?: string };
 
     const store = getMemoryStore();
     const now = Date.now();
@@ -71,6 +74,12 @@ export const listMemories: ToolDefinition = {
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      limit: { type: 'number', required: false },
+    });
+    if (validationError) return validationError;
+
     const { limit = 20 } = input as { limit?: number };
 
     const store = getMemoryStore();
@@ -101,6 +110,14 @@ export const updateMemory: ToolDefinition = {
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      id: { type: 'string', required: true },
+      fact: { type: 'string', required: true },
+      category: { type: 'string', required: false },
+    });
+    if (validationError) return validationError;
+
     const { id, fact, category } = input as { id: string; fact: string; category?: string };
 
     const store = getMemoryStore();
@@ -131,6 +148,12 @@ export const removeMemory: ToolDefinition = {
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      id: { type: 'string', required: true },
+    });
+    if (validationError) return validationError;
+
     const { id } = input as { id: string };
 
     const store = getMemoryStore();

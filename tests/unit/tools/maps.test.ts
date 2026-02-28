@@ -193,9 +193,21 @@ describe('maps tool', () => {
     });
 
     it('should reject empty address input', async () => {
-      await expect(
-        formatMapsLink.handler({ address: '   ' }, mockContext)
-      ).rejects.toThrow('Address is required');
+      const result = await formatMapsLink.handler({ address: '   ' }, mockContext);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('address');
+    });
+
+    it('should reject missing address input', async () => {
+      const result = await formatMapsLink.handler({}, mockContext);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('address');
+    });
+
+    it('should reject non-string address input', async () => {
+      const result = await formatMapsLink.handler({ address: 123 }, mockContext);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('address');
     });
   });
 });

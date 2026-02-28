@@ -26,8 +26,12 @@ export async function createSpreadsheet(
     }), phoneNumber
   );
 
-  const spreadsheetId = response.data.spreadsheetId!;
-  const spreadsheetUrl = response.data.spreadsheetUrl!;
+  // Boundary: require spreadsheetId and URL from API response
+  if (!response.data.spreadsheetId || !response.data.spreadsheetUrl) {
+    throw new Error('Sheets API returned spreadsheet without required id or url');
+  }
+  const spreadsheetId = response.data.spreadsheetId;
+  const spreadsheetUrl = response.data.spreadsheetUrl;
 
   const targetFolder = folderId || await getOrCreateHermesFolder(phoneNumber);
   await moveToHermesFolder(phoneNumber, spreadsheetId, targetFolder);
@@ -170,9 +174,14 @@ export async function getSpreadsheet(
     }), phoneNumber
   );
 
+  // Boundary: require spreadsheetId and URL from API response
+  if (!response.data.spreadsheetId || !response.data.spreadsheetUrl) {
+    throw new Error(`Sheets API returned spreadsheet without required id or url for spreadsheetId=${spreadsheetId}`);
+  }
+
   return {
-    id: response.data.spreadsheetId!,
+    id: response.data.spreadsheetId,
     title: response.data.properties?.title || '',
-    url: response.data.spreadsheetUrl!,
+    url: response.data.spreadsheetUrl,
   };
 }

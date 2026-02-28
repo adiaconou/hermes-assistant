@@ -330,4 +330,74 @@ describe('scheduler sqlite', () => {
       expect(deleted).toBe(false);
     });
   });
+
+  describe('boundary: rowToJob validation', () => {
+    it('throws on empty phone_number in scheduled_jobs row', () => {
+      // Empty strings pass NOT NULL but are logically invalid — rowToJob catches them
+      db.prepare(`
+        INSERT INTO scheduled_jobs
+          (id, phone_number, channel, prompt, cron_expression, timezone, next_run_at, enabled, is_recurring, created_at, updated_at)
+        VALUES ('test-empty-phone', '', 'sms', 'test', '0 9 * * *', 'UTC', 1000, 1, 1, 1000, 1000)
+      `).run();
+
+      expect(() => getJobById(db, 'test-empty-phone')).toThrow(/Corrupt scheduled_jobs row/);
+    });
+
+    it('throws on empty prompt in scheduled_jobs row', () => {
+      db.prepare(`
+        INSERT INTO scheduled_jobs
+          (id, phone_number, channel, prompt, cron_expression, timezone, next_run_at, enabled, is_recurring, created_at, updated_at)
+        VALUES ('test-empty-prompt', '+1234567890', 'sms', '', '0 9 * * *', 'UTC', 1000, 1, 1, 1000, 1000)
+      `).run();
+
+      expect(() => getJobById(db, 'test-empty-prompt')).toThrow(/Corrupt scheduled_jobs row/);
+    });
+
+    it('throws on NULL enabled in scheduled_jobs row', () => {
+      db.prepare(`
+        INSERT INTO scheduled_jobs
+          (id, phone_number, channel, prompt, cron_expression, timezone, next_run_at, enabled, is_recurring, created_at, updated_at)
+        VALUES ('test-null-enabled', '+1234567890', 'sms', 'test', '0 9 * * *', 'UTC', 1000, NULL, 1, 1000, 1000)
+      `).run();
+
+      expect(() => getJobById(db, 'test-null-enabled')).toThrow(/null enabled field/);
+    });
+
+    it('throws on empty cron_expression in scheduled_jobs row', () => {
+      db.prepare(`
+        INSERT INTO scheduled_jobs
+          (id, phone_number, channel, prompt, cron_expression, timezone, next_run_at, enabled, is_recurring, created_at, updated_at)
+        VALUES ('test-empty-cron', '+1234567890', 'sms', 'test', '', 'UTC', 1000, 1, 1, 1000, 1000)
+      `).run();
+
+      expect(() => getJobById(db, 'test-empty-cron')).toThrow(/Corrupt scheduled_jobs row/);
+    });
+
+    it('throws on empty timezone in scheduled_jobs row', () => {
+      db.prepare(`
+        INSERT INTO scheduled_jobs
+          (id, phone_number, channel, prompt, cron_expression, timezone, next_run_at, enabled, is_recurring, created_at, updated_at)
+        VALUES ('test-empty-tz', '+1234567890', 'sms', 'test', '0 9 * * *', '', 1000, 1, 1, 1000, 1000)
+      `).run();
+
+      expect(() => getJobById(db, 'test-empty-tz')).toThrow(/Corrupt scheduled_jobs row/);
+    });
+
+    it('correctly maps valid rows without throwing', () => {
+      const job = createJob(db, {
+        phoneNumber: '+1234567890',
+        channel: 'sms',
+        prompt: 'Valid prompt',
+        cronExpression: '0 9 * * *',
+        timezone: 'America/New_York',
+        nextRunAt: 1000,
+        isRecurring: true,
+      });
+
+      const retrieved = getJobById(db, job.id);
+      expect(retrieved).not.toBeNull();
+      expect(retrieved!.id).toBe(job.id);
+      expect(retrieved!.enabled).toBe(true);
+    });
+  });
 });

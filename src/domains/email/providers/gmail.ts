@@ -55,28 +55,31 @@ export async function listEmails(
     }
 
     const emails = await Promise.all(
-      response.data.messages.map(async (msg) => {
-        const detail = await withRetry(() => gmail.users.messages.get({
-          userId: 'me',
-          id: msg.id!,
-          format: 'metadata',
-          metadataHeaders: ['From', 'Subject', 'Date'],
-        }), phoneNumber, 'Gmail');
+      response.data.messages
+        .filter((msg) => msg.id) // boundary: skip messages without an id
+        .map(async (msg) => {
+          const msgId = msg.id as string; // boundary-ok: filtered above
+          const detail = await withRetry(() => gmail.users.messages.get({
+            userId: 'me',
+            id: msgId,
+            format: 'metadata',
+            metadataHeaders: ['From', 'Subject', 'Date'],
+          }), phoneNumber, 'Gmail');
 
-        const headers = detail.data.payload?.headers || [];
-        const getHeader = (name: string) =>
-          headers.find((h) => h.name === name)?.value || '';
+          const headers = detail.data.payload?.headers || [];
+          const getHeader = (name: string) =>
+            headers.find((h) => h.name === name)?.value || '';
 
-        return {
-          id: msg.id!,
-          threadId: msg.threadId!,
-          from: getHeader('From'),
-          subject: getHeader('Subject'),
-          snippet: detail.data.snippet || '',
-          date: getHeader('Date'),
-          isUnread: detail.data.labelIds?.includes('UNREAD') || false,
-        };
-      })
+          return {
+            id: msgId,
+            threadId: msg.threadId || msgId,
+            from: getHeader('From'),
+            subject: getHeader('Subject'),
+            snippet: detail.data.snippet || '',
+            date: getHeader('Date'),
+            isUnread: detail.data.labelIds?.includes('UNREAD') || false,
+          };
+        })
     );
 
     return emails;
@@ -132,9 +135,14 @@ export async function getEmail(
 
     const body = extractBodyText(response.data.payload);
 
+    // Boundary: require id from API response
+    if (!response.data.id) {
+      throw new Error(`Gmail API returned email without id for emailId=${emailId}`);
+    }
+
     return {
-      id: response.data.id!,
-      threadId: response.data.threadId!,
+      id: response.data.id,
+      threadId: response.data.threadId || response.data.id,
       from: getHeader('From'),
       subject: getHeader('Subject'),
       snippet: response.data.snippet || '',
@@ -165,25 +173,33 @@ export async function getThread(
 
     if (!response.data || !response.data.messages) return null;
 
-    const messages: EmailDetail[] = response.data.messages.map((msg) => {
-      const headers = msg.payload?.headers || [];
-      const getHeader = (name: string) =>
-        headers.find((h) => h.name === name)?.value || '';
+    // Boundary: require thread id from API response
+    if (!response.data.id) {
+      throw new Error(`Gmail API returned thread without id for threadId=${threadId}`);
+    }
 
-      return {
-        id: msg.id!,
-        threadId: msg.threadId!,
-        from: getHeader('From'),
-        subject: getHeader('Subject'),
-        snippet: msg.snippet || '',
-        date: getHeader('Date'),
-        isUnread: msg.labelIds?.includes('UNREAD') || false,
-        body: extractBodyText(msg.payload),
-      };
-    });
+    const messages: EmailDetail[] = response.data.messages
+      .filter((msg) => msg.id) // boundary: skip messages without an id
+      .map((msg) => {
+        const msgId = msg.id as string; // boundary-ok: filtered above
+        const headers = msg.payload?.headers || [];
+        const getHeader = (name: string) =>
+          headers.find((h) => h.name === name)?.value || '';
+
+        return {
+          id: msgId,
+          threadId: msg.threadId || msgId,
+          from: getHeader('From'),
+          subject: getHeader('Subject'),
+          snippet: msg.snippet || '',
+          date: getHeader('Date'),
+          isUnread: msg.labelIds?.includes('UNREAD') || false,
+          body: extractBodyText(msg.payload),
+        };
+      });
 
     return {
-      id: response.data.id!,
+      id: response.data.id,
       messages,
     };
   } catch (error) {

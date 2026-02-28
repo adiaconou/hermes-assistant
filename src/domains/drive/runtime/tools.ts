@@ -3,7 +3,7 @@
  */
 
 import type { ToolDefinition } from '../../../tools/types.js';
-import { requirePhoneNumber, handleAuthError } from '../../../tools/utils.js';
+import { requirePhoneNumber, handleAuthError, validateInput } from '../../../tools/utils.js';
 import type { StoredMediaAttachment } from '../../../services/conversation/types.js';
 import {
   uploadFile,
@@ -52,6 +52,17 @@ export const uploadToDrive: ToolDefinition = {
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      name: { type: 'string', required: true },
+      content: { type: 'string', required: true, nonEmpty: false },
+      mime_type: { type: 'string', required: true },
+      folder_id: { type: 'string', required: false },
+      description: { type: 'string', required: false },
+      is_base64: { type: 'boolean', required: false },
+    });
+    if (validationError) return validationError;
+
     const { name, content, mime_type, folder_id, description, is_base64 } = input as {
       name: string; content: string; mime_type: string; folder_id?: string; description?: string; is_base64?: boolean;
     };
@@ -86,6 +97,14 @@ export const listDriveFiles: ToolDefinition = {
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      folder_id: { type: 'string', required: false },
+      mime_type: { type: 'string', required: false },
+      max_results: { type: 'number', required: false },
+    });
+    if (validationError) return validationError;
+
     const { folder_id, mime_type, max_results } = input as { folder_id?: string; mime_type?: string; max_results?: number };
     try {
       const files = await listFiles(phoneNumber, folder_id, { mimeType: mime_type, maxResults: max_results });
@@ -114,6 +133,13 @@ export const createDriveFolder: ToolDefinition = {
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      name: { type: 'string', required: true },
+      parent_id: { type: 'string', required: false },
+    });
+    if (validationError) return validationError;
+
     const { name, parent_id } = input as { name: string; parent_id?: string };
     try {
       const folder = await createFolder(phoneNumber, name, parent_id);
@@ -142,6 +168,12 @@ export const readDriveFile: ToolDefinition = {
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      file_id: { type: 'string', required: true },
+    });
+    if (validationError) return validationError;
+
     const { file_id } = input as { file_id: string };
     try {
       const content = await readFileContent(phoneNumber, file_id);
@@ -171,6 +203,14 @@ export const searchDrive: ToolDefinition = {
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      name: { type: 'string', required: false },
+      mime_type: { type: 'string', required: false },
+      search_outside_hermes: { type: 'boolean', required: false },
+    });
+    if (validationError) return validationError;
+
     const { name, mime_type, search_outside_hermes } = input as { name?: string; mime_type?: string; search_outside_hermes?: boolean };
     try {
       const files = await searchFiles(phoneNumber, { name, mimeType: mime_type, inHermesFolder: !search_outside_hermes });
@@ -221,6 +261,13 @@ export const createSpreadsheetTool: ToolDefinition = {
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      title: { type: 'string', required: true },
+      folder_id: { type: 'string', required: false },
+    });
+    if (validationError) return validationError;
+
     const { title, folder_id } = input as { title: string; folder_id?: string };
     try {
       const spreadsheet = await createSpreadsheet(phoneNumber, title, folder_id);
@@ -250,6 +297,13 @@ export const readSpreadsheet: ToolDefinition = {
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      spreadsheet_id: { type: 'string', required: true },
+      range: { type: 'string', required: true },
+    });
+    if (validationError) return validationError;
+
     const { spreadsheet_id, range } = input as { spreadsheet_id: string; range: string };
     try {
       const data = await readRange(phoneNumber, spreadsheet_id, range);
@@ -279,6 +333,14 @@ export const writeSpreadsheet: ToolDefinition = {
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      spreadsheet_id: { type: 'string', required: true },
+      range: { type: 'string', required: true },
+      values: { type: 'array', required: true },
+    });
+    if (validationError) return validationError;
+
     const { spreadsheet_id, range, values } = input as { spreadsheet_id: string; range: string; values: (string | number | boolean | null)[][] };
     try {
       const result = await writeRange(phoneNumber, spreadsheet_id, range, values);
@@ -308,6 +370,14 @@ export const appendToSpreadsheet: ToolDefinition = {
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      spreadsheet_id: { type: 'string', required: true },
+      range: { type: 'string', required: true },
+      rows: { type: 'array', required: true },
+    });
+    if (validationError) return validationError;
+
     const { spreadsheet_id, range, rows } = input as { spreadsheet_id: string; range: string; rows: (string | number | boolean | null)[][] };
     try {
       const result = await appendRows(phoneNumber, spreadsheet_id, range, rows);
@@ -335,6 +405,12 @@ export const findSpreadsheetTool: ToolDefinition = {
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      title: { type: 'string', required: true },
+    });
+    if (validationError) return validationError;
+
     const { title } = input as { title: string };
     try {
       const spreadsheet = await findSpreadsheet(phoneNumber, title);
@@ -369,6 +445,14 @@ export const createDocumentTool: ToolDefinition = {
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      title: { type: 'string', required: true },
+      content: { type: 'string', required: false },
+      folder_id: { type: 'string', required: false },
+    });
+    if (validationError) return validationError;
+
     const { title, content, folder_id } = input as { title: string; content?: string; folder_id?: string };
     try {
       const document = await createDocument(phoneNumber, title, content, folder_id);
@@ -397,6 +481,12 @@ export const readDocument: ToolDefinition = {
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      document_id: { type: 'string', required: true },
+    });
+    if (validationError) return validationError;
+
     const { document_id } = input as { document_id: string };
     try {
       const content = await readDocumentContent(phoneNumber, document_id);
@@ -425,6 +515,13 @@ export const appendToDocument: ToolDefinition = {
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      document_id: { type: 'string', required: true },
+      text: { type: 'string', required: true },
+    });
+    if (validationError) return validationError;
+
     const { document_id, text } = input as { document_id: string; text: string };
     try {
       await appendText(phoneNumber, document_id, text);
@@ -452,6 +549,12 @@ export const findDocumentTool: ToolDefinition = {
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      title: { type: 'string', required: true },
+    });
+    if (validationError) return validationError;
+
     const { title } = input as { title: string };
     try {
       const document = await findDocument(phoneNumber, title);
@@ -505,6 +608,17 @@ Common analysis prompts:
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      prompt: { type: 'string', required: true },
+      media_url: { type: 'string', required: false },
+      drive_file_id: { type: 'string', required: false },
+      image_base64: { type: 'string', required: false },
+      mime_type: { type: 'string', required: false },
+      attachment_index: { type: 'number', required: false },
+    });
+    if (validationError) return validationError;
+
     const { prompt, media_url, drive_file_id, image_base64, mime_type, attachment_index } = input as {
       prompt: string; media_url?: string; drive_file_id?: string; image_base64?: string; mime_type?: string; attachment_index?: number;
     };

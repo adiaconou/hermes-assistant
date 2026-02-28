@@ -145,17 +145,27 @@ export class SqliteMemoryStore implements MemoryStore {
       extracted_at: number;
     }>;
 
-    return rows.map((row) => ({
-      id: row.id,
-      phoneNumber: row.phone_number,
-      fact: row.fact,
-      category: row.category ?? undefined,
-      confidence: row.confidence ?? 0.5,
-      sourceType: (row.source_type as 'explicit' | 'inferred') ?? 'explicit',
-      evidence: row.evidence ?? undefined,
-      lastReinforcedAt: row.last_reinforced_at ?? undefined,
-      extractedAt: row.extracted_at,
-    }));
+    return rows.map((row) => {
+      // Boundary: fail fast on corrupt rows missing required fields
+      if (!row.id || !row.phone_number || !row.fact) {
+        throw new Error(`Corrupt user_facts row: missing required field (id=${row.id})`);
+      }
+      // Boundary: clamp confidence to valid range
+      const rawConfidence = row.confidence ?? 0.5;
+      const confidence = Math.max(0, Math.min(1, rawConfidence));
+
+      return {
+        id: row.id,
+        phoneNumber: row.phone_number,
+        fact: row.fact,
+        category: row.category ?? undefined,
+        confidence,
+        sourceType: (row.source_type as 'explicit' | 'inferred') ?? 'explicit',
+        evidence: row.evidence ?? undefined,
+        lastReinforcedAt: row.last_reinforced_at ?? undefined,
+        extractedAt: row.extracted_at,
+      };
+    });
   }
 
   async getAllFacts(): Promise<UserFact[]> {
@@ -177,17 +187,25 @@ export class SqliteMemoryStore implements MemoryStore {
       extracted_at: number;
     }>;
 
-    return rows.map((row) => ({
-      id: row.id,
-      phoneNumber: row.phone_number,
-      fact: row.fact,
-      category: row.category ?? undefined,
-      confidence: row.confidence ?? 0.5,
-      sourceType: (row.source_type as 'explicit' | 'inferred') ?? 'explicit',
-      evidence: row.evidence ?? undefined,
-      lastReinforcedAt: row.last_reinforced_at ?? undefined,
-      extractedAt: row.extracted_at,
-    }));
+    return rows.map((row) => {
+      if (!row.id || !row.phone_number || !row.fact) {
+        throw new Error(`Corrupt user_facts row: missing required field (id=${row.id})`);
+      }
+      const rawConfidence = row.confidence ?? 0.5;
+      const confidence = Math.max(0, Math.min(1, rawConfidence));
+
+      return {
+        id: row.id,
+        phoneNumber: row.phone_number,
+        fact: row.fact,
+        category: row.category ?? undefined,
+        confidence,
+        sourceType: (row.source_type as 'explicit' | 'inferred') ?? 'explicit',
+        evidence: row.evidence ?? undefined,
+        lastReinforcedAt: row.last_reinforced_at ?? undefined,
+        extractedAt: row.extracted_at,
+      };
+    });
   }
 
   async addFact(fact: Omit<UserFact, 'id'>): Promise<UserFact> {

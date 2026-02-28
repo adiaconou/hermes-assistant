@@ -149,7 +149,7 @@ describe('createScheduledJob', () => {
       );
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('Prompt is required');
+      expect(result.error).toContain('prompt');
     });
 
     it('should fail if prompt is too long', async () => {
@@ -509,6 +509,89 @@ describe('deleteScheduledJob', () => {
       expect(result.success).toBe(false);
       expect(result.error).toBe('Job not found');
       expect(deleteJob).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('boundary validation', () => {
+  const baseContext: ToolContext = {
+    phoneNumber: '+1234567890',
+    channel: 'sms',
+    userConfig: { name: 'Test', timezone: 'America/New_York' },
+  };
+
+  describe('createScheduledJob', () => {
+    it('rejects missing prompt', async () => {
+      const result = await createScheduledJob.handler(
+        { schedule: 'daily at 9am' },
+        baseContext
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('prompt');
+    });
+
+    it('rejects prompt as number', async () => {
+      const result = await createScheduledJob.handler(
+        { prompt: 123, schedule: 'daily at 9am' },
+        baseContext
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('prompt');
+    });
+
+    it('rejects schedule as number', async () => {
+      const result = await createScheduledJob.handler(
+        { prompt: 'test', schedule: 123 },
+        baseContext
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('schedule');
+    });
+  });
+
+  describe('updateScheduledJob', () => {
+    it('rejects missing job_id', async () => {
+      const result = await updateScheduledJob.handler(
+        { prompt: 'new prompt' },
+        baseContext
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('job_id');
+    });
+
+    it('rejects job_id as number', async () => {
+      const result = await updateScheduledJob.handler(
+        { job_id: 123 },
+        baseContext
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('job_id');
+    });
+
+    it('rejects enabled as string', async () => {
+      const result = await updateScheduledJob.handler(
+        { job_id: 'job_123', enabled: 'yes' },
+        baseContext
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('enabled');
+    });
+  });
+
+  describe('deleteScheduledJob', () => {
+    it('rejects missing job_id', async () => {
+      const result = await deleteScheduledJob.handler({}, baseContext);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('job_id');
+    });
+
+    it('rejects job_id as number', async () => {
+      const result = await deleteScheduledJob.handler(
+        { job_id: 456 },
+        baseContext
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('job_id');
     });
   });
 });

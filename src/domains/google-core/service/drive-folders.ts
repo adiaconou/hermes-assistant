@@ -60,8 +60,8 @@ export async function getOrCreateHermesFolder(
     }), phoneNumber
   );
 
-  if (searchResponse.data.files && searchResponse.data.files.length > 0) {
-    const folderId = searchResponse.data.files[0].id!;
+  if (searchResponse.data.files && searchResponse.data.files.length > 0 && searchResponse.data.files[0].id) {
+    const folderId = searchResponse.data.files[0].id;
     console.log(JSON.stringify({
       level: 'info',
       message: 'Found existing Hermes folder',
@@ -81,8 +81,8 @@ export async function getOrCreateHermesFolder(
     }), phoneNumber
   );
 
-  if (nameSearchResponse.data.files && nameSearchResponse.data.files.length > 0) {
-    const folderId = nameSearchResponse.data.files[0].id!;
+  if (nameSearchResponse.data.files && nameSearchResponse.data.files.length > 0 && nameSearchResponse.data.files[0].id) {
+    const folderId = nameSearchResponse.data.files[0].id;
     // Tag the existing folder with appProperties
     await withRetry(() =>
       drive.files.update({
@@ -122,7 +122,10 @@ export async function getOrCreateHermesFolder(
     }), phoneNumber
   );
 
-  const newFolderId = createResponse.data.id!;
+  if (!createResponse.data.id) {
+    throw new Error('Drive API returned new folder without an id');
+  }
+  const newFolderId = createResponse.data.id;
   console.log(JSON.stringify({
     level: 'info',
     message: 'Created new Hermes folder',
@@ -172,13 +175,23 @@ export async function moveToHermesFolder(
     }), phoneNumber
   );
 
+  // Boundary: require id and name from API response
+  if (!response.data.id || !response.data.name) {
+    throw new Error('Drive API returned moved file without required id or name');
+  }
+
   return {
-    id: response.data.id!,
-    name: response.data.name!,
-    mimeType: response.data.mimeType!,
+    id: response.data.id,
+    name: response.data.name,
+    mimeType: response.data.mimeType || 'application/octet-stream',
     webViewLink: response.data.webViewLink || undefined,
     parents: response.data.parents || undefined,
   };
+}
+
+/** Escape single quotes for Drive API query strings. */
+function escapeDriveQuery(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
 /**
@@ -198,11 +211,11 @@ export async function searchFiles(
   const queryParts: string[] = ['trashed = false'];
 
   if (query.name) {
-    queryParts.push(`name contains '${query.name}'`);
+    queryParts.push(`name contains '${escapeDriveQuery(query.name)}'`);
   }
 
   if (query.mimeType) {
-    queryParts.push(`mimeType = '${query.mimeType}'`);
+    queryParts.push(`mimeType = '${escapeDriveQuery(query.mimeType)}'`);
   }
 
   if (query.inHermesFolder !== false) {
@@ -220,14 +233,16 @@ export async function searchFiles(
     }), phoneNumber
   );
 
-  return (response.data.files || []).map(file => ({
-    id: file.id!,
-    name: file.name!,
-    mimeType: file.mimeType!,
-    webViewLink: file.webViewLink || undefined,
-    parents: file.parents || undefined,
-    createdTime: file.createdTime || undefined,
-    modifiedTime: file.modifiedTime || undefined,
-    size: file.size || undefined,
-  }));
+  return (response.data.files || [])
+    .filter(file => file.id && file.name) // boundary: skip files without required fields
+    .map(file => ({
+      id: file.id as string, // boundary-ok: filtered above
+      name: file.name as string, // boundary-ok: filtered above
+      mimeType: file.mimeType || 'application/octet-stream',
+      webViewLink: file.webViewLink || undefined,
+      parents: file.parents || undefined,
+      createdTime: file.createdTime || undefined,
+      modifiedTime: file.modifiedTime || undefined,
+      size: file.size || undefined,
+    }));
 }

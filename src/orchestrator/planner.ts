@@ -159,7 +159,17 @@ function parsePlanResponse(text: string): ParsedPlanResponse | null {
   const jsonText = jsonMatch ? jsonMatch[1].trim() : text.trim();
 
   try {
-    return JSON.parse(jsonText);
+    const parsed = JSON.parse(jsonText);
+    // Boundary: validate shape before use
+    if (typeof parsed !== 'object' || parsed === null || !Array.isArray(parsed.steps)) {
+      console.warn(JSON.stringify({
+        level: 'warn',
+        message: 'Plan response missing valid steps array',
+        timestamp: new Date().toISOString(),
+      }));
+      return null;
+    }
+    return parsed as ParsedPlanResponse;
   } catch (error) {
     console.error(JSON.stringify({
       level: 'error',

@@ -12,6 +12,29 @@ import { randomUUID } from 'crypto';
 import type { ConversationStore, ConversationMessage, GetHistoryOptions, StoredMediaAttachment, MessageMetadataKind } from './types.js';
 
 /**
+ * Safely parse a JSON media_attachments column value.
+ * Returns the parsed array if the value is a valid JSON array of objects,
+ * or undefined if parsing fails or the shape is unexpected.
+ */
+function parseMediaAttachments(json: string): StoredMediaAttachment[] | undefined {
+  try {
+    const parsed: unknown = JSON.parse(json);
+    if (!Array.isArray(parsed)) return undefined;
+    // Validate each element has the minimum required fields
+    return parsed.filter(
+      (item): item is StoredMediaAttachment =>
+        typeof item === 'object' &&
+        item !== null &&
+        typeof (item as Record<string, unknown>).driveFileId === 'string' &&
+        typeof (item as Record<string, unknown>).filename === 'string' &&
+        typeof (item as Record<string, unknown>).mimeType === 'string'
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * SQLite implementation of conversation store.
  */
 export class SqliteConversationStore implements ConversationStore {
@@ -186,7 +209,7 @@ export class SqliteConversationStore implements ConversationStore {
       memoryProcessed: row.memory_processed === 1,
       memoryProcessedAt: row.memory_processed_at ?? undefined,
       mediaAttachments: row.media_attachments
-        ? JSON.parse(row.media_attachments) as StoredMediaAttachment[]
+        ? parseMediaAttachments(row.media_attachments)
         : undefined,
     }));
   }
@@ -241,7 +264,7 @@ export class SqliteConversationStore implements ConversationStore {
       memoryProcessed: row.memory_processed === 1,
       memoryProcessedAt: row.memory_processed_at ?? undefined,
       mediaAttachments: row.media_attachments
-        ? JSON.parse(row.media_attachments) as StoredMediaAttachment[]
+        ? parseMediaAttachments(row.media_attachments)
         : undefined,
     }));
   }
@@ -301,7 +324,8 @@ export class SqliteConversationStore implements ConversationStore {
     }> = [];
 
     for (const row of rows) {
-      const attachments = JSON.parse(row.media_attachments) as StoredMediaAttachment[];
+      const attachments = parseMediaAttachments(row.media_attachments);
+      if (!attachments) continue;
       for (const attachment of attachments) {
         results.push({
           attachment,

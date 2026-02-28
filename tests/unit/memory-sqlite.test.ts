@@ -228,4 +228,69 @@ describe('SqliteMemoryStore', () => {
     expect(facts).toHaveLength(1);
     expect(facts[0].fact).toBe('Old established fact');
   });
+
+  describe('boundary: data corruption handling', () => {
+    it('clamps out-of-range confidence > 1 to 1', async () => {
+      const fact = await store.addFact({
+        phoneNumber: '+1234567890',
+        fact: 'Over-confident fact',
+        confidence: 1.5,
+        sourceType: 'explicit',
+        extractedAt: Date.now(),
+      });
+
+      const facts = await store.getFacts('+1234567890');
+      expect(facts).toHaveLength(1);
+      expect(facts[0].confidence).toBe(1);
+    });
+
+    it('clamps negative confidence to 0', async () => {
+      const fact = await store.addFact({
+        phoneNumber: '+1234567890',
+        fact: 'Negative-confidence fact',
+        confidence: -0.5,
+        sourceType: 'explicit',
+        extractedAt: Date.now(),
+      });
+
+      const facts = await store.getFacts('+1234567890');
+      expect(facts).toHaveLength(1);
+      expect(facts[0].confidence).toBe(0);
+    });
+
+    it('throws on empty id in user_facts row', async () => {
+      // Empty strings pass NOT NULL but are logically invalid — getFacts catches them
+      const db = (store as unknown as { db: import('better-sqlite3').Database }).db;
+      db.prepare(`
+        INSERT INTO user_facts (id, phone_number, fact, confidence, source_type, extracted_at)
+        VALUES ('', '+1234567890', 'fact', 0.5, 'explicit', ?)
+      `).run(Date.now());
+
+      await expect(store.getFacts('+1234567890')).rejects.toThrow(/Corrupt user_facts row/);
+    });
+
+    it('throws on empty fact text in user_facts row', async () => {
+      const db = (store as unknown as { db: import('better-sqlite3').Database }).db;
+      db.prepare(`
+        INSERT INTO user_facts (id, phone_number, fact, confidence, source_type, extracted_at)
+        VALUES ('test-empty-fact', '+1234567890', '', 0.5, 'explicit', ?)
+      `).run(Date.now());
+
+      await expect(store.getFacts('+1234567890')).rejects.toThrow(/Corrupt user_facts row/);
+    });
+
+    it('getAllFacts also clamps out-of-range confidence', async () => {
+      await store.addFact({
+        phoneNumber: '+1234567890',
+        fact: 'Way too confident',
+        confidence: 99,
+        sourceType: 'explicit',
+        extractedAt: Date.now(),
+      });
+
+      const allFacts = await store.getAllFacts();
+      expect(allFacts).toHaveLength(1);
+      expect(allFacts[0].confidence).toBe(1);
+    });
+  });
 });

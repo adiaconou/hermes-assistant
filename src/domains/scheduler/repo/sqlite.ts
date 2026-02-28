@@ -31,8 +31,18 @@ interface ScheduledJobRow {
 
 /**
  * Convert database row to ScheduledJob type.
+ * Boundary: fail fast if required fields are null/missing (data corruption).
  */
 function rowToJob(row: ScheduledJobRow): ScheduledJob {
+  if (!row.id || !row.phone_number || !row.prompt || !row.cron_expression || !row.timezone) {
+    throw new Error(
+      `Corrupt scheduled_jobs row: missing required field (id=${row.id}, phone=${row.phone_number})`
+    );
+  }
+  if (row.enabled === null || row.enabled === undefined) {
+    throw new Error(`Corrupt scheduled_jobs row: null enabled field (id=${row.id})`);
+  }
+
   return {
     id: row.id,
     phoneNumber: row.phone_number,

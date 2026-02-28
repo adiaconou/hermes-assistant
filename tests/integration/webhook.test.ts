@@ -456,11 +456,7 @@ describe('POST /webhook/sms', () => {
       expect(res.text).toContain('empty message');
     });
 
-    it('should handle missing From field gracefully', async () => {
-      setMockResponses([
-        createTextResponse('{"needsAsyncWork": false, "immediateResponse": "Hello!"}'),
-      ]);
-
+    it('should reject missing From field with 400', async () => {
       const payload = { Body: 'Test message' };
       const { req, res } = createMockReqRes({
         method: 'POST',
@@ -471,10 +467,9 @@ describe('POST /webhook/sms', () => {
 
       await handleSmsWebhook(req, res);
 
-      // Should return valid TwiML with message even with missing fields
-      expect(res.statusCode).toBe(200);
-      expect(res.headers['content-type']).toContain('text/xml');
-      expect(res.text).toContain('<Message>Hello!</Message>');
+      // Malformed webhook without From should be rejected
+      expect(res.statusCode).toBe(400);
+      expect(res.text).toBe('Bad Request');
     });
 
     it('returns 403 when Twilio signature is invalid', async () => {

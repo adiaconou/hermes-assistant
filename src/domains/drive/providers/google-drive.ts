@@ -45,9 +45,14 @@ export async function createFolder(
     }), phoneNumber
   );
 
+  // Boundary: require id and name from API response
+  if (!response.data.id || !response.data.name) {
+    throw new Error('Drive API returned folder without required id or name');
+  }
+
   return {
-    id: response.data.id!,
-    name: response.data.name!,
+    id: response.data.id,
+    name: response.data.name,
     webViewLink: response.data.webViewLink || undefined,
   };
 }
@@ -75,16 +80,18 @@ export async function listFiles(
     }), phoneNumber
   );
 
-  return (response.data.files || []).map(file => ({
-    id: file.id!,
-    name: file.name!,
-    mimeType: file.mimeType!,
-    webViewLink: file.webViewLink || undefined,
-    parents: file.parents || undefined,
-    createdTime: file.createdTime || undefined,
-    modifiedTime: file.modifiedTime || undefined,
-    size: file.size || undefined,
-  }));
+  return (response.data.files || [])
+    .filter(file => file.id && file.name) // boundary: skip files without required fields
+    .map(file => ({
+      id: file.id as string, // boundary-ok: filtered above
+      name: file.name as string, // boundary-ok: filtered above
+      mimeType: file.mimeType || 'application/octet-stream',
+      webViewLink: file.webViewLink || undefined,
+      parents: file.parents || undefined,
+      createdTime: file.createdTime || undefined,
+      modifiedTime: file.modifiedTime || undefined,
+      size: file.size || undefined,
+    }));
 }
 
 export async function uploadFile(
@@ -113,10 +120,15 @@ export async function uploadFile(
     }), phoneNumber
   );
 
+  // Boundary: require id and name from API response
+  if (!response.data.id || !response.data.name) {
+    throw new Error('Drive API returned uploaded file without required id or name');
+  }
+
   return {
-    id: response.data.id!,
-    name: response.data.name!,
-    mimeType: response.data.mimeType!,
+    id: response.data.id,
+    name: response.data.name,
+    mimeType: response.data.mimeType || options.mimeType,
     webViewLink: response.data.webViewLink || undefined,
     parents: response.data.parents || undefined,
   };
@@ -149,7 +161,9 @@ export async function findFolder(
   const drive = await getDriveClient(phoneNumber);
   const hermesFolder = await getOrCreateHermesFolder(phoneNumber);
 
-  const query = `name = '${name}' and mimeType = 'application/vnd.google-apps.folder' and '${hermesFolder}' in parents and trashed = false`;
+  // Boundary: escape single quotes in user-provided folder name
+  const escapedName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const query = `name = '${escapedName}' and mimeType = 'application/vnd.google-apps.folder' and '${hermesFolder}' in parents and trashed = false`;
 
   const response = await withRetry(() =>
     drive.files.list({
@@ -161,9 +175,13 @@ export async function findFolder(
 
   if (response.data.files && response.data.files.length > 0) {
     const folder = response.data.files[0];
+    // Boundary: require id and name from API response
+    if (!folder.id || !folder.name) {
+      return null;
+    }
     return {
-      id: folder.id!,
-      name: folder.name!,
+      id: folder.id,
+      name: folder.name,
       webViewLink: folder.webViewLink || undefined,
     };
   }

@@ -423,11 +423,26 @@ export async function handleSmsWebhook(req: Request, res: Response): Promise<voi
       return;
     }
 
-    const webhookBody = req.body as TwilioWebhookBody;
-    const { From, Body } = webhookBody;
+    // Boundary validation: validate webhook fields before use
+    const rawBody = req.body as Record<string, unknown>;
+    if (typeof rawBody.From !== 'string' || !rawBody.From) {
+      logWarn(webhookLogger, 'Malformed webhook: missing or invalid From field');
+      res.status(400).send('Bad Request');
+      return;
+    }
+    // Allow missing Body for media-only messages; reject non-string body types
+    if (rawBody.Body !== undefined && typeof rawBody.Body !== 'string') {
+      logWarn(webhookLogger, 'Malformed webhook: Body is not a string');
+      res.status(400).send('Bad Request');
+      return;
+    }
 
-    const channel = detectChannel(From || '');
-    const sender = normalize(From || '');
+    const webhookBody = rawBody as TwilioWebhookBody; // boundary-ok
+    const From = webhookBody.From;
+    const Body = webhookBody.Body ?? '';
+
+    const channel = detectChannel(From);
+    const sender = normalize(From);
     const log = webhookLogger.child({ channel, sender, requestId });
     const inboundMessageSid = getInboundMessageSid(webhookBody);
 

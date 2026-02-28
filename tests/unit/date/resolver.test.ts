@@ -120,6 +120,17 @@ describe('DST handling', () => {
       expect(result).not.toBeNull();
       expect(result!.iso).toContain('-07:00'); // PDT offset
     });
+
+    it('resolves 9am on spring-forward day without hour shift', () => {
+      const result = resolveDate('today at 9am', {
+        timezone: 'America/New_York',
+        referenceDate: new Date('2026-03-08T06:00:00Z'), // 1am EST, before DST
+      });
+      expect(result).not.toBeNull();
+      expect(result!.components.hour).toBe(9);
+      // After spring forward, New York is EDT (-04:00)
+      expect(result!.iso).toContain('-04:00');
+    });
   });
 
   describe('fall back (November 1, 2026 - 2am becomes 1am)', () => {
@@ -131,6 +142,9 @@ describe('DST handling', () => {
         referenceDate: beforeFallback,
       });
       expect(result).not.toBeNull();
+      // Should resolve to a valid timestamp (either PDT or PST interpretation)
+      expect(result!.components.hour).toBe(1);
+      expect(result!.components.minute).toBe(30);
     });
   });
 });
@@ -202,6 +216,72 @@ describe('explicit date handling', () => {
     // Should be tomorrow's 3pm, not today's (which has passed)
     expect(result).not.toBeNull();
     expect(result!.timestamp).toBeGreaterThan(referenceDate.getTime() / 1000);
+  });
+});
+
+describe('boundary: leap year handling', () => {
+  const timezone = 'America/New_York';
+
+  it('resolves February 29 in a leap year (2028)', () => {
+    const referenceDate = new Date('2028-02-15T12:00:00Z');
+    const result = resolveDate('February 29 at 10am', { timezone, referenceDate });
+    expect(result).not.toBeNull();
+    expect(result!.components.month).toBe(2);
+    expect(result!.components.day).toBe(29);
+    expect(result!.components.hour).toBe(10);
+  });
+
+  it('returns null for February 29 in a non-leap year (2027)', () => {
+    const referenceDate = new Date('2027-02-15T12:00:00Z');
+    const result = resolveDate('February 29 at 10am', { timezone, referenceDate });
+    // chrono may resolve this to March 1 — either null or March 1 is acceptable
+    if (result !== null) {
+      // If chrono resolves it, it should NOT report Feb 29
+      expect(result.components.month === 2 && result.components.day === 29).toBe(false);
+    }
+  });
+});
+
+describe('boundary: year boundary', () => {
+  it('"next Monday" from Sunday Dec 31 resolves to January of next year', () => {
+    // Dec 31, 2028 is a Sunday
+    const referenceDate = new Date('2028-12-31T12:00:00Z');
+    const result = resolveDate('next Monday at 9am', {
+      timezone: 'America/New_York',
+      referenceDate,
+    });
+    expect(result).not.toBeNull();
+    expect(result!.components.year).toBe(2029);
+    expect(result!.components.month).toBe(1);
+    expect(result!.components.day).toBe(1); // Jan 1, 2029 is Monday
+  });
+});
+
+describe('boundary: weekday same-day', () => {
+  it('"next Sunday" when today is Sunday resolves to 7 days ahead', () => {
+    // Jan 25, 2026 is a Sunday. Reference is in UTC morning = still Sunday in PST
+    const referenceDate = new Date('2026-01-25T20:00:00Z'); // 12pm PST, Sunday
+    const result = resolveDate('next Sunday at 10am', {
+      timezone: 'America/Los_Angeles',
+      referenceDate,
+    });
+    expect(result).not.toBeNull();
+    // Should be Feb 1 (7 days later), not Jan 25 (today)
+    expect(result!.components.day).toBe(1);
+    expect(result!.components.month).toBe(2);
+    expect(result!.timestamp).toBeGreaterThan(referenceDate.getTime() / 1000);
+  });
+
+  it('"next Monday" when today is Monday resolves to 7 days ahead', () => {
+    const referenceDate = new Date('2026-01-26T18:00:00Z'); // 10am PST, Monday
+    const result = resolveDate('next Monday at 9am', {
+      timezone: 'America/Los_Angeles',
+      referenceDate,
+    });
+    expect(result).not.toBeNull();
+    // Should be Feb 2 (7 days later)
+    expect(result!.components.day).toBe(2);
+    expect(result!.components.month).toBe(2);
   });
 });
 

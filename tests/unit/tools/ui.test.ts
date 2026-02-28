@@ -167,5 +167,34 @@ describe('generateUi tool', () => {
       // So if generatePage returns error, it gets spread
       expect(result).toHaveProperty('error', 'HTML exceeds maximum size');
     });
+
+    describe('boundary validation', () => {
+      it('rejects missing html', async () => {
+        const result = await generateUi.handler({}, mockContext);
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('html');
+      });
+
+      it('rejects empty html', async () => {
+        const result = await generateUi.handler({ html: '' }, mockContext);
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('html');
+      });
+
+      it('rejects html as number', async () => {
+        const result = await generateUi.handler({ html: 123 }, mockContext);
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('html');
+      });
+
+      it('rejects title as number', async () => {
+        const result = await generateUi.handler(
+          { html: '<div>test</div>', title: 42 },
+          mockContext
+        );
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('title');
+      });
+    });
   });
 });

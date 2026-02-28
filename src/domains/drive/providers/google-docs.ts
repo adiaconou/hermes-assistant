@@ -47,7 +47,11 @@ export async function createDocument(
     }), phoneNumber
   );
 
-  const documentId = response.data.documentId!;
+  // Boundary: require documentId from API response
+  if (!response.data.documentId) {
+    throw new Error('Docs API returned document without required documentId');
+  }
+  const documentId = response.data.documentId;
   const documentUrl = `https://docs.google.com/document/d/${documentId}`;
 
   if (content) {

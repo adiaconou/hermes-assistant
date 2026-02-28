@@ -65,7 +65,7 @@ export const formatMapsLink: ToolDefinition = {
   handler: async (input) => {
     const addressInput = input.address;
     if (typeof addressInput !== 'string' || addressInput.trim().length === 0) {
-      throw new Error('Address is required and must be a non-empty string.');
+      return { success: false, error: 'address must be a non-empty string.' };
     }
 
     const address = addressInput.trim();

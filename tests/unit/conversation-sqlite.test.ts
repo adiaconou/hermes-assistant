@@ -410,4 +410,99 @@ describe('SqliteConversationStore', () => {
       expect(allMetadata.size).toBe(1);
     });
   });
+
+  describe('boundary: media attachments parsing', () => {
+    it('handles valid media attachments JSON', async () => {
+      const attachments = [
+        { driveFileId: 'abc', filename: 'photo.jpg', mimeType: 'image/jpeg' },
+      ];
+      const msg = await store.addMessage('+1234567890', 'user', 'Image', 'sms', attachments);
+
+      const history = await store.getHistory('+1234567890');
+      expect(history).toHaveLength(1);
+      expect(history[0].mediaAttachments).toEqual(attachments);
+    });
+
+    it('returns undefined for malformed JSON in media_attachments', async () => {
+      // Insert a message with corrupt media_attachments JSON directly
+      const db = (store as unknown as { db: import('better-sqlite3').Database }).db;
+      db.prepare(`
+        INSERT INTO conversation_messages
+          (id, phone_number, role, content, channel, created_at, memory_processed, media_attachments)
+        VALUES ('corrupt-json', '+1234567890', 'user', 'test', 'sms', ?, 0, 'not-valid-json')
+      `).run(Date.now());
+
+      const history = await store.getHistory('+1234567890');
+      const corruptMsg = history.find(m => m.id === 'corrupt-json');
+      expect(corruptMsg).toBeDefined();
+      expect(corruptMsg!.mediaAttachments).toBeUndefined();
+    });
+
+    it('returns undefined for non-array JSON in media_attachments', async () => {
+      const db = (store as unknown as { db: import('better-sqlite3').Database }).db;
+      db.prepare(`
+        INSERT INTO conversation_messages
+          (id, phone_number, role, content, channel, created_at, memory_processed, media_attachments)
+        VALUES ('non-array', '+1234567890', 'user', 'test', 'sms', ?, 0, '{"not": "an array"}')
+      `).run(Date.now());
+
+      const history = await store.getHistory('+1234567890');
+      const msg = history.find(m => m.id === 'non-array');
+      expect(msg).toBeDefined();
+      expect(msg!.mediaAttachments).toBeUndefined();
+    });
+
+    it('filters out array items missing required fields', async () => {
+      const db = (store as unknown as { db: import('better-sqlite3').Database }).db;
+      const mixedJson = JSON.stringify([
+        { driveFileId: 'good', filename: 'file.jpg', mimeType: 'image/jpeg' },
+        { driveFileId: 'bad' }, // missing filename and mimeType
+        { filename: 'also-bad.jpg', mimeType: 'image/png' }, // missing driveFileId
+      ]);
+      db.prepare(`
+        INSERT INTO conversation_messages
+          (id, phone_number, role, content, channel, created_at, memory_processed, media_attachments)
+        VALUES ('mixed-items', '+1234567890', 'user', 'test', 'sms', ?, 0, ?)
+      `).run(Date.now(), mixedJson);
+
+      const history = await store.getHistory('+1234567890');
+      const msg = history.find(m => m.id === 'mixed-items');
+      expect(msg).toBeDefined();
+      expect(msg!.mediaAttachments).toHaveLength(1);
+      expect(msg!.mediaAttachments![0].driveFileId).toBe('good');
+    });
+
+    it('getUnprocessedMessages handles malformed media_attachments gracefully', async () => {
+      const db = (store as unknown as { db: import('better-sqlite3').Database }).db;
+      db.prepare(`
+        INSERT INTO conversation_messages
+          (id, phone_number, role, content, channel, created_at, memory_processed, media_attachments)
+        VALUES ('corrupt-unproc', '+1234567890', 'user', 'test', 'sms', ?, 0, 'broken-json')
+      `).run(Date.now());
+
+      const messages = await store.getUnprocessedMessages();
+      const corruptMsg = messages.find(m => m.id === 'corrupt-unproc');
+      expect(corruptMsg).toBeDefined();
+      expect(corruptMsg!.mediaAttachments).toBeUndefined();
+    });
+
+    it('getRecentMedia skips messages with malformed media_attachments', async () => {
+      const db = (store as unknown as { db: import('better-sqlite3').Database }).db;
+      // Insert a good message
+      await store.addMessage('+1234567890', 'user', 'good', 'sms', [
+        { driveFileId: 'id1', filename: 'pic.jpg', mimeType: 'image/jpeg' },
+      ]);
+      // Insert a corrupt message
+      db.prepare(`
+        INSERT INTO conversation_messages
+          (id, phone_number, role, content, channel, created_at, memory_processed, media_attachments)
+        VALUES ('corrupt-media', '+1234567890', 'user', 'bad', 'sms', ?, 0, '{invalid')
+      `).run(Date.now());
+
+      const media = await store.getRecentMedia('+1234567890');
+      // Should get 1 valid attachment, skipping the corrupt one
+      expect(media).toHaveLength(1);
+      expect(media[0].attachment.driveFileId).toBe('id1');
+    });
+  });
 });

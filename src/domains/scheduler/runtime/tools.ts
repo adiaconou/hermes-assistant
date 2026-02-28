@@ -3,7 +3,7 @@
  */
 
 import type { ToolDefinition } from '../../../tools/types.js';
-import { requirePhoneNumber } from '../../../tools/utils.js';
+import { requirePhoneNumber, validateInput } from '../../../tools/utils.js';
 import { getUserConfigStore } from '../../../services/user-config/index.js';
 import { Cron } from 'croner';
 import {
@@ -57,6 +57,14 @@ Use this for SMS/text reminders. For calendar events, use create_calendar_event 
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      prompt: { type: 'string', required: true },
+      schedule: { type: 'string', required: true },
+      user_request: { type: 'string', required: false },
+      skill_name: { type: 'string', required: false },
+    });
+    if (validationError) return validationError;
 
     const { user_request, prompt, schedule, skill_name } = input as {
       user_request?: string;
@@ -306,6 +314,15 @@ When updating the schedule of a one-time reminder, parse the input as a specific
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
 
+    const validationError = validateInput(input, {
+      job_id: { type: 'string', required: true },
+      prompt: { type: 'string', required: false },
+      schedule: { type: 'string', required: false },
+      enabled: { type: 'boolean', required: false },
+      skill_name: { type: 'string', required: false },
+    });
+    if (validationError) return validationError;
+
     const { job_id, prompt, schedule, enabled, skill_name } = input as {
       job_id: string;
       prompt?: string;
@@ -464,6 +481,11 @@ export const deleteScheduledJob: ToolDefinition = {
   },
   handler: async (input, context) => {
     const phoneNumber = requirePhoneNumber(context);
+
+    const validationError = validateInput(input, {
+      job_id: { type: 'string', required: true },
+    });
+    if (validationError) return validationError;
 
     const { job_id } = input as { job_id: string };
 

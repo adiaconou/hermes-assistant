@@ -80,20 +80,19 @@ _Drags score down: Direct imports from sibling domain internals, upward layer im
 |--------|-------|--------|------|------------|---------------|-------------|-------------|-----------|---------|
 | Orchestrator | 90 | 90 | 90 | 90 | 92 | 90 | 90 | 90 | 90 |
 | Calendar agent | 90 | 90 | 90 | 90 | 91 | 90 | 90 | 90 | 90 |
-| Scheduler agent | 55 | 70 | 80 | 65 | 91 | 80 | 75 | 90 | 76 |
-| Email agent | 55 | 75 | 85 | 65 | 91 | 80 | 80 | 90 | 78 |
-| Memory agent | 65 | 75 | 85 | 70 | 91 | 85 | 85 | 90 | 81 |
-| Drive agent | 65 | 75 | 80 | 65 | 91 | 80 | 80 | 90 | 79 |
-| UI agent | 75 | 80 | 85 | 75 | 91 | 85 | 85 | 90 | 83 |
-| General agent | 35 | 65 | 60 | 55 | 91 | 75 | 70 | 50 | 63 |
-| Memory system | 80 | 85 | 90 | 80 | 92 | 90 | 90 | 90 | 87 |
-| Scheduler system | 65 | 75 | 80 | 70 | 92 | 85 | 80 | 90 | 80 |
-| Date resolver | 70 | 65 | 80 | 60 | 91 | 75 | 80 | 80 | 75 |
-| Email watcher | 80 | 80 | 85 | 80 | 92 | 85 | 85 | 90 | 84 |
-| SMS routing | 60 | 75 | 70 | 75 | 92 | 80 | 80 | 60 | 74 |
-| Tools layer | 70 | 70 | 65 | 70 | 91 | 80 | 80 | 85 | 77 |
-| Database layer | 75 | 80 | 75 | 80 | 91 | 85 | 85 | 75 | 81 |
-| Google integrations | 60 | 75 | 80 | 70 | 91 | 80 | 80 | 90 | 79 |
+| Scheduler agent | 55 | 70 | 80 | 90 | 91 | 80 | 75 | 90 | 79 |
+| Email agent | 55 | 75 | 85 | 90 | 91 | 80 | 80 | 90 | 81 |
+| Memory agent | 65 | 75 | 85 | 90 | 91 | 85 | 85 | 90 | 83 |
+| Drive agent | 65 | 75 | 80 | 90 | 91 | 80 | 80 | 90 | 81 |
+| UI agent | 75 | 80 | 85 | 90 | 91 | 85 | 85 | 90 | 85 |
+| Memory system | 80 | 85 | 90 | 90 | 92 | 90 | 90 | 90 | 88 |
+| Scheduler system | 65 | 75 | 80 | 90 | 92 | 85 | 80 | 90 | 82 |
+| Date resolver | 70 | 65 | 80 | 90 | 91 | 75 | 80 | 80 | 79 |
+| Email watcher | 80 | 80 | 85 | 90 | 92 | 85 | 85 | 90 | 86 |
+| SMS routing | 60 | 75 | 70 | 90 | 92 | 80 | 80 | 60 | 76 |
+| Tools layer | 70 | 70 | 65 | 90 | 91 | 80 | 80 | 85 | 79 |
+| Database layer | 75 | 80 | 75 | 90 | 91 | 85 | 85 | 75 | 82 |
+| Google integrations | 60 | 75 | 80 | 90 | 91 | 80 | 80 | 90 | 81 |
 
 ### 2026-02-28 Observability Re-grade Notes
 
@@ -109,3 +108,31 @@ _Drags score down: Direct imports from sibling domain internals, upward layer im
   - `tests/unit/date/resolver.test.ts`
   - `tests/unit/memory-processor.test.ts`
   - `tests/unit/services/email-watcher/*.test.ts`
+
+### 2026-02-28 Boundary Validation Re-grade Notes
+
+- Removed General agent row (fully retired in commit `02d6b54`, no code exists).
+- Shared `validateInput` utility added to `src/tools/utils.ts` for standardized LLM tool input validation.
+- Mechanical boundary lint added (`npm run lint:boundaries`) — 0 violations.
+- All tool handlers across Scheduler, Email, Drive, Memory, and UI agents now call `validateInput` before `as` casts.
+- Twilio webhook (`src/routes/sms.ts`) validates `From` field and rejects malformed payloads with HTTP 400.
+- Anthropic JSON responses (`src/services/anthropic/classification.ts`, `src/orchestrator/planner.ts`) are shape-checked after `JSON.parse`.
+- Google API responses (`gmail.ts`, `google-drive.ts`, `google-sheets.ts`, `google-docs.ts`, `drive-folders.ts`) replaced all non-null assertions with explicit field checks.
+- Drive API query escaping added for user-provided folder names.
+- Scheduler repo (`src/domains/scheduler/repo/sqlite.ts`) and memory repo (`src/domains/memory/repo/sqlite.ts`) fail fast on corrupt rows.
+- Conversation store (`src/services/conversation/sqlite.ts`) safely parses media attachment JSON with shape validation.
+- Date resolver boundary tests added: DST spring-forward 9am, fall-back 1:30am, leap year Feb 29, year boundary, weekday same-day.
+- Maps tool aligned with standard `{ success: false, error }` pattern instead of throwing.
+- Email watcher classifier text capped at 10,000 chars for long attachment lists.
+- Verified with:
+  - `tests/unit/tools/validation.test.ts` (23 tests)
+  - `tests/unit/tools/scheduler.test.ts`, `tests/unit/tools/email.test.ts`, `tests/unit/tools/memory.test.ts`, `tests/unit/tools/drive-handler.test.ts`, `tests/unit/tools/ui.test.ts` (boundary sections)
+  - `tests/unit/tools/maps.test.ts` (boundary tests)
+  - `tests/unit/scheduler/sqlite.test.ts` (row corruption tests)
+  - `tests/unit/memory-sqlite.test.ts` (confidence clamping, corrupt row tests)
+  - `tests/unit/conversation-sqlite.test.ts` (media attachment parsing boundary tests)
+  - `tests/unit/date/resolver.test.ts` (DST, leap year, year boundary, weekday same-day)
+  - `tests/unit/services/email-watcher/classifier.test.ts` (text cap test)
+  - `tests/integration/webhook.test.ts` (From field rejection)
+  - `npm run lint:boundaries` — 0 violations
+  - `npm run lint:architecture --strict` — 0 violations

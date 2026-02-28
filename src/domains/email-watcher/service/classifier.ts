@@ -8,14 +8,20 @@
 import { listFilesystemSkills, matchSkillForMessage } from '../providers/skills.js';
 import type { IncomingEmail, ClassificationResult, SkillMatch } from '../types.js';
 
+/** Maximum length of classifier input text to prevent excessive processing. */
+const MAX_MATCH_TEXT_LENGTH = 10_000;
+
 function buildEmailMatchText(email: IncomingEmail): string {
   const attachmentNames = email.attachments.map((a) => a.filename).join(' ');
-  return [
+  const text = [
     email.from,
     email.subject,
     email.body,
     attachmentNames,
   ].filter(Boolean).join('\n');
+  return text.length > MAX_MATCH_TEXT_LENGTH
+    ? text.slice(0, MAX_MATCH_TEXT_LENGTH)
+    : text;
 }
 
 /**

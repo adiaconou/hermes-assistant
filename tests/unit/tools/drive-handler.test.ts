@@ -82,4 +82,51 @@ describe('drive tool handlers', () => {
       error: 'Drive API unavailable',
     });
   });
+
+  describe('boundary validation', () => {
+    it('upload_to_drive rejects missing name', async () => {
+      const result = await uploadToDrive.handler(
+        { content: 'data', mime_type: 'text/plain' },
+        context
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('name');
+    });
+
+    it('upload_to_drive rejects empty name', async () => {
+      const result = await uploadToDrive.handler(
+        { name: '', content: 'data', mime_type: 'text/plain' },
+        context
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('name');
+    });
+
+    it('upload_to_drive rejects is_base64 as string', async () => {
+      const result = await uploadToDrive.handler(
+        { name: 'test.txt', content: 'data', mime_type: 'text/plain', is_base64: 'yes' },
+        context
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('is_base64');
+    });
+
+    it('upload_to_drive rejects missing mime_type', async () => {
+      const result = await uploadToDrive.handler(
+        { name: 'test.txt', content: 'data' },
+        context
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('mime_type');
+    });
+
+    it('list_drive_files rejects max_results as string', async () => {
+      const result = await listDriveFiles.handler(
+        { max_results: 'fifty' },
+        context
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('max_results');
+    });
+  });
 });

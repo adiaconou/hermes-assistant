@@ -54,7 +54,19 @@ export async function classifyMessage(
   const responseText = textBlock?.text || '';
 
   try {
-    return JSON.parse(responseText) as { needsAsyncWork: boolean; immediateResponse: string };
+    const parsed = JSON.parse(responseText);
+    // Boundary: validate shape before use
+    if (
+      typeof parsed !== 'object' || parsed === null ||
+      typeof parsed.needsAsyncWork !== 'boolean' ||
+      typeof parsed.immediateResponse !== 'string'
+    ) {
+      return {
+        needsAsyncWork: true,
+        immediateResponse: "✨ Let me work on that for you!",
+      };
+    }
+    return parsed as { needsAsyncWork: boolean; immediateResponse: string };
   } catch {
     return {
       needsAsyncWork: true,

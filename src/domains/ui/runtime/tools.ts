@@ -3,6 +3,7 @@
  */
 
 import type { ToolDefinition } from '../../../tools/types.js';
+import { validateInput } from '../../../tools/utils.js';
 import { generatePage } from '../../../services/ui/index.js';
 
 export const generateUi: ToolDefinition = {
@@ -25,6 +26,12 @@ export const generateUi: ToolDefinition = {
     },
   },
   handler: async (input) => {
+    const validationError = validateInput(input, {
+      html: { type: 'string', required: true },
+      title: { type: 'string', required: false },
+    });
+    if (validationError) return validationError;
+
     const { html, title } = input as { html: string; title?: string };
     const result = await generatePage({
       title: title ?? 'Generated Page',
