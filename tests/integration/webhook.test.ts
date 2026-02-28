@@ -65,6 +65,21 @@ describe('POST /webhook/sms', () => {
   });
 
   describe('basic response flow', () => {
+    function parseStdoutLogs(spy: ReturnType<typeof vi.spyOn>): Array<Record<string, unknown>> {
+      return spy.mock.calls
+        .flatMap(([chunk]) => String(chunk).split('\n'))
+        .map(line => line.trim())
+        .filter(line => line.startsWith('{') && line.endsWith('}'))
+        .map((line) => {
+          try {
+            return JSON.parse(line) as Record<string, unknown>;
+          } catch {
+            return null;
+          }
+        })
+        .filter((log): log is Record<string, unknown> => log !== null);
+    }
+
     it('should return TwiML with immediate response from classification', async () => {
       // Set up mock to return a simple response (no async work)
       setMockResponses([
@@ -123,6 +138,56 @@ describe('POST /webhook/sms', () => {
 
       const sentMessages = getSentMessages();
       expect(sentMessages[0].to).toBe('+15551234567');
+    });
+
+    it('propagates the same requestId from webhook logging to orchestrator logging', async () => {
+      setMockResponses([
+        // Classification (for ack text)
+        createTextResponse('{"needsAsyncWork": false, "immediateResponse": "Got it."}'),
+        // Planner
+        createTextResponse(JSON.stringify({
+          analysis: 'Need orchestrator path for requestId assertion',
+          goal: 'Handle request',
+          steps: [{ id: 'step_1', agent: 'memory-agent', task: 'Respond' }],
+        })),
+        // Executor
+        createTextResponse('Done.'),
+        // Response Composer
+        createTextResponse('Done.'),
+      ]);
+
+      const stdoutSpy = vi.spyOn(process.stdout, 'write');
+      const payload = createSmsPayload('Trace this flow', '+15557654321');
+
+      const { req, res } = createMockReqRes({
+        method: 'POST',
+        url: '/webhook/sms',
+        headers: { 'x-twilio-signature': signPayload(payload) },
+        body: payload,
+      });
+
+      await handleSmsWebhook(req, res);
+
+      await vi.waitFor(() => {
+        expect(getSentMessages().length).toBeGreaterThan(0);
+      }, { timeout: 5000 });
+
+      const logs = parseStdoutLogs(stdoutSpy);
+      const webhookLog = logs.find((record) =>
+        record.domain === 'sms-routing' &&
+        record.event === 'route_log' &&
+        record.operation === 'webhook' &&
+        typeof record.numMedia === 'number'
+      );
+      const orchestratorLog = logs.find((record) =>
+        record.domain === 'orchestrator-handler' &&
+        record.event === 'orchestrator_request_started'
+      );
+
+      expect(webhookLog?.requestId).toBeDefined();
+      expect(orchestratorLog?.requestId).toBe(webhookLog?.requestId);
+
+      stdoutSpy.mockRestore();
     });
   });
 

@@ -31,6 +31,23 @@ import config from '../config.js';
 import { detectChannel, normalize, sanitize, type MessageChannel } from '../utils/phone.js';
 import { startTypingIndicator } from '../services/twilio/typing-indicator.js';
 import { registerInboundMessageSid } from '../services/twilio/webhook-idempotency.js';
+import { createLogger, createRequestId, initObservability, withLogContext, type AppLogger } from '../utils/observability/index.js';
+
+initObservability();
+
+const appLogger = createLogger({ domain: 'sms-routing' });
+
+function logInfo(log: AppLogger, message: string, data?: Record<string, unknown>): void {
+  log.info('route_log', { message, ...data });
+}
+
+function logWarn(log: AppLogger, message: string, data?: Record<string, unknown>): void {
+  log.warn('route_log', { message, ...data });
+}
+
+function logError(log: AppLogger, message: string, data?: Record<string, unknown>): void {
+  log.error('route_log', { message, ...data });
+}
 
 // Re-export for backwards compatibility
 export type { MediaAttachment } from '../types/media.js';
@@ -273,21 +290,20 @@ async function processAsyncWork(
   channel: MessageChannel,
   userConfig: UserConfig | null,
   mediaAttachments?: MediaAttachment[],
-  userMessageId?: string
+  userMessageId?: string,
+  requestId?: string,
 ): Promise<void> {
   const startTime = Date.now();
+  const log = appLogger.child({ operation: 'process_async_work', channel, sender, requestId });
   let storedMedia: StoredMediaAttachment[] = [];
   let preAnalysis: CurrentMediaSummary[] = [];
 
   try {
-    console.log(JSON.stringify({
-      level: 'info',
-      message: 'Starting async work',
-      channel,
+    logInfo(log, 'Starting async work', {
       useOrchestrator: true,
       numMedia: mediaAttachments?.length || 0,
-      timestamp: new Date().toISOString(),
-    }));
+      messageLength: message.length,
+    });
 
     // Process media: download from Twilio, then upload to Drive + pre-analyze in parallel
     if (mediaAttachments && mediaAttachments.length > 0) {
@@ -296,13 +312,10 @@ async function processAsyncWork(
       preAnalysis = mediaResult.preAnalysis;
 
       if (storedMedia.length > 0) {
-        console.log(JSON.stringify({
-          level: 'info',
-          message: 'Media uploaded to Drive',
+        logInfo(log, 'Media uploaded to Drive', {
           count: storedMedia.length,
           fileIds: storedMedia.map(m => m.driveFileId),
-          timestamp: new Date().toISOString(),
-        }));
+        });
       }
 
       // Backfill media attachments on the user message (Issue #5)
@@ -311,12 +324,11 @@ async function processAsyncWork(
           const conversationStore = getConversationStore();
           await conversationStore.updateMediaAttachments(userMessageId, storedMedia);
         } catch (backfillError) {
-          console.log(JSON.stringify({
-            level: 'warn',
-            message: 'Failed to backfill media attachments on user message',
-            error: backfillError instanceof Error ? backfillError.message : String(backfillError),
-            timestamp: new Date().toISOString(),
-          }));
+          logWarn(log, 'Failed to backfill media attachments on user message', {
+            error: backfillError instanceof Error ? backfillError : String(backfillError),
+            userMessageId,
+            backfillCount: storedMedia.length,
+          });
         }
       }
 
@@ -332,60 +344,55 @@ async function processAsyncWork(
               { mimeType: summary.mime_type, analysis: summary.summary } satisfies Pick<ImageAnalysisMetadata, 'mimeType' | 'analysis'>
             );
           } catch (metadataError) {
-            console.log(JSON.stringify({
-              level: 'warn',
-              message: 'Failed to persist pre-analysis metadata',
-              error: metadataError instanceof Error ? metadataError.message : String(metadataError),
-              timestamp: new Date().toISOString(),
-            }));
+            logWarn(log, 'Failed to persist pre-analysis metadata', {
+              error: metadataError instanceof Error ? metadataError : String(metadataError),
+              userMessageId,
+              mimeType: summary.mime_type,
+            });
           }
         }
       }
     }
 
     // Always use orchestrator handler (pass pre-analysis for planner enrichment)
-    const responseText = await handleWithOrchestrator(message, sender, channel, userConfig, mediaAttachments, storedMedia, userMessageId, preAnalysis);
+    const responseText = await handleWithOrchestrator(
+      message,
+      sender,
+      channel,
+      userConfig,
+      mediaAttachments,
+      storedMedia,
+      userMessageId,
+      preAnalysis,
+      requestId,
+    );
 
-    console.log(JSON.stringify({
-      level: 'info',
-      message: 'Async work complete',
+    logInfo(log, 'Async work complete', {
       responseLength: responseText.length,
       durationMs: Date.now() - startTime,
-      timestamp: new Date().toISOString(),
-    }));
+    });
 
     // Store in conversation history and send response
     await addMessage(sender, 'assistant', responseText, channel);
     await sendResponse(sender, channel, responseText);
 
-    console.log(JSON.stringify({
-      level: 'info',
-      message: 'Async response sent',
-      channel,
+    logInfo(log, 'Async response sent', {
       totalDurationMs: Date.now() - startTime,
-      timestamp: new Date().toISOString(),
-    }));
+    });
   } catch (error) {
-    console.error(JSON.stringify({
-      level: 'error',
-      message: 'Async work failed',
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
+    logError(log, 'Async work failed', {
+      error: error instanceof Error ? error : String(error),
       durationMs: Date.now() - startTime,
-      timestamp: new Date().toISOString(),
-    }));
+    });
 
     // Try to send error message to user
     try {
       const errorMessage = '😔 Sorry, I encountered an error completing your request. Please try again.';
       await sendResponse(sender, channel, errorMessage);
     } catch (sendError) {
-      console.error(JSON.stringify({
-        level: 'error',
-        message: 'Failed to send error message to user',
-        error: sendError instanceof Error ? sendError.message : String(sendError),
-        timestamp: new Date().toISOString(),
-      }));
+      logError(log, 'Failed to send error message to user', {
+        error: sendError instanceof Error ? sendError : String(sendError),
+      });
     }
   }
 }
@@ -400,217 +407,198 @@ async function processAsyncWork(
  * SMS: run classifier for personalized ack, return TwiML with ack.
  */
 export async function handleSmsWebhook(req: Request, res: Response): Promise<void> {
-  const startTime = Date.now();
+  const requestId = createRequestId();
 
-  // Validate Twilio signature before processing
-  const signature = req.headers['x-twilio-signature'] as string | undefined;
-  const webhookUrl = `${config.baseUrl}/webhook/sms`;
+  await withLogContext({ requestId }, async () => {
+    const startTime = Date.now();
+    const webhookLogger = appLogger.child({ operation: 'webhook' });
 
-  if (!validateTwilioSignature(signature, webhookUrl, req.body)) {
-    console.log(JSON.stringify({
-      level: 'warn',
-      message: 'Invalid Twilio signature - rejecting request',
-      timestamp: new Date().toISOString(),
-    }));
-    res.status(403).send('Forbidden');
-    return;
-  }
+    // Validate Twilio signature before processing
+    const signature = req.headers['x-twilio-signature'] as string | undefined;
+    const webhookUrl = `${config.baseUrl}/webhook/sms`;
 
-  const webhookBody = req.body as TwilioWebhookBody;
-  const { From, Body } = webhookBody;
+    if (!validateTwilioSignature(signature, webhookUrl, req.body)) {
+      logWarn(webhookLogger, 'Invalid Twilio signature - rejecting request');
+      res.status(403).send('Forbidden');
+      return;
+    }
 
-  const channel = detectChannel(From || '');
-  const sender = normalize(From || '');
-  const inboundMessageSid = getInboundMessageSid(webhookBody);
+    const webhookBody = req.body as TwilioWebhookBody;
+    const { From, Body } = webhookBody;
 
-  if (inboundMessageSid && !registerInboundMessageSid(inboundMessageSid)) {
-    console.log(JSON.stringify({
-      level: 'info',
-      message: 'Duplicate Twilio webhook ignored',
-      messageSid: inboundMessageSid,
-      from: sanitize(sender),
-      timestamp: new Date().toISOString(),
-    }));
-    res.type('text/xml');
-    res.send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
-    return;
-  }
+    const channel = detectChannel(From || '');
+    const sender = normalize(From || '');
+    const log = webhookLogger.child({ channel, sender, requestId });
+    const inboundMessageSid = getInboundMessageSid(webhookBody);
 
-  // Per-phone rate limiting
-  if (!checkRateLimit(sender)) {
-    console.log(JSON.stringify({
-      level: 'warn',
-      message: 'Rate limited',
-      from: sanitize(sender),
-      timestamp: new Date().toISOString(),
-    }));
-    res.status(429).send('Rate limited');
-    return;
-  }
+    if (inboundMessageSid && !registerInboundMessageSid(inboundMessageSid)) {
+      logInfo(log, 'Duplicate Twilio webhook ignored', {
+        messageSid: inboundMessageSid,
+        sender: sanitize(sender),
+      });
+      res.type('text/xml');
+      res.send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+      return;
+    }
 
-  // Extract media attachments
-  const mediaAttachments = extractMediaAttachments(webhookBody);
+    // Per-phone rate limiting
+    if (!checkRateLimit(sender)) {
+      logWarn(log, 'Rate limited', { sender: sanitize(sender) });
+      res.status(429).send('Rate limited');
+      return;
+    }
 
-  // Always include media context so the model can call image/file tools
-  // even when the user also provides a text caption.
-  const message = buildMessageWithMediaContext(Body, mediaAttachments);
+    // Extract media attachments
+    const mediaAttachments = extractMediaAttachments(webhookBody);
 
-  console.log(
-    JSON.stringify({
-      level: 'info',
-      message: 'Message received',
+    // Always include media context so the model can call image/file tools
+    // even when the user also provides a text caption.
+    const message = buildMessageWithMediaContext(Body, mediaAttachments);
+
+    logInfo(log, 'Message received', {
       channel,
-      from: sanitize(sender),
+      sender: sanitize(sender),
       bodyLength: message.length,
       numMedia: mediaAttachments.length,
       mediaTypes: mediaAttachments.map(m => m.contentType),
-      timestamp: new Date().toISOString(),
-    })
-  );
+    });
 
-  try {
-    if (channel === 'whatsapp') {
-      // ── WhatsApp flow: skip classifier, return empty TwiML, typing indicator ──
-      const userMessage = await addMessage(sender, 'user', message, channel);
+    try {
+      if (channel === 'whatsapp') {
+        // ── WhatsApp flow: skip classifier, return empty TwiML, typing indicator ──
+        const userMessage = await addMessage(sender, 'user', message, channel);
 
-      // Return empty TwiML immediately (no ack stored in history)
-      res.type('text/xml');
-      res.send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+        // Return empty TwiML immediately (no ack stored in history)
+        res.type('text/xml');
+        res.send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
 
-      console.log(JSON.stringify({
-        level: 'info',
-        message: 'Empty TwiML sent (WhatsApp)',
-        durationMs: Date.now() - startTime,
-        timestamp: new Date().toISOString(),
-      }));
+        logInfo(log, 'Empty TwiML sent (WhatsApp)', {
+          durationMs: Date.now() - startTime,
+        });
 
-      // Start typing indicator, stop in .finally()
-      // Twilio's typing indicator has a hard 25-second expiry per messageId.
-      // To keep dots alive, we send an interim message every ~20s and fire
-      // a new indicator from that message's SID.
-      const stopTyping = inboundMessageSid
-        ? startTypingIndicator(inboundMessageSid, async () => {
-            const sid = await sendWhatsApp(sender, '...');
-            return sid;
+        // Start typing indicator, stop in .finally()
+        // Twilio's typing indicator has a hard 25-second expiry per messageId.
+        // To keep dots alive, we send an interim message every ~20s and fire
+        // a new indicator from that message's SID.
+        const stopTyping = inboundMessageSid
+          ? startTypingIndicator(inboundMessageSid, async () => {
+              const sid = await sendWhatsApp(sender, '...');
+              return sid;
+            })
+          : () => {};
+
+        if (!inboundMessageSid) {
+          logWarn(log, 'WhatsApp typing indicator skipped - missing inbound message SID');
+        }
+
+        const configStore = getUserConfigStore();
+        Promise.resolve(configStore.get(sender))
+          .then((userConfig) => withLogContext(
+            { requestId },
+            () => processAsyncWork(sender, message, channel, userConfig, mediaAttachments, userMessage.id, requestId),
+          ))
+          .catch((error) => {
+            logError(log, 'Unhandled error in async work', {
+              error: error instanceof Error ? error : String(error),
+            });
           })
-        : () => {};
+          .finally(stopTyping);
+      } else {
+        // ── SMS flow: classifier for personalized ack, always run orchestrator ──
+        const configStore = getUserConfigStore();
+        const memoryStore = getMemoryStore();
+        const [history, userConfig, userFacts] = await Promise.all([
+          getHistory(sender),
+          configStore.get(sender),
+          memoryStore.getFacts(sender),
+        ]);
 
-      if (!inboundMessageSid) {
-        console.log(JSON.stringify({
-          level: 'warn',
-          message: 'WhatsApp typing indicator skipped - missing inbound message SID',
-          timestamp: new Date().toISOString(),
-        }));
+        // Classify for ack text only — result no longer gates orchestrator
+        const classification = await classifyMessage(TOOLS, message, history, userConfig, userFacts);
+
+        logInfo(log, 'Classification complete', {
+          classificationDurationMs: Date.now() - startTime,
+        });
+
+        const hasMedia = mediaAttachments.length > 0;
+        const immediateResponse = hasMedia
+          ? MEDIA_IMMEDIATE_ACK
+          : classification.immediateResponse;
+
+        // Store messages in history
+        const userMessage = await addMessage(sender, 'user', message, channel);
+        await addMessage(sender, 'assistant', immediateResponse, channel);
+
+        // Enforce SMS length limits for TwiML response
+        const safeImmediateResponse = enforceSmsLength(immediateResponse, channel);
+
+        // Return TwiML with the immediate response
+        res.type('text/xml');
+        res.send(
+          `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(safeImmediateResponse)}</Message></Response>`
+        );
+
+        logInfo(log, 'TwiML response sent', {
+          durationMs: Date.now() - startTime,
+        });
+
+        // Always spawn background processing (fire and forget)
+        withLogContext({ requestId }, () => processAsyncWork(
+          sender,
+          message,
+          channel,
+          userConfig,
+          mediaAttachments,
+          userMessage.id,
+          requestId,
+        )).catch((error) => {
+          logError(log, 'Unhandled error in async work', {
+            error: error instanceof Error ? error : String(error),
+          });
+        });
+      }
+    } catch (error) {
+      logError(log, 'Webhook processing failed', {
+        error: error instanceof Error ? error : String(error),
+        durationMs: Date.now() - startTime,
+      });
+
+      // Fall back to generic response
+      const fallbackMessage = "⏳ I'm processing your message and will respond shortly.";
+      const fallbackUserMessage = await addMessage(sender, 'user', message, channel);
+
+      if (channel === 'whatsapp') {
+        // WhatsApp: return empty TwiML, always orchestrate
+        res.type('text/xml');
+        res.send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+      } else {
+        // SMS: return fallback ack
+        await addMessage(sender, 'assistant', fallbackMessage, channel);
+        res.type('text/xml');
+        res.send(
+          `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(fallbackMessage)}</Message></Response>`
+        );
       }
 
+      // Try to process with full pipeline even after failure
       const configStore = getUserConfigStore();
-      Promise.resolve(configStore.get(sender))
-        .then((userConfig) => processAsyncWork(sender, message, channel, userConfig, mediaAttachments, userMessage.id))
-        .catch((error) => {
-          console.error(JSON.stringify({
-            level: 'error',
-            message: 'Unhandled error in async work',
-            error: error instanceof Error ? error.message : String(error),
-            timestamp: new Date().toISOString(),
-          }));
-        })
-        .finally(stopTyping);
-    } else {
-      // ── SMS flow: classifier for personalized ack, always run orchestrator ──
-      const configStore = getUserConfigStore();
-      const memoryStore = getMemoryStore();
-      const [history, userConfig, userFacts] = await Promise.all([
-        getHistory(sender),
-        configStore.get(sender),
-        memoryStore.getFacts(sender),
-      ]);
-
-      // Classify for ack text only — result no longer gates orchestrator
-      const classification = await classifyMessage(TOOLS, message, history, userConfig, userFacts);
-
-      console.log(JSON.stringify({
-        level: 'info',
-        message: 'Classification complete',
-        classificationDurationMs: Date.now() - startTime,
-        timestamp: new Date().toISOString(),
-      }));
-
-      const hasMedia = mediaAttachments.length > 0;
-      const immediateResponse = hasMedia
-        ? MEDIA_IMMEDIATE_ACK
-        : classification.immediateResponse;
-
-      // Store messages in history
-      const userMessage = await addMessage(sender, 'user', message, channel);
-      await addMessage(sender, 'assistant', immediateResponse, channel);
-
-      // Enforce SMS length limits for TwiML response
-      const safeImmediateResponse = enforceSmsLength(immediateResponse, channel);
-
-      // Return TwiML with the immediate response
-      res.type('text/xml');
-      res.send(
-        `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(safeImmediateResponse)}</Message></Response>`
-      );
-
-      console.log(JSON.stringify({
-        level: 'info',
-        message: 'TwiML response sent',
-        channel,
-        durationMs: Date.now() - startTime,
-        timestamp: new Date().toISOString(),
-      }));
-
-      // Always spawn background processing (fire and forget)
-      processAsyncWork(sender, message, channel, userConfig, mediaAttachments, userMessage.id).catch((error) => {
-        console.error(JSON.stringify({
-          level: 'error',
-          message: 'Unhandled error in async work',
-          error: error instanceof Error ? error.message : String(error),
-          timestamp: new Date().toISOString(),
-        }));
+      configStore.get(sender).then((userConfig) => {
+        withLogContext({ requestId }, () => processAsyncWork(
+          sender,
+          message,
+          channel,
+          userConfig,
+          mediaAttachments,
+          fallbackUserMessage.id,
+          requestId,
+        )).catch((asyncError) => {
+          logError(log, 'Async fallback processing failed', {
+            error: asyncError instanceof Error ? asyncError : String(asyncError),
+          });
+        });
       });
     }
-  } catch (error) {
-    console.error(JSON.stringify({
-      level: 'error',
-      message: 'Webhook processing failed',
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-      durationMs: Date.now() - startTime,
-      timestamp: new Date().toISOString(),
-    }));
-
-    // Fall back to generic response
-    const fallbackMessage = "⏳ I'm processing your message and will respond shortly.";
-    const fallbackUserMessage = await addMessage(sender, 'user', message, channel);
-
-    if (channel === 'whatsapp') {
-      // WhatsApp: return empty TwiML, always orchestrate
-      res.type('text/xml');
-      res.send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
-    } else {
-      // SMS: return fallback ack
-      await addMessage(sender, 'assistant', fallbackMessage, channel);
-      res.type('text/xml');
-      res.send(
-        `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(fallbackMessage)}</Message></Response>`
-      );
-    }
-
-    // Try to process with full pipeline even after failure
-    const configStore = getUserConfigStore();
-    configStore.get(sender).then((userConfig) => {
-      processAsyncWork(sender, message, channel, userConfig, mediaAttachments, fallbackUserMessage.id).catch((asyncError) => {
-        console.error(JSON.stringify({
-          level: 'error',
-          message: 'Async fallback processing failed',
-          error: asyncError instanceof Error ? asyncError.message : String(asyncError),
-          timestamp: new Date().toISOString(),
-        }));
-      });
-    });
-  }
+  });
 }
 
 router.post('/webhook/sms', handleSmsWebhook);

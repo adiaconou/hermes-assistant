@@ -10,6 +10,8 @@
 import { existsSync, mkdirSync, appendFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import config from '../config.js';
+import { getLogContext } from './observability/context.js';
+import { redactPhone } from './observability/redaction.js';
 
 export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
 
@@ -405,9 +407,14 @@ ${'='.repeat(80)}
  * Create a trace logger for a request.
  * Returns a functioning logger in development, or a no-op logger in production.
  */
-export function createTraceLogger(phoneNumber: string): TraceLogger {
-  const requestId = Math.random().toString(36).slice(2, 10);
-  return new TraceLogger(requestId, phoneNumber);
+export function createTraceLogger(phoneNumber: string, requestIdOverride?: string): TraceLogger {
+  const context = getLogContext();
+  const requestId = typeof requestIdOverride === 'string'
+    ? requestIdOverride
+    : typeof context.requestId === 'string'
+    ? context.requestId
+    : Math.random().toString(36).slice(2, 10);
+  return new TraceLogger(requestId, redactPhone(phoneNumber));
 }
 
 /**

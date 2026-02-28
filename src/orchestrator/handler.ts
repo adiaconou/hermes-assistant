@@ -19,6 +19,9 @@ import { orchestrate } from './orchestrate.js';
 import { createTraceLogger } from '../utils/trace-logger.js';
 import { formatMediaContext } from './media-context.js';
 import { getRelevantHistory } from './conversation-window.js';
+import { createLogger, redactPhone } from '../utils/observability/index.js';
+
+const appLogger = createLogger({ domain: 'orchestrator-handler' });
 
 /**
  * Handle a message using the orchestrator if enabled.
@@ -40,21 +43,23 @@ export async function handleWithOrchestrator(
   storedMedia?: StoredMediaAttachment[],
   messageId?: string,
   currentMediaSummaries?: CurrentMediaSummary[],
+  requestId?: string,
 ): Promise<string> {
-  // Create trace logger for this request
-  const logger = createTraceLogger(phoneNumber);
+  const logger = createTraceLogger(phoneNumber, requestId);
+  const log = appLogger.child({ channel, phone: phoneNumber, requestId });
 
+  // Create trace logger for this request
   logger.log('INFO', 'Incoming SMS request', {
-    Phone: phoneNumber,
+    Phone: redactPhone(phoneNumber),
     Channel: channel,
-    Message: userMessage,
+    'Message length': userMessage.length,
   });
 
-  console.log(JSON.stringify({
-    level: 'info',
-    message: 'Using orchestrator for message handling',
-    timestamp: new Date().toISOString(),
-  }));
+  log.info('orchestrator_request_started', {
+    messageLength: userMessage.length,
+    hasMediaAttachments: Boolean(mediaAttachments?.length),
+    hasStoredMedia: Boolean(storedMedia?.length),
+  });
 
   try {
     // Load context for orchestrator
@@ -72,20 +77,14 @@ export async function handleWithOrchestrator(
     const userFacts = factsResult.status === 'fulfilled' ? factsResult.value : [];
 
     if (historyResult.status === 'rejected') {
-      console.error(JSON.stringify({
-        level: 'warn',
-        message: 'Failed to load conversation history, continuing with empty history',
-        error: historyResult.reason instanceof Error ? historyResult.reason.message : String(historyResult.reason),
-        timestamp: new Date().toISOString(),
-      }));
+      log.warn('conversation_history_load_failed', {
+        error: historyResult.reason instanceof Error ? historyResult.reason : String(historyResult.reason),
+      });
     }
     if (factsResult.status === 'rejected') {
-      console.error(JSON.stringify({
-        level: 'warn',
-        message: 'Failed to load user facts, continuing without memory',
-        error: factsResult.reason instanceof Error ? factsResult.reason.message : String(factsResult.reason),
-        timestamp: new Date().toISOString(),
-      }));
+      log.warn('memory_facts_load_failed', {
+        error: factsResult.reason instanceof Error ? factsResult.reason : String(factsResult.reason),
+      });
     }
 
     const windowedHistory = getRelevantHistory(conversationHistory);
@@ -133,27 +132,25 @@ export async function handleWithOrchestrator(
     );
 
     if (result.success) {
+      log.info('orchestrator_request_succeeded', {
+        responseLength: result.response.length,
+      });
       logger.close('SUCCESS');
       return result.response;
     }
 
     // Orchestration failed - log and return error response
-    console.error(JSON.stringify({
-      level: 'error',
-      message: 'Orchestration failed',
-      error: result.error,
-      timestamp: new Date().toISOString(),
-    }));
+    log.error('orchestrator_request_failed', {
+      error: result.error ?? 'Unknown error',
+      partialResponseLength: result.response?.length ?? 0,
+    });
 
     logger.close('FAILED');
     return result.response || 'I encountered an issue processing your request. Please try again.';
   } catch (error) {
-    console.error(JSON.stringify({
-      level: 'error',
-      message: 'Orchestrator handler error',
-      error: error instanceof Error ? error.message : String(error),
-      timestamp: new Date().toISOString(),
-    }));
+    log.error('orchestrator_handler_error', {
+      error: error instanceof Error ? error : String(error),
+    });
 
     logger.log('ERROR', 'Orchestrator handler error', {
       Error: error instanceof Error ? error.message : String(error),

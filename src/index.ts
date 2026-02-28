@@ -39,6 +39,9 @@ import { closeMemoryStore } from './domains/memory/runtime/index.js';
 import { startEmailWatcher, stopEmailWatcher } from './domains/email-watcher/runtime/index.js';
 import { closeTwilioWebhookIdempotencyStore } from './services/twilio/webhook-idempotency.js';
 import { closeOAuthStateNonceStore } from './services/auth/oauth-state-nonce.js';
+import { initObservability } from './utils/observability/index.js';
+
+initObservability();
 
 const app = express();
 

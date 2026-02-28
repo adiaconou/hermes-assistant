@@ -27,6 +27,7 @@ process.env.CREDENTIAL_STORE_SQLITE_PATH = path.join(E2E_TEMP_DIR, 'credentials.
 process.env.UI_LOCAL_STORAGE_PATH = path.join(E2E_TEMP_DIR, 'pages');
 process.env.UI_SHORTENER_PROVIDER = 'memory';
 process.env.TRACE_LOG_DIR = path.join(E2E_TEMP_DIR, 'logs');
+process.env.APP_LOG_FILE = path.join(E2E_TEMP_DIR, 'logs', 'app.ndjson');
 process.env.MEMORY_PROCESSOR_ENABLED = 'false';
 process.env.EMAIL_WATCHER_ENABLED = 'false';
 
