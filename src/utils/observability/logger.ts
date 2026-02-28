@@ -4,7 +4,7 @@ import { getLogContext } from './context.js';
 import { redactSecrets } from './redaction.js';
 import type { AppLogger, AppLogRecord, LogContext, LogData, LogLevel } from './types.js';
 
-let consoleMirroringInstalled = false;
+let consoleAdapterInstalled = false;
 let sinkHooksInstalled = false;
 let fileSink: { path: string; stream: WriteStream } | null = null;
 
@@ -108,6 +108,25 @@ function toDisplayMessage(args: unknown[]): string {
     .join(' ');
 }
 
+function toLogLevel(value: unknown, fallback: LogLevel): LogLevel {
+  if (typeof value !== 'string') return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'debug' || normalized === 'info' || normalized === 'warn' || normalized === 'error') {
+    return normalized;
+  }
+  return fallback;
+}
+
+function eventFromMessage(message: string): string {
+  const slug = message
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80);
+  return slug || 'legacy_console';
+}
+
 function normalizeData(data?: LogData): LogData {
   if (!data) return {};
   return redactSecrets(data);
@@ -159,6 +178,79 @@ function emitRecord(record: AppLogRecord): void {
   writeLineToFile(line);
 }
 
+function parseConsolePayload(args: unknown[]): {
+  event: string;
+  levelOverride?: LogLevel;
+  context: LogContext;
+  data: LogData;
+} {
+  const fallback = {
+    event: 'legacy_console',
+    context: {},
+    data: { message: toDisplayMessage(args) },
+  };
+
+  if (args.length !== 1) {
+    return fallback;
+  }
+
+  const [first] = args;
+  let raw: unknown = first;
+  if (typeof first === 'string') {
+    const trimmed = first.trim();
+    if (!(trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+      return fallback;
+    }
+    try {
+      raw = JSON.parse(trimmed);
+    } catch {
+      return fallback;
+    }
+  }
+
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    return fallback;
+  }
+
+  const obj = { ...(raw as Record<string, unknown>) };
+  const event = typeof obj.event === 'string'
+    ? obj.event
+    : typeof obj.message === 'string'
+    ? eventFromMessage(obj.message)
+    : 'legacy_console';
+  const levelOverride = typeof obj.level === 'string'
+    ? toLogLevel(obj.level, 'info')
+    : undefined;
+  delete obj.event;
+  delete obj.level;
+  delete obj.timestamp;
+
+  const context: LogContext = {};
+  if (typeof obj.domain === 'string') {
+    context.domain = obj.domain;
+    delete obj.domain;
+  }
+  if (typeof obj.operation === 'string') {
+    context.operation = obj.operation;
+    delete obj.operation;
+  }
+  if (typeof obj.requestId === 'string') {
+    context.requestId = obj.requestId;
+    delete obj.requestId;
+  }
+  if (typeof obj.runId === 'string') {
+    context.runId = obj.runId;
+    delete obj.runId;
+  }
+
+  return {
+    event,
+    levelOverride,
+    context,
+    data: obj,
+  };
+}
+
 export function createLogger(baseContext: LogContext = {}): AppLogger {
   const log = (level: LogLevel, event: string, data?: LogData): void => {
     emitRecord(toRecord(level, event, baseContext, data));
@@ -181,32 +273,26 @@ export function initObservability(): void {
     process.once('SIGTERM', closeFileSink);
   }
 
-  if (consoleMirroringInstalled) return;
-  if (!isDevelopment()) return;
+  if (consoleAdapterInstalled) return;
 
-  const mirrorConsole = process.env.APP_MIRROR_CONSOLE !== 'false';
-  if (!mirrorConsole) return;
+  const wrapConsole = process.env.APP_WRAP_CONSOLE !== 'false';
+  if (!wrapConsole) return;
 
-  consoleMirroringInstalled = true;
+  consoleAdapterInstalled = true;
 
   const install = (
     method: 'log' | 'info' | 'warn' | 'error' | 'debug',
     level: LogLevel,
   ): void => {
-    const original = console[method].bind(console);
     console[method] = (...args: unknown[]) => {
-      original(...args);
-
-      const record: AppLogRecord = {
-        timestamp: new Date().toISOString(),
-        level,
-        event: 'legacy_console',
-        source: `console.${method}`,
-        message: redactSecrets(toDisplayMessage(args)),
-        ...getLogContext(),
-      };
-      const line = JSON.stringify(record);
-      writeLineToFile(line);
+      const parsed = parseConsolePayload(args);
+      const record = toRecord(
+        parsed.levelOverride ?? level,
+        parsed.event,
+        parsed.context,
+        { source: `console.${method}`, ...parsed.data },
+      );
+      emitRecord(record);
     };
   };
 

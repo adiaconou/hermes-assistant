@@ -14,6 +14,7 @@ import { getUserConfigStore } from '../../../services/user-config/index.js';
 import { syncNewEmails } from '../providers/gmail-sync.js';
 import { classifyEmails } from '../service/classifier.js';
 import { executeSkillActions } from '../service/actions.js';
+import { createLogger, createRunId, redactPhone, withLogContext } from '../../../utils/observability/index.js';
 
 // Re-export domain public API
 export { classifyEmails } from '../service/classifier.js';
@@ -24,6 +25,7 @@ export { setEmailWatcherExecuteWithTools } from '../providers/executor.js';
 export type * from '../types.js';
 
 let poller: Poller | null = null;
+const log = createLogger({ domain: 'email-watcher-runtime' });
 
 /**
  * Start the email watcher background service.
@@ -33,85 +35,82 @@ let poller: Poller | null = null;
  */
 export function startEmailWatcher(): void {
   if (!config.emailWatcher.enabled) {
-    console.log(JSON.stringify({
-      event: 'email_watcher_disabled',
-      timestamp: new Date().toISOString(),
-    }));
+    log.info('watcher_disabled');
     return;
   }
 
   if (poller) {
-    console.log(JSON.stringify({
-      event: 'email_watcher_already_running',
-      timestamp: new Date().toISOString(),
-    }));
+    log.info('watcher_already_running');
     return;
   }
 
   poller = createIntervalPoller(async () => {
-    const userConfigStore = getUserConfigStore();
-    const users = await userConfigStore.getEmailWatcherUsers();
+    const runId = createRunId('emailwatch');
+    await withLogContext({ runId }, async () => {
+      const startedAt = Date.now();
+      const userConfigStore = getUserConfigStore();
+      const users = await userConfigStore.getEmailWatcherUsers();
 
-    if (users.length === 0) {
-      return;
-    }
+      log.info('run_started', { usersConfigured: users.length });
 
-    let totalEmails = 0;
-    let totalMatches = 0;
-
-    for (const user of users) {
-      try {
-        // Phase 1: Sync new emails
-        const emails = await syncNewEmails(user.phoneNumber);
-        if (emails.length === 0) continue;
-
-        totalEmails += emails.length;
-
-        // Phase 2: Classify
-        const classifications = await classifyEmails(user.phoneNumber, emails);
-        const matched = classifications.filter(c => c.matches.length > 0);
-        totalMatches += matched.length;
-
-        // Phase 3: Execute actions
-        if (matched.length > 0) {
-          await executeSkillActions(user.phoneNumber, matched);
-        }
-
-        console.log(JSON.stringify({
-          event: 'email_watcher_user_cycle',
-          phone: user.phoneNumber.slice(-4).padStart(user.phoneNumber.length, '*'),
-          emailsSynced: emails.length,
-          emailsMatched: matched.length,
-          timestamp: new Date().toISOString(),
-        }));
-      } catch (err) {
-        console.log(JSON.stringify({
-          event: 'email_watcher_user_error',
-          phone: user.phoneNumber.slice(-4).padStart(user.phoneNumber.length, '*'),
-          error: err instanceof Error ? err.message : String(err),
-          timestamp: new Date().toISOString(),
-        }));
+      if (users.length === 0) {
+        log.debug('run_no_work', { durationMs: Date.now() - startedAt });
+        return;
       }
-    }
 
-    if (totalEmails > 0) {
-      console.log(JSON.stringify({
-        event: 'email_watcher_cycle_complete',
-        usersProcessed: users.length,
+      let totalEmails = 0;
+      let totalMatches = 0;
+      let usersWithSyncedEmails = 0;
+
+      for (const user of users) {
+        const userLog = log.child({ phone: redactPhone(user.phoneNumber) });
+        try {
+          // Phase 1: Sync new emails
+          const emails = await syncNewEmails(user.phoneNumber);
+          if (emails.length === 0) {
+            userLog.debug('user_no_new_emails');
+            continue;
+          }
+
+          usersWithSyncedEmails += 1;
+          totalEmails += emails.length;
+
+          // Phase 2: Classify
+          const classifications = await classifyEmails(user.phoneNumber, emails);
+          const matched = classifications.filter(c => c.matches.length > 0);
+          totalMatches += matched.length;
+
+          // Phase 3: Execute actions
+          if (matched.length > 0) {
+            await executeSkillActions(user.phoneNumber, matched);
+          }
+
+          userLog.info('user_cycle_completed', {
+            emailsSynced: emails.length,
+            emailsMatched: matched.length,
+          });
+        } catch (err) {
+          userLog.error('user_cycle_failed', {
+            error: err instanceof Error ? err : String(err),
+          });
+        }
+      }
+
+      log.info('run_completed', {
+        usersConfigured: users.length,
+        usersWithSyncedEmails,
         totalEmails,
         totalMatches,
-        timestamp: new Date().toISOString(),
-      }));
-    }
+        durationMs: Date.now() - startedAt,
+      });
+    });
   }, config.emailWatcher.intervalMs);
 
   poller.start();
 
-  console.log(JSON.stringify({
-    event: 'email_watcher_started',
+  log.info('watcher_started', {
     intervalMs: config.emailWatcher.intervalMs,
-    timestamp: new Date().toISOString(),
-  }));
+  });
 }
 
 /**
@@ -122,9 +121,6 @@ export async function stopEmailWatcher(): Promise<void> {
   if (poller) {
     await poller.stop();
     poller = null;
-    console.log(JSON.stringify({
-      event: 'email_watcher_stopped',
-      timestamp: new Date().toISOString(),
-    }));
+    log.info('watcher_stopped');
   }
 }

@@ -32,8 +32,10 @@ import { createIntervalPoller, type Poller } from '../../../utils/poller.js';
 import { buildExtractionPrompt } from './prompts.js';
 import { writeDebugLog } from '../../../utils/trace-logger.js';
 import { clampConfidence } from './ranking.js';
+import { createLogger, createRunId, redactPhone, withLogContext } from '../../../utils/observability/index.js';
 
 const client = new Anthropic({ apiKey: config.anthropicApiKey });
+const log = createLogger({ domain: 'memory-processor' });
 
 export interface ProcessingError {
   phoneNumber: string;
@@ -719,10 +721,7 @@ export async function processUnprocessedMessages(): Promise<ProcessingResult> {
   });
 
   if (messages.length === 0) {
-    console.log(JSON.stringify({
-      event: 'memory_processor_no_work',
-      timestamp: new Date().toISOString(),
-    }));
+    log.debug('run_no_work');
 
     // Write debug log even when no messages found
     if (config.nodeEnv === 'development' && config.memoryProcessor.logVerbose) {
@@ -743,12 +742,10 @@ export async function processUnprocessedMessages(): Promise<ProcessingResult> {
     return { messagesProcessed: 0, factsExtracted: 0, errors: [] };
   }
 
-  console.log(JSON.stringify({
-    event: 'memory_processor_start',
+  log.info('run_started', {
     messageCount: messages.length,
     staleDeleted: metrics.stale_deleted,
-    timestamp: new Date().toISOString(),
-  }));
+  });
 
   // Group messages by phone number
   const messagesByUser = new Map<string, ConversationMessage[]>();
@@ -794,13 +791,11 @@ export async function processUnprocessedMessages(): Promise<ProcessingResult> {
       metrics.llm_error += llmErrors;
       userDebugData.push(debug);
 
-      console.log(JSON.stringify({
-        event: 'memory_processor_user_complete',
-        phoneNumberSuffix: phoneNumber.slice(-4),
+      log.info('user_batch_completed', {
+        phone: redactPhone(phoneNumber),
         messagesProcessed: userMessages.length,
         factsExtracted,
-        timestamp: new Date().toISOString(),
-      }));
+      });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const isParseError = error instanceof ParseError;
@@ -814,12 +809,10 @@ export async function processUnprocessedMessages(): Promise<ProcessingResult> {
         metrics.poison += 1;
       }
 
-      console.error(JSON.stringify({
-        event: 'memory_processor_user_error',
-        phoneNumberSuffix: phoneNumber.slice(-4),
+      log.error('user_batch_failed', {
+        phone: redactPhone(phoneNumber),
         error: errorMessage,
-        timestamp: new Date().toISOString(),
-      }));
+      });
 
       result.errors.push({
         phoneNumber,
@@ -850,14 +843,13 @@ export async function processUnprocessedMessages(): Promise<ProcessingResult> {
 
   const durationMs = Date.now() - startTime;
 
-  console.log(JSON.stringify({
-    event: 'memory_processor_complete',
+  log.info('run_completed', {
     messagesProcessed: result.messagesProcessed,
     factsExtracted: result.factsExtracted,
     errorCount: result.errors.length,
     metrics,
-    timestamp: new Date().toISOString(),
-  }));
+    durationMs,
+  });
 
   // Write debug log file (overwrites previous)
   if (config.nodeEnv === 'development' && config.memoryProcessor.logVerbose) {
@@ -890,35 +882,32 @@ let poller: Poller | null = null;
  */
 export function startMemoryProcessor(): void {
   if (!config.memoryProcessor.enabled) {
-    console.log(JSON.stringify({
-      event: 'memory_processor_disabled',
-      timestamp: new Date().toISOString(),
-    }));
+    log.info('processor_disabled');
     return;
   }
 
   if (poller) {
-    console.log(JSON.stringify({
-      event: 'memory_processor_already_running',
-      timestamp: new Date().toISOString(),
-    }));
+    log.info('processor_already_running');
     return;
   }
 
   poller = createIntervalPoller(
-    async () => { await processUnprocessedMessages(); },
+    async () => {
+      const runId = createRunId('memory');
+      await withLogContext({ runId }, async () => {
+        await processUnprocessedMessages();
+      });
+    },
     config.memoryProcessor.intervalMs
   );
 
   poller.start();
 
-  console.log(JSON.stringify({
-    event: 'memory_processor_started',
+  log.info('processor_started', {
     intervalMs: config.memoryProcessor.intervalMs,
     batchSize: config.memoryProcessor.batchSize,
     perUserBatchSize: config.memoryProcessor.perUserBatchSize,
-    timestamp: new Date().toISOString(),
-  }));
+  });
 }
 
 /**
@@ -930,9 +919,6 @@ export async function stopMemoryProcessor(): Promise<void> {
     await poller.stop();
     poller = null;
 
-    console.log(JSON.stringify({
-      event: 'memory_processor_stopped',
-      timestamp: new Date().toISOString(),
-    }));
+    log.info('processor_stopped');
   }
 }

@@ -6,6 +6,9 @@
 
 import * as chrono from 'chrono-node';
 import { DateTime } from 'luxon';
+import { createLogger } from '../../utils/observability/index.js';
+
+const log = createLogger({ domain: 'date-resolver' });
 
 export type ResolvedDate = {
   timestamp: number; // UTC Unix timestamp (seconds)
@@ -126,6 +129,7 @@ function parseNextWeekday(
 
 function requireValidTimezone(timezone: string): void {
   if (!isValidTimezone(timezone)) {
+    log.warn('invalid_timezone', { timezone });
     throw new Error(`Invalid timezone: "${timezone}"`);
   }
 }
@@ -170,11 +174,13 @@ export function resolveDate(
   options: ResolveDateOptions
 ): ResolvedDate | null {
   if (!input || typeof input !== 'string') {
+    log.debug('resolve_date_invalid_input', { reason: 'non_string_or_empty' });
     return null;
   }
 
   const trimmed = input.trim();
   if (!trimmed) {
+    log.debug('resolve_date_invalid_input', { reason: 'blank_string' });
     return null;
   }
 
@@ -182,6 +188,7 @@ export function resolveDate(
 
   // Ranges and periods should use resolveDateRange
   if (isExplicitRangeInput(trimmed) || matchPeriodConfig(trimmed)) {
+    log.debug('resolve_date_rejected_range_input', { inputLength: trimmed.length });
     return null;
   }
 
@@ -190,7 +197,13 @@ export function resolveDate(
 
   const nextWeekday = parseNextWeekday(trimmed, referenceDate, options.timezone);
   if (nextWeekday) {
-    return toResolvedDate(nextWeekday, options.timezone);
+    const resolved = toResolvedDate(nextWeekday, options.timezone);
+    log.info('resolve_date_succeeded', {
+      strategy: 'next_weekday',
+      timezone: options.timezone,
+      timestamp: resolved.timestamp,
+    });
+    return resolved;
   }
 
   const referenceUtc = DateTime.fromJSDate(referenceDate, { zone: 'utc' });
@@ -204,11 +217,17 @@ export function resolveDate(
   );
 
   if (results.length === 0 || !results[0].start) {
+    log.debug('resolve_date_no_match', {
+      strategy: 'chrono',
+      timezone: options.timezone,
+      inputLength: trimmed.length,
+    });
     return null;
   }
 
   // If chrono detected a range (has end), this should use resolveDateRange
   if (results[0].end) {
+    log.debug('resolve_date_rejected_range_result', { timezone: options.timezone });
     return null;
   }
 
@@ -257,6 +276,7 @@ export function resolveDate(
   }
 
   if (!localDateTime || !localDateTime.isValid) {
+    log.debug('resolve_date_invalid_result', { strategy: 'chrono', timezone: options.timezone });
     return null;
   }
 
@@ -264,10 +284,20 @@ export function resolveDate(
   // Explicit dates (like "2026-02-04" or "January 15, 2026") should be accepted.
   const utcSeconds = localDateTime.toUTC().toSeconds();
   if (forwardDate && !isExplicitDate(parsed) && utcSeconds <= referenceUtc.toSeconds()) {
+    log.debug('resolve_date_rejected_past_ambiguous', {
+      timezone: options.timezone,
+      inputLength: trimmed.length,
+    });
     return null;
   }
 
-  return toResolvedDate(localDateTime, options.timezone);
+  const resolved = toResolvedDate(localDateTime, options.timezone);
+  log.info('resolve_date_succeeded', {
+    strategy: 'chrono',
+    timezone: options.timezone,
+    timestamp: resolved.timestamp,
+  });
+  return resolved;
 }
 
 /**
@@ -284,11 +314,13 @@ export function resolveDateRange(
   options: ResolveDateOptions
 ): ResolvedDateRange | null {
   if (!input || typeof input !== 'string') {
+    log.debug('resolve_range_invalid_input', { reason: 'non_string_or_empty' });
     return null;
   }
 
   const trimmed = input.trim();
   if (!trimmed) {
+    log.debug('resolve_range_invalid_input', { reason: 'blank_string' });
     return null;
   }
 
@@ -318,11 +350,19 @@ export function resolveDateRange(
     const start = base.startOf(granularity);
     const end = base.endOf(granularity);
 
-    return {
+    const resolvedRange: ResolvedDateRange = {
       start: toResolvedDate(start, options.timezone),
       end: toResolvedDate(end, options.timezone),
       granularity,
     };
+    log.info('resolve_range_succeeded', {
+      strategy: 'period',
+      timezone: options.timezone,
+      granularity,
+      startTimestamp: resolvedRange.start.timestamp,
+      endTimestamp: resolvedRange.end.timestamp,
+    });
+    return resolvedRange;
   }
 
   // Check for explicit range patterns (from X to Y, between X and Y)
@@ -348,11 +388,19 @@ export function resolveDateRange(
       return null;
     }
 
-    return {
+    const resolvedRange: ResolvedDateRange = {
       start,
       end,
       granularity: 'custom',
     };
+    log.info('resolve_range_succeeded', {
+      strategy: 'explicit_range',
+      timezone: options.timezone,
+      granularity: resolvedRange.granularity,
+      startTimestamp: resolvedRange.start.timestamp,
+      endTimestamp: resolvedRange.end.timestamp,
+    });
+    return resolvedRange;
   }
 
   // Let chrono try to parse it as a range
@@ -368,14 +416,26 @@ export function resolveDateRange(
     const endDt = DateTime.fromJSDate(results[0].end.date(), { zone: 'utc' }).setZone(options.timezone);
 
     if (startDt.isValid && endDt.isValid && endDt > startDt) {
-      return {
+      const resolvedRange: ResolvedDateRange = {
         start: toResolvedDate(startDt, options.timezone),
         end: toResolvedDate(endDt, options.timezone),
         granularity: 'custom',
       };
+      log.info('resolve_range_succeeded', {
+        strategy: 'chrono_range',
+        timezone: options.timezone,
+        granularity: resolvedRange.granularity,
+        startTimestamp: resolvedRange.start.timestamp,
+        endTimestamp: resolvedRange.end.timestamp,
+      });
+      return resolvedRange;
     }
   }
 
+  log.debug('resolve_range_no_match', {
+    timezone: options.timezone,
+    inputLength: trimmed.length,
+  });
   return null;
 }
 

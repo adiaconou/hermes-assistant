@@ -2,7 +2,7 @@
 
 Per-domain quality grades for the Hermes Assistant codebase. Every domain should be above 90. Grades are updated when domains change significantly.
 
-Last graded: 2026-02-24
+Last graded: 2026-02-28
 
 ---
 
@@ -78,19 +78,34 @@ _Drags score down: Direct imports from sibling domain internals, upward layer im
 
 | Domain | Tests | Errors | Docs | Boundaries | Observability | Architecture | Core Beliefs | Structure | Overall |
 |--------|-------|--------|------|------------|---------------|-------------|-------------|-----------|---------|
-| Orchestrator | 90 | 90 | 90 | 90 | 90 | 90 | 90 | 90 | 90 |
-| Calendar agent | 90 | 90 | 90 | 90 | 90 | 90 | 90 | 90 | 90 |
-| Scheduler agent | 55 | 70 | 80 | 65 | 65 | 80 | 75 | 90 | 73 |
-| Email agent | 55 | 75 | 85 | 65 | 70 | 80 | 80 | 90 | 75 |
-| Memory agent | 65 | 75 | 85 | 70 | 70 | 85 | 85 | 90 | 78 |
-| Drive agent | 65 | 75 | 80 | 65 | 70 | 80 | 80 | 90 | 76 |
-| UI agent | 75 | 80 | 85 | 75 | 75 | 85 | 85 | 90 | 81 |
-| General agent | 35 | 65 | 60 | 55 | 65 | 75 | 70 | 50 | 59 |
-| Memory system | 80 | 85 | 90 | 80 | 80 | 90 | 90 | 90 | 86 |
-| Scheduler system | 65 | 75 | 80 | 70 | 75 | 85 | 80 | 90 | 78 |
-| Date resolver | 70 | 65 | 80 | 60 | 55 | 75 | 80 | 80 | 71 |
-| Email watcher | 80 | 80 | 85 | 80 | 80 | 85 | 85 | 90 | 83 |
-| SMS routing | 60 | 75 | 70 | 75 | 75 | 80 | 80 | 60 | 72 |
-| Tools layer | 70 | 70 | 65 | 70 | 70 | 80 | 80 | 85 | 74 |
-| Database layer | 75 | 80 | 75 | 80 | 75 | 85 | 85 | 75 | 79 |
-| Google integrations | 60 | 75 | 80 | 70 | 70 | 80 | 80 | 90 | 76 |
+| Orchestrator | 90 | 90 | 90 | 90 | 92 | 90 | 90 | 90 | 90 |
+| Calendar agent | 90 | 90 | 90 | 90 | 91 | 90 | 90 | 90 | 90 |
+| Scheduler agent | 55 | 70 | 80 | 65 | 91 | 80 | 75 | 90 | 76 |
+| Email agent | 55 | 75 | 85 | 65 | 91 | 80 | 80 | 90 | 78 |
+| Memory agent | 65 | 75 | 85 | 70 | 91 | 85 | 85 | 90 | 81 |
+| Drive agent | 65 | 75 | 80 | 65 | 91 | 80 | 80 | 90 | 79 |
+| UI agent | 75 | 80 | 85 | 75 | 91 | 85 | 85 | 90 | 83 |
+| General agent | 35 | 65 | 60 | 55 | 91 | 75 | 70 | 50 | 63 |
+| Memory system | 80 | 85 | 90 | 80 | 92 | 90 | 90 | 90 | 87 |
+| Scheduler system | 65 | 75 | 80 | 70 | 92 | 85 | 80 | 90 | 80 |
+| Date resolver | 70 | 65 | 80 | 60 | 91 | 75 | 80 | 80 | 75 |
+| Email watcher | 80 | 80 | 85 | 80 | 92 | 85 | 85 | 90 | 84 |
+| SMS routing | 60 | 75 | 70 | 75 | 92 | 80 | 80 | 60 | 74 |
+| Tools layer | 70 | 70 | 65 | 70 | 91 | 80 | 80 | 85 | 77 |
+| Database layer | 75 | 80 | 75 | 80 | 91 | 85 | 85 | 75 | 81 |
+| Google integrations | 60 | 75 | 80 | 70 | 91 | 80 | 80 | 90 | 79 |
+
+### 2026-02-28 Observability Re-grade Notes
+
+- Shared structured logging + request/run context propagation implemented in `src/utils/observability/*`, `src/routes/sms.ts`, and `src/orchestrator/handler.ts`.
+- Legacy `console.*` output is now adapted centrally into structured, redacted records (with context attachment) across environments, so existing domain/provider logs participate in the same observability contract.
+- Background systems now emit cycle-level run context via `runId` in scheduler, memory processor, and email watcher runtimes.
+- Date resolver now emits structured parse success/failure events with timezone/strategy metadata.
+- Verified with:
+  - `tests/unit/observability/redaction.test.ts`
+  - `tests/unit/observability/logger.test.ts`
+  - `tests/unit/observability/trace-logger.test.ts`
+  - `tests/integration/webhook.test.ts` (including requestId continuity assertion)
+  - `tests/unit/date/resolver.test.ts`
+  - `tests/unit/memory-processor.test.ts`
+  - `tests/unit/services/email-watcher/*.test.ts`

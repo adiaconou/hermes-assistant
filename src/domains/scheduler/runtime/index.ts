@@ -19,9 +19,11 @@ import type Database from 'better-sqlite3';
 import { getDueJobs, initSchedulerDb } from '../repo/sqlite.js';
 import { executeJob } from '../service/executor.js';
 import { createIntervalPoller, type Poller } from '../../../utils/poller.js';
+import { createLogger, createRunId, redactPhone, withLogContext } from '../../../utils/observability/index.js';
 
 let pollerInstance: Poller | null = null;
 let sharedDb: Database.Database | null = null;
+const log = createLogger({ domain: 'scheduler-runtime' });
 
 /**
  * Get the shared scheduler database instance.
@@ -56,23 +58,35 @@ export function initScheduler(
 
   // Create the job runner function
   async function runDueJobs(): Promise<void> {
-    const nowSeconds = Math.floor(Date.now() / 1000);
-    const dueJobs = getDueJobs(db, nowSeconds);
+    const runId = createRunId('scheduler');
+    await withLogContext({ runId }, async () => {
+      const startedAt = Date.now();
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const dueJobs = getDueJobs(db, nowSeconds);
 
-    if (dueJobs.length === 0) {
-      return;
-    }
+      log.info('run_started', { dueJobCount: dueJobs.length });
 
-    console.log(JSON.stringify({
-      event: 'scheduler_found_due_jobs',
-      count: dueJobs.length,
-      timestamp: new Date().toISOString(),
-    }));
+      if (dueJobs.length === 0) {
+        log.debug('run_no_work', { durationMs: Date.now() - startedAt });
+        return;
+      }
 
-    // Execute jobs sequentially to avoid overwhelming resources
-    for (const job of dueJobs) {
-      await executeJob(db, job, readOnlyToolNames);
-    }
+      // Execute jobs sequentially to avoid overwhelming resources
+      for (const job of dueJobs) {
+        log.info('job_dispatch', {
+          jobId: job.id,
+          channel: job.channel,
+          phone: redactPhone(job.phoneNumber),
+          isRecurring: job.isRecurring,
+        });
+        await executeJob(db, job, readOnlyToolNames);
+      }
+
+      log.info('run_completed', {
+        dueJobCount: dueJobs.length,
+        durationMs: Date.now() - startedAt,
+      });
+    });
   }
 
   // Create and return the poller
