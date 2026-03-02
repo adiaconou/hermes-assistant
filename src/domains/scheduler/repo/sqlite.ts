@@ -168,6 +168,25 @@ export function getJobById(db: Database.Database, id: string): ScheduledJob | nu
 }
 
 /**
+ * Get a job by phone number and skill name.
+ * Returns the most recently updated match, or null when none exists.
+ */
+export function getJobByPhoneAndSkillName(
+  db: Database.Database,
+  phoneNumber: string,
+  skillName: string
+): ScheduledJob | null {
+  const row = db.prepare(`
+    SELECT * FROM scheduled_jobs
+    WHERE phone_number = ? AND skill_name = ?
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `).get(phoneNumber, skillName) as ScheduledJobRow | undefined;
+
+  return row ? rowToJob(row) : null;
+}
+
+/**
  * Get active jobs for a phone number.
  * Returns only enabled jobs with future next_run_at, sorted by next execution date.
  */
@@ -222,6 +241,10 @@ export function updateJob(
   if (updates.prompt !== undefined) {
     setClauses.push('prompt = ?');
     values.push(updates.prompt);
+  }
+  if (updates.channel !== undefined) {
+    setClauses.push('channel = ?');
+    values.push(updates.channel);
   }
   if (updates.userRequest !== undefined) {
     setClauses.push('user_request = ?');

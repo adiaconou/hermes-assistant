@@ -13,6 +13,7 @@ export * from '../types.js';
 export * from '../repo/sqlite.js';
 export * from '../service/parser.js';
 export * from '../service/executor.js';
+export * from '../service/auto-schedule.js';
 export { createIntervalPoller, type Poller } from '../../../utils/poller.js';
 
 import type Database from 'better-sqlite3';

@@ -49,6 +49,7 @@ export interface CreateJobInput {
  * Fields that can be updated on an existing job.
  */
 export interface JobUpdates {
+  channel?: MessageChannel;
   prompt?: string;
   userRequest?: string;
   skillName?: string;

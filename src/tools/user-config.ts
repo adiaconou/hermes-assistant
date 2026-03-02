@@ -8,6 +8,8 @@ import { getMemoryStore } from '../domains/memory/runtime/index.js';
 import { getConversationStore } from '../services/conversation/index.js';
 import { isValidTimezone } from '../services/date/resolver.js';
 import { requirePhoneNumber, validateInput } from './utils.js';
+import { getSchedulerDb } from '../domains/scheduler/runtime/index.js';
+import { reconcileAutoScheduledSkillsForUser } from '../domains/scheduler/service/auto-schedule.js';
 
 export const setUserConfig: ToolDefinition = {
   tool: {
@@ -37,12 +39,27 @@ export const setUserConfig: ToolDefinition = {
     }
 
     const store = getUserConfigStore();
-    const updated = await store.set(phoneNumber, {
+    await store.set(phoneNumber, {
       name,
       timezone,
     });
 
-    return { success: true, userConfig: updated };
+    const updatedConfig = await store.get(phoneNumber);
+
+    // Reconcile metadata-driven scheduler jobs when profile config changes.
+    try {
+      reconcileAutoScheduledSkillsForUser(getSchedulerDb(), phoneNumber, context.channel ?? 'sms');
+    } catch (error) {
+      console.warn(JSON.stringify({
+        level: 'warn',
+        message: 'Failed to reconcile auto-scheduled skills after user config update',
+        phone: phoneNumber.slice(-4).padStart(phoneNumber.length, '*'),
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString(),
+      }));
+    }
+
+    return { success: true, userConfig: updatedConfig };
   },
 };
 

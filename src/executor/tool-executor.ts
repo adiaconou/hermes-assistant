@@ -306,10 +306,29 @@ export async function executeWithTools(
       },
     };
   } catch (error) {
+    const err = error as Error & { status?: number; code?: string; cause?: unknown };
+    const cause = typeof err.cause === 'object' && err.cause !== null
+      ? (err.cause as { name?: string; message?: string; code?: string; cause?: unknown })
+      : null;
+    const nestedCause = cause && typeof cause.cause === 'object' && cause.cause !== null
+      ? (cause.cause as { name?: string; message?: string; code?: string; syscall?: string; hostname?: string })
+      : null;
+
     console.error(JSON.stringify({
       level: 'error',
       message: 'Agent execution failed',
       error: error instanceof Error ? error.message : String(error),
+      errorType: err.constructor?.name ?? typeof error,
+      errorCode: err.code,
+      status: err.status,
+      causeType: cause?.name,
+      causeMessage: cause?.message,
+      causeCode: cause?.code,
+      nestedCauseType: nestedCause?.name,
+      nestedCauseMessage: nestedCause?.message,
+      nestedCauseCode: nestedCause?.code,
+      nestedCauseSyscall: nestedCause?.syscall,
+      nestedCauseHostname: nestedCause?.hostname,
       timestamp: new Date().toISOString(),
     }));
 

@@ -14,6 +14,11 @@ export type SkillFrontmatter = {
       match?: string[];
       enabled?: boolean;
       delegateAgent?: string;
+      autoSchedule?: {
+        enabled?: boolean;
+        cron?: string;
+        prompt?: string;
+      };
     };
   };
 };
@@ -29,6 +34,11 @@ export type LoadedSkill = {
   enabled: boolean;
   source: 'bundled' | 'imported';
   delegateAgent?: string | null;
+  autoSchedule?: {
+    enabled: boolean;
+    cron: string;
+    prompt: string;
+  } | null;
 };
 
 export type SkillLoadError = {

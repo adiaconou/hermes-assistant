@@ -40,6 +40,7 @@ export function loadSkillsFromDir(
       }
 
       const hermes = frontmatter.metadata?.hermes;
+      const autoSchedule = hermes?.autoSchedule;
       const skill: LoadedSkill = {
         name: frontmatter.name,
         description: frontmatter.description,
@@ -51,6 +52,13 @@ export function loadSkillsFromDir(
         enabled: hermes?.enabled !== false,
         source,
         delegateAgent: hermes?.delegateAgent ?? null,
+        autoSchedule: autoSchedule
+          ? {
+              enabled: autoSchedule.enabled === true,
+              cron: autoSchedule.cron?.trim() ?? '',
+              prompt: autoSchedule.prompt?.trim() ?? '',
+            }
+          : null,
       };
 
       skills.push(skill);

@@ -6,12 +6,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   mockConfigSet,
+  mockConfigGet,
   mockConfigDelete,
   mockGetFacts,
   mockDeleteFact,
   mockConversationDeleteAll,
 } = vi.hoisted(() => ({
   mockConfigSet: vi.fn(),
+  mockConfigGet: vi.fn(),
   mockConfigDelete: vi.fn(),
   mockGetFacts: vi.fn(),
   mockDeleteFact: vi.fn(),
@@ -21,8 +23,17 @@ const {
 vi.mock('../../../src/services/user-config/index.js', () => ({
   getUserConfigStore: vi.fn(() => ({
     set: mockConfigSet,
+    get: mockConfigGet,
     delete: mockConfigDelete,
   })),
+}));
+
+vi.mock('../../../src/domains/scheduler/runtime/index.js', () => ({
+  getSchedulerDb: vi.fn(() => ({})),
+}));
+
+vi.mock('../../../src/domains/scheduler/service/auto-schedule.js', () => ({
+  reconcileAutoScheduledSkillsForUser: vi.fn(() => ({ created: 0, updated: 0, skipped: 0 })),
 }));
 
 vi.mock('../../../src/domains/memory/runtime/index.js', () => ({
@@ -49,7 +60,8 @@ describe('user-config tools boundary validation', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockConfigSet.mockResolvedValue({ name: 'Alex', timezone: 'America/New_York' });
+    mockConfigSet.mockResolvedValue(undefined);
+    mockConfigGet.mockResolvedValue({ name: 'Alex', timezone: 'America/New_York' });
     mockConfigDelete.mockResolvedValue(undefined);
     mockGetFacts.mockResolvedValue([]);
     mockDeleteFact.mockResolvedValue(undefined);

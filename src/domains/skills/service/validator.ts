@@ -11,6 +11,11 @@ export type ValidationError = {
 
 const VALID_CHANNELS: SkillChannel[] = ['sms', 'whatsapp', 'scheduler', 'email'];
 
+function looksLikeCron(cron: string): boolean {
+  const parts = cron.trim().split(/\s+/);
+  return parts.length === 5 && parts.every((part) => part.length > 0);
+}
+
 /**
  * Validate skill frontmatter. Returns an array of errors (empty = valid).
  */
@@ -72,6 +77,27 @@ export function validateSkillFrontmatter(fm: SkillFrontmatter): ValidationError[
 
     if (hermes.delegateAgent !== undefined && typeof hermes.delegateAgent !== 'string') {
       errors.push({ field: 'metadata.hermes.delegateAgent', message: 'delegateAgent must be a string' });
+    }
+
+    if (hermes.autoSchedule !== undefined) {
+      if (typeof hermes.autoSchedule !== 'object' || hermes.autoSchedule === null || Array.isArray(hermes.autoSchedule)) {
+        errors.push({ field: 'metadata.hermes.autoSchedule', message: 'autoSchedule must be an object' });
+      } else {
+        const autoSchedule = hermes.autoSchedule;
+        if (autoSchedule.enabled !== undefined && typeof autoSchedule.enabled !== 'boolean') {
+          errors.push({ field: 'metadata.hermes.autoSchedule.enabled', message: 'enabled must be a boolean' });
+        }
+        if (autoSchedule.cron !== undefined) {
+          if (typeof autoSchedule.cron !== 'string' || autoSchedule.cron.trim().length === 0) {
+            errors.push({ field: 'metadata.hermes.autoSchedule.cron', message: 'cron must be a non-empty string' });
+          } else if (!looksLikeCron(autoSchedule.cron)) {
+            errors.push({ field: 'metadata.hermes.autoSchedule.cron', message: 'cron must contain 5 space-separated fields' });
+          }
+        }
+        if (autoSchedule.prompt !== undefined && (typeof autoSchedule.prompt !== 'string' || autoSchedule.prompt.trim().length === 0)) {
+          errors.push({ field: 'metadata.hermes.autoSchedule.prompt', message: 'prompt must be a non-empty string' });
+        }
+      }
     }
   }
 

@@ -46,7 +46,18 @@ export function validateTwilioSignature(
     return false;
   }
 
-  return Twilio.validateRequest(config.twilio.authToken, signature, url, params);
+  try {
+    return Twilio.validateRequest(config.twilio.authToken, signature, url, params);
+  } catch (error) {
+    console.error(JSON.stringify({
+      level: 'error',
+      message: 'Twilio signature validation error',
+      url,
+      error: error instanceof Error ? error.message : String(error),
+      timestamp: new Date().toISOString(),
+    }));
+    return false;
+  }
 }
 
 /**

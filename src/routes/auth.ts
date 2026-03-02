@@ -18,6 +18,8 @@ import { sendSms, sendWhatsApp } from '../twilio.js';
 import { addMessage } from '../conversation.js';
 import { initEmailWatcherState } from '../domains/email-watcher/service/skills.js';
 import { clearClientCacheForPhone } from '../domains/google-core/providers/auth.js';
+import { getSchedulerDb } from '../domains/scheduler/runtime/index.js';
+import { reconcileAutoScheduledSkillsForUser } from '../domains/scheduler/service/auto-schedule.js';
 import { hasActiveOAuthStateNonce, consumeOAuthStateNonce } from '../services/auth/oauth-state-nonce.js';
 import { encryptState, decryptState, generateAuthUrl } from '../providers/auth.js';
 import type { DecryptedState } from '../providers/auth.js';
@@ -233,6 +235,19 @@ export async function handleGoogleCallback(req: Request, res: Response): Promise
 
     // Initialize email watcher for new users
     await initEmailWatcherState(decrypted.phone);
+
+    // Ensure metadata-driven scheduled skills (e.g., daily briefing) are configured.
+    try {
+      reconcileAutoScheduledSkillsForUser(getSchedulerDb(), decrypted.phone, decrypted.channel);
+    } catch (error) {
+      console.warn(JSON.stringify({
+        level: 'warn',
+        message: 'Failed to reconcile auto-scheduled skills after OAuth',
+        phone: decrypted.phone.slice(-4).padStart(decrypted.phone.length, '*'),
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString(),
+      }));
+    }
 
     console.log(JSON.stringify({
       level: 'info',

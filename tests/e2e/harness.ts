@@ -9,6 +9,7 @@
 import fs from 'fs';
 import path from 'path';
 import { getExpectedTwilioSignature } from 'twilio/lib/webhooks/webhooks.js';
+import config from '../../src/config.js';
 import { handleSmsWebhook } from '../../src/routes/sms.js';
 import { createMockReqRes } from '../helpers/mock-http.js';
 import { createWhatsAppPayload } from '../fixtures/webhook-payloads.js';
@@ -25,6 +26,11 @@ import { judge, type JudgeVerdict, type TurnLog } from './judge.js';
 import type { ConversationMessage } from '../../src/services/conversation/types.js';
 
 export type { TurnLog, JudgeVerdict } from './judge.js';
+
+export interface JudgeConfig {
+  instructions?: string;
+  criteria: string[];
+}
 
 export interface E2EResponse {
   syncResponse: string;
@@ -105,8 +111,8 @@ export class E2EHarness {
    */
   async sendMessage(text: string, options?: { timeout?: number }): Promise<E2EResponse> {
     const timeout = options?.timeout ?? 90_000;
-    const authToken = process.env.TWILIO_AUTH_TOKEN || 'test-auth-token';
-    const webhookUrl = `${process.env.BASE_URL}/webhook/sms`;
+    const authToken = config.twilio.authToken ?? process.env.TWILIO_AUTH_TOKEN ?? 'test-auth-token';
+    const webhookUrl = `${config.baseUrl}/webhook/sms`;
 
     const payload = createWhatsAppPayload(text, this.phoneNumber);
     const signature = getExpectedTwilioSignature(
@@ -337,15 +343,16 @@ export class E2EHarness {
 
   /**
    * Send the conversation transcript and trace logs to the LLM judge
-   * for qualitative evaluation against the provided criteria.
+   * for qualitative evaluation against scenario-specific instructions and criteria.
    */
-  async judgeConversation(criteria: string[]): Promise<JudgeVerdict> {
+  async judgeConversation(judgeConfig: JudgeConfig): Promise<JudgeVerdict> {
     const history = await this.getConversationHistory();
     return judge({
       messages: history,
       generatedPages: this.generatedPages,
       turnLogs: this.turnLogs,
-      criteria,
+      instructions: judgeConfig.instructions,
+      criteria: judgeConfig.criteria,
     });
   }
 

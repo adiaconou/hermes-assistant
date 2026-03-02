@@ -10,6 +10,7 @@ import {
   initSchedulerDb,
   createJob,
   getJobById,
+  getJobByPhoneAndSkillName,
   getJobsByPhone,
   getDueJobs,
   updateJob,
@@ -127,6 +128,30 @@ describe('scheduler sqlite', () => {
     it('returns null for non-existent ID', () => {
       const result = getJobById(db, 'non-existent-id');
       expect(result).toBeNull();
+    });
+  });
+
+  describe('getJobByPhoneAndSkillName', () => {
+    it('returns matching job for phone and skill', () => {
+      const created = createJob(db, {
+        phoneNumber: '+1234567890',
+        channel: 'sms',
+        prompt: 'Run daily briefing',
+        skillName: 'daily-briefing',
+        cronExpression: '30 6 * * *',
+        timezone: 'America/Los_Angeles',
+        nextRunAt: Math.floor(Date.now() / 1000) + 3600,
+        isRecurring: true,
+      });
+
+      const found = getJobByPhoneAndSkillName(db, '+1234567890', 'daily-briefing');
+      expect(found).not.toBeNull();
+      expect(found?.id).toBe(created.id);
+    });
+
+    it('returns null when no matching job exists', () => {
+      const found = getJobByPhoneAndSkillName(db, '+19999999999', 'daily-briefing');
+      expect(found).toBeNull();
     });
   });
 
@@ -303,6 +328,23 @@ describe('scheduler sqlite', () => {
     it('returns null when updating non-existent job', () => {
       const result = updateJob(db, 'non-existent-id', { enabled: false });
       expect(result).toBeNull();
+    });
+
+    it('updates channel when provided', () => {
+      const job = createJob(db, {
+        phoneNumber: '+1234567890',
+        channel: 'sms',
+        prompt: 'Original prompt',
+        cronExpression: '0 9 * * *',
+        timezone: 'UTC',
+        nextRunAt: 1000,
+        isRecurring: true,
+      });
+
+      const updated = updateJob(db, job.id, { channel: 'whatsapp' });
+
+      expect(updated).not.toBeNull();
+      expect(updated?.channel).toBe('whatsapp');
     });
   });
 

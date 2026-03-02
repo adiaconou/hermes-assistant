@@ -78,20 +78,36 @@ export async function executeJob(
         throw new Error(skillResult.error);
       }
 
+      const skillErrorMessage = skillResult.error ?? 'unknown error';
+      const skillError = !skillResult.success
+        ? new Error(skillErrorMessage)
+        : null;
+
       const response = skillResult.success
         ? skillResult.output ?? 'Done.'
-        : `I hit an error running your scheduled skill: ${skillResult.error ?? 'unknown error'}`;
+        : `I hit an error running your scheduled skill: ${skillErrorMessage}`;
 
       await sendScheduledMessage(job.phoneNumber, job.channel, response);
 
       const nowSeconds = Math.floor(Date.now() / 1000);
+      let scheduledNextRunAt: number | null = null;
       if (job.isRecurring) {
-        const nextRunAt = calculateNextRun(job.cronExpression, job.timezone);
-        await updateJob(db, job.id, { nextRunAt, lastRunAt: nowSeconds });
-        logJobSuccess(job, Date.now() - startTime, nextRunAt);
+        scheduledNextRunAt = calculateNextRun(job.cronExpression, job.timezone);
+        await updateJob(db, job.id, { nextRunAt: scheduledNextRunAt, lastRunAt: nowSeconds });
       } else {
         deleteJob(db, job.id);
-        logOneTimeComplete(job, Date.now() - startTime);
+      }
+
+      const durationMs = Date.now() - startTime;
+      if (skillError) {
+        logJobError(job, skillError, durationMs);
+        return { success: false, error: skillError };
+      }
+
+      if (job.isRecurring && scheduledNextRunAt !== null) {
+        logJobSuccess(job, durationMs, scheduledNextRunAt);
+      } else {
+        logOneTimeComplete(job, durationMs);
       }
       return { success: true };
     }

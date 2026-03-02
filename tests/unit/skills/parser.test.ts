@@ -20,6 +20,10 @@ metadata:
       - summarize
     enabled: true
     delegateAgent: vision-agent
+    autoSchedule:
+      enabled: true
+      cron: "30 6 * * *"
+      prompt: "Run this every morning."
 ---
 # Receipt Summarizer
 
@@ -44,6 +48,11 @@ describe('parseSkillMd', () => {
     expect(result.frontmatter.metadata?.hermes?.match).toEqual(['receipt', 'summarize']);
     expect(result.frontmatter.metadata?.hermes?.enabled).toBe(true);
     expect(result.frontmatter.metadata?.hermes?.delegateAgent).toBe('vision-agent');
+    expect(result.frontmatter.metadata?.hermes?.autoSchedule).toEqual({
+      enabled: true,
+      cron: '30 6 * * *',
+      prompt: 'Run this every morning.',
+    });
   });
 
   it('parses minimal SKILL.md with only name and description', () => {

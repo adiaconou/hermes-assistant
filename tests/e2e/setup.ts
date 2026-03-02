@@ -12,6 +12,13 @@ import os from 'os';
 import path from 'path';
 import fs from 'fs';
 import { randomUUID } from 'crypto';
+import { config as loadDotenv } from 'dotenv';
+
+// Load .env first so e2e uses the same credentials/config as local dev.
+const envPath = path.join(process.cwd(), '.env');
+if (fs.existsSync(envPath)) {
+  loadDotenv({ path: envPath, override: false, quiet: true });
+}
 
 // ── Create a unique temp directory for this test run ──
 const E2E_TEMP_DIR = path.join(os.tmpdir(), `hermes-e2e-${randomUUID().slice(0, 8)}`);
@@ -35,6 +42,11 @@ process.env.EMAIL_WATCHER_ENABLED = 'false';
 // Model IDs: NOT overridden — inherits production defaults from config.ts
 
 // ── Twilio test values (same as tests/setup.ts) ──
+// IMPORTANT: These MUST be hard-assigned (=), not conditional (||=).
+// The e2e tests depend on these exact values for signature validation,
+// URL construction, and credential storage. Values from .env or the
+// system environment would break signature checks (wrong BASE_URL)
+// or leak real credentials into test temp directories.
 process.env.TWILIO_ACCOUNT_SID = 'test-account-sid';
 process.env.TWILIO_AUTH_TOKEN = 'test-auth-token';
 process.env.TWILIO_PHONE_NUMBER = '+15555550000';

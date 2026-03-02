@@ -20,6 +20,7 @@ export interface JudgeInput {
   messages: ConversationMessage[];
   generatedPages?: Map<string, string>;
   turnLogs?: TurnLog[];
+  instructions?: string;
   criteria: string[];
 }
 
@@ -104,6 +105,9 @@ export async function judge(input: JudgeInput): Promise<JudgeVerdict> {
     const logSection = input.turnLogs?.length
       ? `\n\nTRACE LOGS (${input.turnLogs.length} turns):\n${input.turnLogs.map(t => `--- Turn ${t.turnNumber} ---\n${t.content}`).join('\n\n')}`
       : '\n\nTRACE LOGS: None';
+    const scenarioInstructions = input.instructions?.trim()
+      ? `\n\nSCENARIO-SPECIFIC INSTRUCTIONS:\n${input.instructions.trim()}`
+      : '';
 
     const client = new Anthropic();
     const response = await client.messages.create({
@@ -116,6 +120,7 @@ export async function judge(input: JudgeInput): Promise<JudgeVerdict> {
 CONVERSATION TRANSCRIPT:
 ${transcript}
 ${logSection}
+${scenarioInstructions}
 
 EVALUATION CRITERIA:
 ${input.criteria.map((c, i) => `${i + 1}. ${c}`).join('\n')}

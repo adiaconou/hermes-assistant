@@ -22,6 +22,10 @@ metadata:
     match:
       - test
     enabled: true
+    autoSchedule:
+      enabled: true
+      cron: "30 6 * * *"
+      prompt: "Run daily"
 ---
 Body content.
 `;
@@ -60,6 +64,11 @@ describe('loadSkillsFromDir', () => {
     expect(result.skills[0].matchHints).toEqual(['test']);
     expect(result.skills[0].enabled).toBe(true);
     expect(result.skills[0].source).toBe('bundled');
+    expect(result.skills[0].autoSchedule).toEqual({
+      enabled: true,
+      cron: '30 6 * * *',
+      prompt: 'Run daily',
+    });
   });
 
   it('records error for skill with invalid frontmatter', () => {

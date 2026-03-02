@@ -22,6 +22,7 @@ import authRouter from './routes/auth.js';
 import adminRouter from './admin/index.js';
 import { healthHandler } from './routes/health.js';
 import { initScheduler, stopScheduler } from './domains/scheduler/runtime/index.js';
+import { reconcileAutoScheduledSkills } from './domains/scheduler/service/auto-schedule.js';
 import { READ_ONLY_TOOLS } from './tools/index.js';
 import { setExecuteWithTools } from './domains/scheduler/providers/executor.js';
 import { setEmailWatcherExecuteWithTools } from './domains/email-watcher/providers/executor.js';
@@ -86,6 +87,16 @@ initFilesystemSkills();
 
 // Initialize scheduler (creates tables, sets up poller)
 const poller = initScheduler(db, undefined, READ_ONLY_TOOLS.map(t => t.name));
+const autoScheduleResult = reconcileAutoScheduledSkills(db);
+console.log(JSON.stringify({
+  level: 'info',
+  message: 'Auto-scheduled skills reconciled',
+  usersProcessed: autoScheduleResult.usersProcessed,
+  created: autoScheduleResult.created,
+  updated: autoScheduleResult.updated,
+  skipped: autoScheduleResult.skipped,
+  timestamp: new Date().toISOString(),
+}));
 
 const server = app.listen(config.port, () => {
   console.log(

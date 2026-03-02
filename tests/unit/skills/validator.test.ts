@@ -82,11 +82,40 @@ describe('validateSkillFrontmatter', () => {
           match: ['receipt'],
           enabled: true,
           delegateAgent: 'vision-agent',
+          autoSchedule: {
+            enabled: true,
+            cron: '30 6 * * *',
+            prompt: 'Run each morning.',
+          },
         },
       },
     });
     const errors = validateSkillFrontmatter(fm);
     expect(errors).toEqual([]);
+  });
+
+  it('returns error when autoSchedule is not an object', () => {
+    const fm = validFrontmatter({
+      metadata: { hermes: { autoSchedule: 'daily' as unknown as { enabled?: boolean } } },
+    });
+    const errors = validateSkillFrontmatter(fm);
+    expect(errors.some(e => e.field === 'metadata.hermes.autoSchedule')).toBe(true);
+  });
+
+  it('returns error when autoSchedule.cron is invalid', () => {
+    const fm = validFrontmatter({
+      metadata: {
+        hermes: {
+          autoSchedule: {
+            enabled: true,
+            cron: 'invalid-cron',
+            prompt: 'Hello',
+          },
+        },
+      },
+    });
+    const errors = validateSkillFrontmatter(fm);
+    expect(errors.some(e => e.field === 'metadata.hermes.autoSchedule.cron')).toBe(true);
   });
 
   it('returns error when tools is not an array', () => {

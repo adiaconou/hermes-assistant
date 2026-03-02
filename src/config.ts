@@ -172,6 +172,11 @@ const config = {
     importedDir: optional('SKILLS_IMPORTED_DIR', process.env.NODE_ENV === 'production' ? '/app/data/skills/imported' : './data/skills/imported'),
     confidenceThreshold: optionalFloat('SKILLS_CONFIDENCE_THRESHOLD', 0.6),
   },
+
+  /** Auto-scheduled skills reconciliation */
+  autoSchedule: {
+    enabled: optionalBool('AUTO_SCHEDULED_SKILLS_ENABLED', true),
+  },
 };
 
 /**
