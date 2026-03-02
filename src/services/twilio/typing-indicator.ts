@@ -65,6 +65,15 @@ async function fireTypingIndicator(messageSid: string): Promise<void> {
         message: 'Typing indicator returned non-OK status',
         status: response.status,
         body: body.slice(0, 200),
+        messageSid,
+        timestamp: new Date().toISOString(),
+      }));
+    } else {
+      console.log(JSON.stringify({
+        level: 'info',
+        message: 'Typing indicator fired successfully',
+        status: response.status,
+        messageSid,
         timestamp: new Date().toISOString(),
       }));
     }
