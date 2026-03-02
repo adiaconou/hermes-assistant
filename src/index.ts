@@ -87,16 +87,25 @@ initFilesystemSkills();
 
 // Initialize scheduler (creates tables, sets up poller)
 const poller = initScheduler(db, undefined, READ_ONLY_TOOLS.map(t => t.name));
-const autoScheduleResult = reconcileAutoScheduledSkills(db);
-console.log(JSON.stringify({
-  level: 'info',
-  message: 'Auto-scheduled skills reconciled',
-  usersProcessed: autoScheduleResult.usersProcessed,
-  created: autoScheduleResult.created,
-  updated: autoScheduleResult.updated,
-  skipped: autoScheduleResult.skipped,
-  timestamp: new Date().toISOString(),
-}));
+try {
+  const autoScheduleResult = reconcileAutoScheduledSkills(db);
+  console.log(JSON.stringify({
+    level: 'info',
+    message: 'Auto-scheduled skills reconciled',
+    usersProcessed: autoScheduleResult.usersProcessed,
+    created: autoScheduleResult.created,
+    updated: autoScheduleResult.updated,
+    skipped: autoScheduleResult.skipped,
+    timestamp: new Date().toISOString(),
+  }));
+} catch (error) {
+  console.warn(JSON.stringify({
+    level: 'warn',
+    message: 'Failed to reconcile auto-scheduled skills on startup',
+    error: error instanceof Error ? error.message : String(error),
+    timestamp: new Date().toISOString(),
+  }));
+}
 
 const server = app.listen(config.port, () => {
   console.log(
