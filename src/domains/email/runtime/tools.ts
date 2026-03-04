@@ -59,12 +59,10 @@ Combine operators: "from:hotel newer_than:1y subject:confirmation"`,
     };
 
     try {
-      let query = userQuery;
-      if (!query) {
-        query = include_spam ? undefined : 'is:inbox';
-      } else if (!include_spam && !query.includes('in:spam')) {
-        query = `(${query}) AND is:inbox`;
-      }
+      const trimmedQuery = userQuery?.trim();
+      const query = !trimmedQuery
+        ? (include_spam ? undefined : 'is:inbox')
+        : trimmedQuery;
 
       const emails = await listEmails(phoneNumber, {
         maxResults: Math.min(Math.max(max_results ?? 10, 1), 50),

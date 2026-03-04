@@ -35,6 +35,21 @@ function friendlyCalendarError(error: unknown): string {
   return message;
 }
 
+/**
+ * Detect whether the user explicitly specified a time in natural-language input.
+ * Date-only phrases (e.g., "in 7 days", "next monday") are treated as full-day boundaries.
+ */
+function hasExplicitTime(input: string): boolean {
+  const normalized = input.trim().toLowerCase();
+  return (
+    /\b\d{1,2}:\d{2}\b/.test(normalized) ||
+    /\b\d{1,2}\s?(am|pm)\b/.test(normalized) ||
+    /\b\d{1,2}:\d{2}\s?(am|pm)\b/.test(normalized) ||
+    /\bnoon\b/.test(normalized) ||
+    /\bmidnight\b/.test(normalized)
+  );
+}
+
 export const getCalendarEvents: ToolDefinition = {
   tool: {
     name: 'get_calendar_events',
@@ -127,6 +142,22 @@ export const getCalendarEvents: ToolDefinition = {
             return { success: false, error: `Could not parse end date: "${end_date}"` };
           }
           endDate = new Date(endResult.timestamp * 1000);
+
+          // Date-only end boundaries should include the full local end day.
+          if (
+            !hasExplicitTime(end_date) &&
+            endResult.components.hour === 0 &&
+            endResult.components.minute === 0 &&
+            endResult.components.second === 0
+          ) {
+            const endLocal = DateTime.fromSeconds(endResult.timestamp, { zone: timezone });
+            endDate = endLocal
+              .plus({ days: 1 })
+              .startOf('day')
+              .minus({ second: 1 })
+              .toUTC()
+              .toJSDate();
+          }
         }
       }
 
@@ -508,4 +539,3 @@ export const deleteCalendarEvent: ToolDefinition = {
     }
   },
 };
-

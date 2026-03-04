@@ -113,6 +113,20 @@ describe('getCalendarEvents', () => {
     expect(endDate.toISOString()).toBe('2026-02-16T07:59:59.000Z');
   });
 
+  it('treats date-only end_date as inclusive end-of-day', async () => {
+    const result = await getCalendarEvents.handler(
+      { start_date: 'today', end_date: 'in 7 days' },
+      baseContext
+    );
+
+    expect(result.success).toBe(true);
+
+    const listEventsMock = listEvents as unknown as ReturnType<typeof vi.fn>;
+    const [, startDate, endDate] = listEventsMock.mock.calls[0] as [string, Date, Date];
+    expect(startDate.toISOString()).toBe('2026-02-04T08:00:00.000Z');
+    expect(endDate.toISOString()).toBe('2026-02-12T07:59:59.000Z');
+  });
+
   it('returns a clear error when start date is unparseable', async () => {
     const result = await getCalendarEvents.handler(
       { start_date: 'not-a-date', end_date: 'next week' },

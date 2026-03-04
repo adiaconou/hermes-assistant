@@ -19,6 +19,7 @@ vi.mock('../../../src/providers/auth.js', () => ({
 }));
 
 import { getEmails, readEmail, getEmailThread } from '../../../src/domains/email/runtime/tools.js';
+import { listEmails } from '../../../src/domains/email/providers/gmail.js';
 import type { ToolContext } from '../../../src/tools/types.js';
 
 const baseContext: ToolContext = {
@@ -28,6 +29,31 @@ const baseContext: ToolContext = {
 
 describe('email boundary validation', () => {
   describe('getEmails', () => {
+    it('defaults to inbox query when query is not provided', async () => {
+      const result = await getEmails.handler({}, baseContext);
+
+      expect(result.success).toBe(true);
+      expect(result.query_used).toBe('is:inbox');
+      expect(vi.mocked(listEmails)).toHaveBeenCalledWith(
+        '+1234567890',
+        expect.objectContaining({ query: 'is:inbox' })
+      );
+    });
+
+    it('passes explicit query through without forcing inbox filter', async () => {
+      const result = await getEmails.handler(
+        { query: 'newer_than:1d in:anywhere' },
+        baseContext
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.query_used).toBe('newer_than:1d in:anywhere');
+      expect(vi.mocked(listEmails)).toHaveBeenCalledWith(
+        '+1234567890',
+        expect.objectContaining({ query: 'newer_than:1d in:anywhere' })
+      );
+    });
+
     it('rejects max_results as string', async () => {
       const result = await getEmails.handler(
         { max_results: 'ten' },
@@ -61,6 +87,7 @@ describe('email boundary validation', () => {
         baseContext
       );
       expect(result.success).toBe(true);
+      expect(result.query_used).toBe('from:test@example.com');
     });
   });
 
